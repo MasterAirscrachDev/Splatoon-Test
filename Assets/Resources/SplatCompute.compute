@@ -1,0 +1,45 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Splat;
+#pragma kernel GetScores;
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+RWTexture2D<float4> InkTexture;
+float4 AlphaColor;
+float4 BetaColor;
+float4 NoColor;
+int2 PixelCoords;
+int Size;
+int Team;
+int SplashSize;
+int3 TeamScores;
+
+float4 GetColor(int2 PixCoords, int3 id, int Size, float4 old){
+    if(((id.x - PixCoords.x) * (id.x - PixCoords.x)) + ((id.y - PixCoords.y) * (id.y - PixCoords.y)) < (Size * Size)){
+        if(Team == 1){ return AlphaColor; }
+        if(Team == 2){ return BetaColor; }
+        return old;
+    }
+    else{ return old; }
+}
+
+[numthreads(8,8,1)]
+void Splat (uint3 id : SV_DispatchThreadID)
+{
+    InkTexture[int2(id.x, id.y)] = GetColor(PixelCoords, id, SplashSize, InkTexture[int2(id.x, id.y)]);
+}
+
+[numthreads(8,8,1)]
+void GetScores (uint3 id : SV_DispatchThreadID)
+{   
+    float4 color = InkTexture[int2(id.x, id.y)];
+    if (all(color == AlphaColor)) {
+        TeamScores[0] += 1;
+    }
+    else if (all(color == BetaColor)) {
+        TeamScores[1] += 1;
+    }
+    else {
+        TeamScores[2] += 1;
+    } 
+}
