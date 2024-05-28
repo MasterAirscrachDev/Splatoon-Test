@@ -1,5 +1,5 @@
 # Splatoon-Test
-Unity 3d Spatoon Style Test using GPU
+Unity 3d Splatoon Style Test using GPU
 
 Supports Runtime ink Projectiles and "Squid Mode"
 
