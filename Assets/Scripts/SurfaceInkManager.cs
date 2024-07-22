@@ -74,7 +74,7 @@ public class SurfaceInkManager : MonoBehaviour
     Texture2D toTexture2D(RenderTexture rTex)
     {
         Texture2D tex = new Texture2D(size, size, TextureFormat.ARGB32, false);
-        RenderTexture.active = splatMapRenderTexture;
+        RenderTexture.active = splatMapRenderTexture; //capture a smaller area (faster ?)
         tex.ReadPixels(new Rect(0, 0, size, size), 0, 0, false);
         tex.Apply();
         return tex;
