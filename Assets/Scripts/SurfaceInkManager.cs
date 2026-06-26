@@ -48,7 +48,7 @@ public class SurfaceInkManager : MonoBehaviour
         {
             rend.material.mainTexture = splatMapRenderTexture;
             // Tile detail normal at ink-pixel density: pixelsPerUnit tiles per world unit
-            rend.material.SetTextureScale("_DetailNormalMap", new Vector2(pixelsPerUnit, pixelsPerUnit));
+            rend.material.SetTextureScale("_DetailNormalMap", new Vector2(pixelsPerUnit / 16, pixelsPerUnit / 16));
         }
     }
 

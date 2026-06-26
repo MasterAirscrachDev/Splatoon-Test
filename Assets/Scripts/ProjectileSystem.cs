@@ -7,26 +7,87 @@ public class ProjectileSystem : MonoBehaviour
     int splashSize = 10, team = 1;
     bool canRespawn = true;
 
+    Rigidbody         rb;
+    Renderer          visual;
+    MaterialPropertyBlock propBlock;
+    Color             inkColor = Color.white;
+
+    static readonly int ShaderDirection = Shader.PropertyToID("_Direction");
+    static readonly int ShaderColor     = Shader.PropertyToID("_Color");
+    static readonly int ShaderSeed      = Shader.PropertyToID("_Seed");
+
+    void Awake()
+    {
+        rb = GetComponent<Rigidbody>();
+
+        // Find the first renderer on a child — skip the root (it has the collider, not the visual)
+        foreach (Transform child in transform)
+        {
+            Renderer r = child.GetComponent<Renderer>();
+            if (r != null) { visual = r; break; }
+        }
+        propBlock = new MaterialPropertyBlock();
+    }
+
+    void Start()
+    {
+        // Setup() already ran (called synchronously after Instantiate before Start fires),
+        // so `team` is already correct here.
+        GameManager gm = FindFirstObjectByType<GameManager>();
+        if (gm != null)
+            inkColor = (team == 1) ? gm.AlphaTeam : gm.BetaTeam;
+
+        ApplyVisualColor();
+    }
+
+    void ApplyVisualColor()
+    {
+        if (visual == null) return;
+        visual.GetPropertyBlock(propBlock);
+        propBlock.SetColor(ShaderColor, inkColor);
+        propBlock.SetFloat(ShaderSeed, Random.Range(0f, 100f));
+        visual.SetPropertyBlock(propBlock);
+        visual.transform.localScale = Vector3.one * (splashSize * 0.035f); // scale the visual to match the splash size
+    }
+
     public void Setup(Vector3 velocity, float force, int splashSize, int team, bool canRespawn = true)
     {
         this.splashSize = splashSize;
         this.team = team;
         this.canRespawn = canRespawn;
-        GetComponent<Rigidbody>().linearVelocity = velocity;
-        GetComponent<Rigidbody>().AddForce(transform.forward * force);
+        rb.linearVelocity = velocity;
+        rb.AddForce(transform.forward * force);
     }
 
     void Update()
     {
+        UpdateVisualDirection();
+
         if (canRespawn && Random.Range(0, 100) < 1)
         {
             GameObject drip = Instantiate(gameObject, transform.position, Quaternion.identity);
-            drip.GetComponent<ProjectileSystem>().Setup(Vector3.zero, 0, splashSize, team, false);
+            //flat random directional vector
+            Vector3 flatDir = new Vector3(Random.Range(-1f, 1f), 0, Random.Range(-1f, 1f)).normalized * 0.5f;
+            drip.GetComponent<ProjectileSystem>().Setup(flatDir, 0, Mathf.RoundToInt(splashSize * 0.8f), team, false);
         }
         if (transform.position.y < -10)
         {
             Destroy(gameObject);
         }
+    }
+
+    void UpdateVisualDirection()
+    {
+        if (visual == null || rb == null) return;
+
+        Vector3 vel   = rb.linearVelocity;
+        float   speed = vel.magnitude;
+        Vector3 dir   = speed > 0.1f ? vel / speed : Vector3.down;
+        float   stretch = 1f + speed * 0.12f; // grows with speed; tune the 0.06 multiplier
+
+        visual.GetPropertyBlock(propBlock);
+        propBlock.SetVector(ShaderDirection, new Vector4(dir.x, dir.y, dir.z, stretch));
+        visual.SetPropertyBlock(propBlock);
     }
 
     void OnTriggerEnter(Collider other)
@@ -36,7 +97,6 @@ public class ProjectileSystem : MonoBehaviour
         SurfaceInkManager inkManager = other.GetComponent<SurfaceInkManager>();
         if (inkManager != null)
         {
-            Rigidbody rb = GetComponent<Rigidbody>();
             Vector3 vel = rb != null ? rb.linearVelocity : Vector3.zero;
             Vector3 dir = vel.sqrMagnitude > 0.01f ? vel.normalized : Vector3.down;
 

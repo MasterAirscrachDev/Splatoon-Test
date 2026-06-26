@@ -6,36 +6,32 @@ public class WeaponShooter : MonoBehaviour
 {
     [SerializeField] int splashSize = 30, team = 1;
     [SerializeField] float fireRate = 0.5f, YradomRange = 0.0f, XradomRange = 0.0f, Range = 10;
+    [SerializeField] float inkCostPerShot = 3f;
     [SerializeField] GameObject projectile;
+    [SerializeField] PlayerController player;
     Transform shotPoint;
     ControlLayer input;
-    bool shooting = false;
-    // Start is called before the first frame update
+    float lastShotTime = 0f;
+
     void Start()
     {
         input = new ControlLayer();
         input.Enable();
         shotPoint = transform.GetChild(0);
-        //StartCoroutine(Shoot());
-        input.Weapon.Attack.performed += ctx => ShootPressed();
     }
-    void ShootPressed(){
-        if(!shooting){
-            shooting = true;
-            StartCoroutine(Shoot());
-        }
-    }
-    
-    IEnumerator Shoot(){
-        //get a rotation thats the shot point's rotation + a random rotation along the y axis and x axis
-        Vector3 angle = shotPoint.rotation.eulerAngles;
-        angle.y += Random.Range(-YradomRange, YradomRange);
-        angle.x += Random.Range(-XradomRange, XradomRange);
+    void Update()
+    {
+        bool firing = input.Weapon.Attack.ReadValue<float>() != 0;
+        if (firing && Time.time - lastShotTime >= fireRate && player.ConsumeInk(inkCostPerShot * 0.001f))
+        {
+            lastShotTime = Time.time;
+            Vector3 angle = shotPoint.rotation.eulerAngles;
+            angle.y += Random.Range(-YradomRange, YradomRange);
+            angle.x += Random.Range(-XradomRange, XradomRange);
 
-        GameObject s = Instantiate(projectile, shotPoint.position, Quaternion.Euler(angle));
-        s.GetComponent<ProjectileSystem>().Setup(FindObjectOfType<PlayerController>().GetComponent<CharacterController>().velocity, Range, splashSize, team);
-        yield return new WaitForSeconds(fireRate);
-        if(input.Weapon.Attack.ReadValue<float>() != 0){ StartCoroutine(Shoot()); }
-        else{ shooting = false; }
+            GameObject s = Instantiate(projectile, shotPoint.position, Quaternion.Euler(angle));
+            CharacterController cc = player != null ? player.GetComponent<CharacterController>() : null;
+            s.GetComponent<ProjectileSystem>().Setup(cc != null ? cc.velocity : Vector3.zero, Range, splashSize, team);
+        }
     }
 }
