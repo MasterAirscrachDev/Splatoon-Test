@@ -1,97 +1,198 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 public class SurfaceInkManager : MonoBehaviour
 {
-    [SerializeField] int size = 256, alphaUVClear = 0;
-    [SerializeField] Vector3Int scoresRaw;
-    RenderTexture splatMapRenderTexture;
-    [SerializeField] Texture2D scoresReadTexture;
+    [SerializeField] float pixelsPerUnit = 32f;
+    public float PixelsPerUnit => pixelsPerUnit;
+
+    int size;
+    int coveredPixelCount; // pixels inside the mesh's UV triangles — used for accurate scoring
     GameManager gameManager;
     ComputeShader splatCompute;
-    ComputeBuffer splatBuffer;
+    RenderTexture splatMapRenderTexture;
 
+    const int KernelSplat = 0;
+    const int KernelGetScores = 1;
+    const int KernelGetTeamAtPixel = 2;
 
-    // Start is called before the first frame update
+    ComputeBuffer scoreBuffer;
+    ComputeBuffer pixelTeamBuffer;
+
+    int cachedSurfaceTeam = 0;
+    bool teamReadbackPending = false;
+
     void Start()
     {
         splatCompute = Resources.Load<ComputeShader>("SplatCompute");
-        gameManager = FindObjectOfType<GameManager>();
+        gameManager = FindFirstObjectByType<GameManager>();
+
+        Renderer rend = GetComponent<Renderer>();
+        if (rend != null)
+        {
+            Bounds b = rend.bounds;
+            float maxSide = Mathf.Max(b.size.x, b.size.y, b.size.z);
+            size = Mathf.Clamp(Mathf.NextPowerOfTwo(Mathf.CeilToInt(maxSide * pixelsPerUnit)), 64, 2048);
+        }
+        else
+        {
+            size = 256;
+        }
+
+        coveredPixelCount = CalculateUVCoverage();
         InitializeSplatCompute();
         GetComponent<Renderer>().material.mainTexture = splatMapRenderTexture;
+        //scale the tiling on the detail texture
+        GetComponent<Renderer>().material.SetTextureScale("_DetailNormalMap", new Vector2(size / pixelsPerUnit, size / pixelsPerUnit));
     }
-    void InitializeSplatCompute(){
+
+    Mesh GetSharedMesh()
+    {
+        MeshFilter mf = GetComponent<MeshFilter>();
+        if (mf != null && mf.sharedMesh != null) return mf.sharedMesh;
+        SkinnedMeshRenderer smr = GetComponent<SkinnedMeshRenderer>();
+        return smr != null ? smr.sharedMesh : null;
+    }
+
+    // Rasterises the mesh's UV triangles into a boolean mask to count how many texture
+    // pixels actually map to a surface. Pixels outside every triangle can never be painted
+    // and must not inflate the neutral (unpainted) score.
+    int CalculateUVCoverage()
+    {
+        Mesh mesh = GetSharedMesh();
+        if (mesh == null) return size * size;
+        Vector2[] uvs = mesh.uv;
+        if (uvs == null || uvs.Length == 0) return size * size;
+
+        int[] tris = mesh.triangles;
+        bool[] covered = new bool[size * size];
+
+        for (int ti = 0; ti < tris.Length; ti += 3)
+        {
+            Vector2 a = uvs[tris[ti]], b = uvs[tris[ti + 1]], c = uvs[tris[ti + 2]];
+
+            int px0 = Mathf.Max(0,      Mathf.FloorToInt(Mathf.Min(Mathf.Min(a.x, b.x), c.x) * size));
+            int px1 = Mathf.Min(size-1, Mathf.CeilToInt (Mathf.Max(Mathf.Max(a.x, b.x), c.x) * size));
+            int py0 = Mathf.Max(0,      Mathf.FloorToInt(Mathf.Min(Mathf.Min(a.y, b.y), c.y) * size));
+            int py1 = Mathf.Min(size-1, Mathf.CeilToInt (Mathf.Max(Mathf.Max(a.y, b.y), c.y) * size));
+
+            for (int py = py0; py <= py1; py++)
+            for (int px = px0; px <= px1; px++)
+            {
+                int idx = py * size + px;
+                if (covered[idx]) continue;
+
+                Vector2 p = new Vector2((px + 0.5f) / size, (py + 0.5f) / size);
+                if (PointInTriangle(p, a, b, c))
+                    covered[idx] = true;
+            }
+        }
+
+        int count = 0;
+        for (int i = 0; i < covered.Length; i++) if (covered[i]) count++;
+        return count;
+    }
+
+    static bool PointInTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
+    {
+        float d1 = Cross2D(p - b, a - b);
+        float d2 = Cross2D(p - c, b - c);
+        float d3 = Cross2D(p - a, c - a);
+        return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+    }
+
+    static float Cross2D(Vector2 a, Vector2 b) => a.x * b.y - a.y * b.x;
+
+    void InitializeSplatCompute()
+    {
         splatMapRenderTexture = new RenderTexture(size, size, 0, RenderTextureFormat.ARGB32);
         splatMapRenderTexture.enableRandomWrite = true;
-        scoresReadTexture = toTexture2D(splatMapRenderTexture);
-        
+        splatMapRenderTexture.filterMode = FilterMode.Bilinear;
         splatMapRenderTexture.Create();
-        //splatCompute
-        splatCompute.SetTexture(0, "InkTexture", splatMapRenderTexture);
-        //set the alpha and beta team colors
-        Vector4 alphaTeam, betaTeam;
-        alphaTeam.x = gameManager.AlphaTeam.r; alphaTeam.y = gameManager.AlphaTeam.g; alphaTeam.z = gameManager.AlphaTeam.b; alphaTeam.w = gameManager.AlphaTeam.a;
-        betaTeam.x = gameManager.BetaTeam.r; betaTeam.y = gameManager.BetaTeam.g; betaTeam.z = gameManager.BetaTeam.b; betaTeam.w = gameManager.BetaTeam.a;
-        //Debug.Log(alphaTeam); Debug.Log(betaTeam);
+
+        scoreBuffer = new ComputeBuffer(3, sizeof(int));
+        pixelTeamBuffer = new ComputeBuffer(1, sizeof(int));
+
+        splatCompute.SetTexture(KernelSplat,          "InkTexture", splatMapRenderTexture);
+        splatCompute.SetTexture(KernelGetScores,       "InkTexture", splatMapRenderTexture);
+        splatCompute.SetTexture(KernelGetTeamAtPixel,  "InkTexture", splatMapRenderTexture);
+
+        splatCompute.SetBuffer(KernelSplat,           "TeamScores",  scoreBuffer);
+        splatCompute.SetBuffer(KernelSplat,           "PixelTeam",   pixelTeamBuffer);
+        splatCompute.SetBuffer(KernelGetScores,        "TeamScores",  scoreBuffer);
+        splatCompute.SetBuffer(KernelGetScores,        "PixelTeam",   pixelTeamBuffer);
+        splatCompute.SetBuffer(KernelGetTeamAtPixel,   "TeamScores",  scoreBuffer);
+        splatCompute.SetBuffer(KernelGetTeamAtPixel,   "PixelTeam",   pixelTeamBuffer);
+
+        Vector4 alphaTeam = new Vector4(gameManager.AlphaTeam.r, gameManager.AlphaTeam.g, gameManager.AlphaTeam.b, gameManager.AlphaTeam.a);
+        Vector4 betaTeam  = new Vector4(gameManager.BetaTeam.r,  gameManager.BetaTeam.g,  gameManager.BetaTeam.b,  gameManager.BetaTeam.a);
         splatCompute.SetVector("AlphaColor", alphaTeam);
-        splatCompute.SetVector("BetaColor", betaTeam);
-        splatCompute.SetVector("NoColor", new Vector4(0, 0, 0, 0));
+        splatCompute.SetVector("BetaColor",  betaTeam);
+        splatCompute.SetVector("NoColor",    new Vector4(0, 0, 0, 0));
         splatCompute.SetInt("Size", size);
-        splatCompute.SetInts("PixelCoords", new int[2] { 0, 0 });
+        splatCompute.SetInts("PixelCoords",     new int[2] { 0, 0 });
+        splatCompute.SetInts("TeamQueryCoords", new int[2] { 0, 0 });
         splatCompute.SetInt("SplashSize", 0);
         splatCompute.SetInt("Team", 1);
-        splatCompute.Dispatch(0, size / 8, size / 8,1);
+        splatCompute.Dispatch(KernelSplat, size / 8, size / 8, 1);
     }
-    public void Splat(Vector2 texCoords, int splashSize, int team){
-        int x = (int)(texCoords.x * size); int y = (int)(texCoords.y * size);
-        splatCompute.SetTexture(0, "InkTexture", splatMapRenderTexture);
+
+    public void Splat(Vector2 texCoords, int splashSize, int team)
+    {
+        int x = (int)(texCoords.x * size);
+        int y = (int)(texCoords.y * size);
+        splatCompute.SetTexture(KernelSplat, "InkTexture", splatMapRenderTexture);
         splatCompute.SetInts("PixelCoords", new int[2] { x, y });
         splatCompute.SetInt("SplashSize", splashSize);
         splatCompute.SetInt("Team", team);
-        splatCompute.Dispatch(0, size / 8, size / 8,1); 
-    }
-    public Vector3Int CheckScores(){
-        scoresRaw = new Vector3Int(0, 0, 0);
-        System.DateTime startTime = System.DateTime.Now;
-        scoresReadTexture = toTexture2D(splatMapRenderTexture);
-        System.DateTime endTime = System.DateTime.Now;
-        //Debug.Log("Time to read texture: " + (endTime - startTime).TotalMilliseconds);
-        startTime = System.DateTime.Now;
-        Color[] colors = scoresReadTexture.GetPixels(0, 0, size, size, 0);
-        for(int i = 0; i < colors.Length; i++){
-            if(IsColorEqual(colors[i], gameManager.AlphaTeam, 0.01f)){ scoresRaw.x++; }
-            else if(IsColorEqual(colors[i], gameManager.BetaTeam, 0.01f)){ scoresRaw.y++; }   
-            else{ scoresRaw.z++; }
-        }
-        float count = colors.Length - alphaUVClear;
-        scoresRaw.z -= alphaUVClear;
-        if(scoresRaw.z < 0){ scoresRaw.z = 0; }
-        endTime = System.DateTime.Now;
-        //Debug.Log("Time to calculate pixels: " + (endTime - startTime).TotalMilliseconds);
-        return scoresRaw;
-    }
-    Texture2D toTexture2D(RenderTexture rTex)
-    {
-        Texture2D tex = new Texture2D(size, size, TextureFormat.ARGB32, false);
-        RenderTexture.active = splatMapRenderTexture; //capture a smaller area (faster ?)
-        tex.ReadPixels(new Rect(0, 0, size, size), 0, 0, false);
-        tex.Apply();
-        return tex;
-    }
-    public int getSurfaceTeam(Vector2 texCoords){
-        int x = (int)(texCoords.x * size); int y = (int)(texCoords.y * size);
-        Color color = scoresReadTexture.GetPixel(x, y);
-        if(IsColorEqual(color, gameManager.AlphaTeam, 0.01f)){ return 1; }
-        else if(IsColorEqual(color, gameManager.BetaTeam, 0.01f)){ return 2; }
-        else{ return 0; }
-    }
-    bool IsColorEqual(Color a, Color b, float tolerance = 0.01f){
-        if(Mathf.Abs(a.a - b.a) > tolerance){ return false; }
-        if(Mathf.Abs(a.r - b.r) > tolerance){ return false; }
-        if(Mathf.Abs(a.g - b.g) > tolerance){ return false; }
-        if(Mathf.Abs(a.b - b.b) > tolerance){ return false; }
-        return true;
+        splatCompute.Dispatch(KernelSplat, size / 8, size / 8, 1);
     }
 
+    public void CheckScoresAsync(System.Action<Vector3Int> callback)
+    {
+        scoreBuffer.SetData(new int[] { 0, 0, 0 });
+        splatCompute.SetTexture(KernelGetScores, "InkTexture", splatMapRenderTexture);
+        splatCompute.SetBuffer(KernelGetScores, "TeamScores", scoreBuffer);
+        splatCompute.Dispatch(KernelGetScores, size / 8, size / 8, 1);
+
+        AsyncGPUReadback.Request(scoreBuffer, request =>
+        {
+            if (request.hasError) return;
+            var data = request.GetData<int>();
+            // Neutral = covered pixels not yet painted by either team.
+            // coveredPixelCount excludes UV-space pixels that don't map to any mesh triangle.
+            int neutral = Mathf.Max(0, coveredPixelCount - data[0] - data[1]);
+            callback(new Vector3Int(data[0], data[1], neutral));
+        });
+    }
+
+    public int getSurfaceTeam(Vector2 texCoords)
+    {
+        if (!teamReadbackPending)
+        {
+            int x = (int)(texCoords.x * size);
+            int y = (int)(texCoords.y * size);
+            splatCompute.SetTexture(KernelGetTeamAtPixel, "InkTexture", splatMapRenderTexture);
+            splatCompute.SetBuffer(KernelGetTeamAtPixel, "PixelTeam", pixelTeamBuffer);
+            splatCompute.SetInts("TeamQueryCoords", new int[2] { x, y });
+            splatCompute.Dispatch(KernelGetTeamAtPixel, 1, 1, 1);
+
+            teamReadbackPending = true;
+            AsyncGPUReadback.Request(pixelTeamBuffer, request =>
+            {
+                if (!request.hasError)
+                    cachedSurfaceTeam = request.GetData<int>()[0];
+                teamReadbackPending = false;
+            });
+        }
+        return cachedSurfaceTeam;
+    }
+
+    void OnDestroy()
+    {
+        scoreBuffer?.Release();
+        pixelTeamBuffer?.Release();
+    }
 }

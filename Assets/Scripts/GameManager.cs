@@ -5,29 +5,31 @@ using UnityEngine;
 public class GameManager : MonoBehaviour
 {
     public Color AlphaTeam, BetaTeam;
-    // Start is called before the first frame update
-    void Start()
-    {
-        
-    }
 
-    // Update is called once per frame
-    void Update()
+    void Start() { }
+    void Update() { }
+
+    public void GetScores()
     {
-        
-    }
-    public void GetScores(){
-        Vector3Int totalScore = new Vector3Int(0, 0, 0);
-        //get scores
-        for(int i = 0; i < FindObjectsOfType<SurfaceInkManager>().Length; i++){
-           totalScore += FindObjectsOfType<SurfaceInkManager>()[i].CheckScores();
+        SurfaceInkManager[] managers = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None);
+        if (managers.Length == 0) return;
+
+        int pending = managers.Length;
+        Vector3Int totalScore = Vector3Int.zero;
+
+        foreach (var manager in managers)
+        {
+            manager.CheckScoresAsync(scores =>
+            {
+                totalScore += scores;
+                pending--;
+                if (pending == 0)
+                {
+                    float total = totalScore.x + totalScore.y + totalScore.z;
+                    if (total <= 0) return;
+                    Debug.Log($"Alpha: {totalScore.x / total * 100:f2}%, Beta: {totalScore.y / total * 100:f2}%, Neutral: {totalScore.z / total * 100:f2}%");
+                }
+            });
         }
-        //convert to percentages
-        float total = totalScore.x + totalScore.y + totalScore.z;
-        float alphaPercent = totalScore.x / total;
-        float betaPercent = totalScore.y / total;
-        float neutralPercent = totalScore.z / total;
-        //display scores
-        Debug.Log($"Alpha: {Mathf.Round(alphaPercent * 100)}%, Beta: {Mathf.Round(betaPercent * 100)}%, Neutral: {Mathf.Round(neutralPercent * 100)}%");
     }
 }

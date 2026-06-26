@@ -102,21 +102,22 @@ public class PlayerController : MonoBehaviour
         controller.Move(velocity * Time.deltaTime);
     }
     void Jump(){
-        if (mainHit) { velocityY += jump * 2; }
+        if (controller.isGrounded) { velocityY += jump * 2; }
     }
     void TestCheckScores(){
         FindObjectOfType<GameManager>().GetScores();
     }
     void GetInkTeam(){
-        if (Physics.Raycast(transform.position + Vector3.up, Vector3.down, out hit, 3)){
+        RaycastHit inkHit;
+        if (Physics.Raycast(transform.position + Vector3.up, Vector3.down, out inkHit, 3)){
             try{
-                int team = hit.collider.gameObject.GetComponent<SurfaceInkManager>().getSurfaceTeam(hit.textureCoord);
-                if (team == 0){ Debug.Log("NoTeam"); surfaceTeam = 0; }
-                else if (team == 1){ Debug.Log("AlphaTeam"); surfaceTeam = 1; }
-                else if (team == 2){ Debug.Log("BetaTeam"); surfaceTeam = 2;}
+                int team = inkHit.collider.gameObject.GetComponent<SurfaceInkManager>().getSurfaceTeam(inkHit.textureCoord);
+                if (team == 0){ /*Debug.Log("NoTeam");*/ surfaceTeam = 0; }
+                else if (team == 1){ /*Debug.Log("AlphaTeam");*/ surfaceTeam = 1; }
+                else if (team == 2){/* Debug.Log("BetaTeam");*/ surfaceTeam = 2;}
             }
             catch{
-                Debug.Log("No Ink Team");
+                //Debug.Log("No Ink Team");
             }
             
         }
