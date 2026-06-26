@@ -6,6 +6,7 @@ using UnityEngine.Rendering;
 public class SurfaceInkManager : MonoBehaviour
 {
     [SerializeField] float pixelsPerUnit = 32f;
+    [SerializeField] float splatScale = 1.0f; // scale of the splat texture in world units
     public float PixelsPerUnit => pixelsPerUnit;
 
     int size;
@@ -43,9 +44,12 @@ public class SurfaceInkManager : MonoBehaviour
 
         coveredPixelCount = CalculateUVCoverage();
         InitializeSplatCompute();
-        GetComponent<Renderer>().material.mainTexture = splatMapRenderTexture;
-        //scale the tiling on the detail texture
-        GetComponent<Renderer>().material.SetTextureScale("_DetailNormalMap", new Vector2(size / pixelsPerUnit, size / pixelsPerUnit));
+        if (rend != null)
+        {
+            rend.material.mainTexture = splatMapRenderTexture;
+            // Tile detail normal at ink-pixel density: pixelsPerUnit tiles per world unit
+            rend.material.SetTextureScale("_DetailNormalMap", new Vector2(pixelsPerUnit, pixelsPerUnit));
+        }
     }
 
     Mesh GetSharedMesh()
@@ -145,7 +149,7 @@ public class SurfaceInkManager : MonoBehaviour
         int y = (int)(texCoords.y * size);
         splatCompute.SetTexture(KernelSplat, "InkTexture", splatMapRenderTexture);
         splatCompute.SetInts("PixelCoords", new int[2] { x, y });
-        splatCompute.SetInt("SplashSize", splashSize);
+        splatCompute.SetInt("SplashSize", Mathf.RoundToInt(splashSize * splatScale));
         splatCompute.SetInt("Team", team);
         splatCompute.Dispatch(KernelSplat, size / 8, size / 8, 1);
     }

@@ -38,40 +38,35 @@ bool ColorNear(float4 a, float4 b) {
 }
 
 float4 GetColor(int2 PixCoords, int3 id, int radius, float4 old) {
+    if (radius <= 0) return old;
+
     float dx = id.x - PixCoords.x;
     float dy = id.y - PixCoords.y;
-    float dist2 = dx * dx + dy * dy;
-    float r = (float)radius;
+    float r  = (float)radius;
+    float2 p = float2(id.x, id.y);
 
-    float coreR  = r * 0.8;
-    float outerR = r * 1.2;
+    // Domain warp: two independent noise channels displace the distance field,
+    // producing large organic lobes rather than a noisy ring around a hard circle.
+    // freq controls lobe size (lower = bigger), amp controls how far the edge deforms.
+    float freq = 3.5 / max(r, 1.0); // ~7 lobes regardless of splat pixel radius
+    float amp  = r * 0.4;
+    float wx = (valueNoise(p * freq)                      - 0.5) * amp;
+    float wy = (valueNoise(p * freq + float2(31.7, 17.3)) - 0.5) * amp;
 
-    if (dist2 >= outerR * outerR) return old;
+    float dist = length(float2(dx - wx, dy - wy));
 
-    // Solid core: inner 80% of radius always painted
-    if (dist2 < coreR * coreR) {
-        if (Team == 1) return AlphaColor;
-        if (Team == 2) return BetaColor;
-        return old;
-    }
+    // SDF AA: smooth 3-pixel feather centred on the warped edge.
+    // Because shape and AA come from the same SDF, they can't conflict.
+    float alpha = 1.0 - smoothstep(-1.5, 1.5, dist - r);
+    if (alpha < 0.01) return old;
 
-    // Narrow organic edge band (80% → 120%): smooth value noise decides shape,
-    // alpha fades from 1 at the core boundary to 0 at the outer boundary so the
-    // display shader gets a real gradient instead of a hard pixel edge.
-    float coreR2  = coreR  * coreR;
-    float outerR2 = outerR * outerR;
-    float t = (dist2 - coreR2) / (outerR2 - coreR2); // 0 at core, 1 at outer
-    float n = valueNoise(float2(id.x, id.y) * 0.06);
-    if (n > t) {
-        float4 color = (Team == 1) ? AlphaColor : BetaColor;
-        color.a = 1.0 - t;
-        // Never weaken existing ink: a faded edge must not overwrite a more solid pixel.
-        // Solid cores (alpha=1) still always win because GetColor returns AlphaColor/BetaColor
-        // with full alpha before reaching this band.
-        if (old.a >= color.a) return old;
-        return color;
-    }
-    return old;
+    float4 color = (Team == 1) ? AlphaColor : BetaColor;
+    color.a = alpha;
+
+    // Solid interior (alpha ≈ 1) always repaints any team.
+    // Sub-1 edge pixels only extend into emptier space so they can't weaken solid ink.
+    if (color.a < 0.99 && old.a >= color.a) return old;
+    return color;
 }
 
 [numthreads(8,8,1)]
