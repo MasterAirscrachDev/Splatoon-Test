@@ -9,9 +9,14 @@ public class SurfaceInkManager : MonoBehaviour
     [SerializeField] float splatScale = 1.0f; // scale of the splat texture in world units
     public float PixelsPerUnit => pixelsPerUnit;
 
+    // Assigned by NetGameManager at scene load. Identical on every client (all surfaces are scene-placed).
+    public int SurfaceId;
+    // Subscribers (NetGameManager) send the splat over the network. Set broadcast:false on remote replays.
+    public static System.Action<SplatData> OnSplatApplied;
+
     int size;
     int coveredPixelCount; // pixels inside the mesh's UV triangles — used for accurate scoring
-    GameManager gameManager;
+    NetGameManager gameManager;
     ComputeShader splatCompute;
     RenderTexture splatMapRenderTexture;
 
@@ -28,7 +33,7 @@ public class SurfaceInkManager : MonoBehaviour
     void Start()
     {
         splatCompute = Resources.Load<ComputeShader>("SplatCompute");
-        gameManager = FindFirstObjectByType<GameManager>();
+        gameManager = FindFirstObjectByType<NetGameManager>();
 
         Renderer rend = GetComponent<Renderer>();
         if (rend != null)
@@ -143,7 +148,7 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.Dispatch(KernelSplat, size / 8, size / 8, 1);
     }
 
-    public void Splat(Vector2 texCoords, int splashSize, int team)
+    public void Splat(Vector2 texCoords, int splashSize, int team, bool broadcast = true)
     {
         int x = (int)(texCoords.x * size);
         int y = (int)(texCoords.y * size);
@@ -152,6 +157,16 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetInt("SplashSize", Mathf.RoundToInt(splashSize * splatScale));
         splatCompute.SetInt("Team", team);
         splatCompute.Dispatch(KernelSplat, size / 8, size / 8, 1);
+        if (broadcast)
+            OnSplatApplied?.Invoke(new SplatData { surfaceId = SurfaceId, uv = texCoords, splashSize = splashSize, team = team });
+    }
+
+    public void ClearInk()
+    {
+        RenderTexture prev = RenderTexture.active;
+        RenderTexture.active = splatMapRenderTexture;
+        GL.Clear(false, true, Color.clear);
+        RenderTexture.active = prev;
     }
 
     public void CheckScoresAsync(System.Action<Vector3Int> callback)

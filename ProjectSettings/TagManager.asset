@@ -6,6 +6,8 @@ TagManager:
   tags:
   - WeaponPoint
   - Projectile
+  - AlphaSpawn
+  - BetaSpawn
   layers:
   - Default
   - TransparentFX
@@ -16,9 +18,9 @@ TagManager:
   - Projectile
   - Player
   - Map
-  - 
-  - 
-  - 
+  - MapGrate
+  - Hitbox
+  - PlayerSwim
   - 
   - 
   - 

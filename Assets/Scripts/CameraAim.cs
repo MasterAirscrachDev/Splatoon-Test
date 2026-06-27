@@ -4,6 +4,7 @@ using UnityEngine;
 
 public class CameraAim : MonoBehaviour
 {
+    [SerializeField] LayerMask aimLayerMask;
     public Vector3 target;
     public float angle;
     RaycastHit hit;

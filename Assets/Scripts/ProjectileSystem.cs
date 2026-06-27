@@ -6,6 +6,7 @@ public class ProjectileSystem : MonoBehaviour
 {
     int splashSize = 10, team = 1;
     bool canRespawn = true;
+    [SerializeField] float damage = 30f;
 
     Rigidbody         rb;
     Renderer          visual;
@@ -33,7 +34,7 @@ public class ProjectileSystem : MonoBehaviour
     {
         // Setup() already ran (called synchronously after Instantiate before Start fires),
         // so `team` is already correct here.
-        GameManager gm = FindFirstObjectByType<GameManager>();
+        NetGameManager gm = FindFirstObjectByType<NetGameManager>();
         if (gm != null)
             inkColor = (team == 1) ? gm.AlphaTeam : gm.BetaTeam;
 
@@ -93,6 +94,20 @@ public class ProjectileSystem : MonoBehaviour
     void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag("Projectile")) return;
+
+        // Player hits take priority over surface splats. Teammates (and the shooter,
+        // who overlaps this trigger on spawn) are passed through: no damage, no destroy,
+        // so the projectile flies on to hit the wall behind them.
+        PlayerHitbox hitbox = other.GetComponentInParent<PlayerHitbox>();
+        if (hitbox != null)
+        {
+            if (hitbox.Team != team)
+            {
+                hitbox.TakeDamage(damage, team);
+                DeleteProjectile();
+            }
+            return;
+        }
 
         SurfaceInkManager inkManager = other.GetComponent<SurfaceInkManager>();
         if (inkManager != null)

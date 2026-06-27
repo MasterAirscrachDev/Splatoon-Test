@@ -4,7 +4,7 @@ using UnityEngine;
 
 public class WeaponShooter : MonoBehaviour
 {
-    [SerializeField] int splashSize = 30, team = 1;
+    [SerializeField] int splashSize = 30;
     [SerializeField] float fireRate = 0.5f, YradomRange = 0.0f, XradomRange = 0.0f, Range = 10;
     [SerializeField] float inkCostPerShot = 3f;
     [SerializeField] GameObject projectile;
@@ -31,7 +31,7 @@ public class WeaponShooter : MonoBehaviour
 
             GameObject s = Instantiate(projectile, shotPoint.position, Quaternion.Euler(angle));
             CharacterController cc = player != null ? player.GetComponent<CharacterController>() : null;
-            s.GetComponent<ProjectileSystem>().Setup(cc != null ? cc.velocity : Vector3.zero, Range, splashSize, team);
+            s.GetComponent<ProjectileSystem>().Setup(cc != null ? cc.velocity : Vector3.zero, Range, splashSize, player.Team);
         }
     }
 }

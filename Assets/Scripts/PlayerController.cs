@@ -31,7 +31,7 @@ public class PlayerController : MonoBehaviour
     float inkLevel = 1f;
     public float InkLevel => inkLevel;
     public bool IsSquid => swimMode;
-    float realSpeed, cameraPitch = 0.0f, velocityY = 0.0f;
+    float realSpeed, airSpeed, cameraPitch = 0.0f, velocityY = 0.0f;
     CharacterController controller = null;
     ControlLayer input;
     [SerializeField] Material mat;
@@ -40,43 +40,94 @@ public class PlayerController : MonoBehaviour
     bool wasClimbing;
     Vector3 climbNormal;
     int climbSurfaceTeam;
-    Vector3 RayDir, Pos;
     Vector2 currentDir = Vector2.zero, currentDirVelocity = Vector2.zero, currentMouseDelta = Vector2.zero, currentMouseDeltaVelocity = Vector2.zero, targetDir;
+
+    // Remote (Network mode) interpolation targets, fed by ApplyNetState.
+    [SerializeField] float netLerpSpeed = 14f;
+    Vector3 netTargetPos;
+    float netTargetYaw, netCamPitch;
+    bool netInitialised;
+
+    // State broadcast: snapshot built on main thread each frame, sent from OnNetTick (off-thread).
+    ulong localSteamId;
+    PlayerStateData cachedNetState;
+    Color teamColor;
 
     void Start()
     {
-        input = new ControlLayer();
-        input.Enable();
-        input.Movement.Jump.performed += ctx => Jump();
-        input.Movement.Debug.performed += ctx => TestCheckScores();
         controller = GetComponent<CharacterController>();
-        RayDir = transform.TransformDirection(Vector3.down);
-        if (playerMode == PlayerMode.Client && lockCursor){ Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false; }
-        if(playerMode == PlayerMode.Client)
+
+        // Only the local client takes hardware input or owns the cursor / HUD.
+        // (NetGameManager sets playerMode right after Instantiate, before Start runs.)
+        if (playerMode == PlayerMode.Client)
         {
-            if(uiController == null)
-            {
-                uiController = FindFirstObjectByType<UIController>();
-            }
+            input = new ControlLayer();
+            input.Enable();
+            input.Movement.Jump.performed += ctx => Jump();
+            input.Movement.Debug.performed += ctx => TestCheckScores();
+            if (lockCursor){ Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false; }
+            if (uiController == null) uiController = FindFirstObjectByType<UIController>();
+            localSteamId = SteamGlobal.steamID.Value;
+            SteamGlobal.OnNetTick += NetTickBroadcast;
         }
+        else
+        {
+            Destroy(playerCamera.gameObject); // remote players don't own a camera
+        }
+
+        // Resolve team colour for both modes (team is set by NetGameManager before Start runs).
+        NetGameManager gm = FindFirstObjectByType<NetGameManager>();
+        if (gm != null) teamColor = team == 1 ? gm.AlphaTeam : gm.BetaTeam;
+        ApplyTeamColor();
+    }
+
+    void ApplyTeamColor()
+    {
+        // 3D backpack tank
+        if (InkTankScaler != null)
+        {
+            Renderer r = InkTankScaler.GetComponentInChildren<Renderer>();
+            if (r != null) r.material.color = teamColor;
+        }
+        // HUD tank
+        if (uiController != null) uiController.SetTeamColor(teamColor);
     }
 
     void Update()
     {
-        UpdateMouseLook();
-        UpdateMovement();
+        if(playerMode == PlayerMode.Client) {
+            UpdateMouseLook();
+            UpdateMovement();
+            float distance = Vector3.Distance(Camera.main.transform.position, transform.position);
+            mat.color = distance < 2
+                ? new Color(1, 1, 1, Mathf.Clamp(distance / 2, 0, 1))
+                : new Color(1, 1, 1, 1);
+            cachedNetState = GetNetState(localSteamId, 0); // tick is stamped in NetTickBroadcast
+        }
+        else if(playerMode == PlayerMode.Network) {
+            UpdateNetInterpolation();
+        }
+        else
+        {
+            
+        }
+        
         GetInkTeam();
         UpdateInk();
         UpdateViewmodels();
         UpdateSquidTrail();
-        //get the distance from the camera to this object
-        float distance = Vector3.Distance(Camera.main.transform.position, transform.position);
-        if(distance < 2){
-            mat.color = new Color(1, 1, 1, Mathf.Clamp(distance / 2,0,1));
-        }
-        else{
-            mat.color = new Color(1, 1, 1, 1);
-        }
+    }
+
+    // Smoothly move a remote player toward the last state we received over the network.
+    void UpdateNetInterpolation()
+    {
+        if (playerMode != PlayerMode.Network) return;
+        if (!netInitialised) return;
+
+        transform.position = Vector3.Lerp(transform.position, netTargetPos, Time.deltaTime * netLerpSpeed);
+        Quaternion targetRot = Quaternion.Euler(0f, netTargetYaw, 0f);
+        transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * netLerpSpeed);
+        if (playerCamera != null) playerCamera.localEulerAngles = Vector3.right * netCamPitch;
     }
 
     void UpdateMouseLook()
@@ -103,6 +154,7 @@ public class PlayerController : MonoBehaviour
             controller.height = 1.92f;
             controller.radius = 0.5f;
         }
+        gameObject.layer = swimMode ? 11 : 7;
         realSpeed = 6;
         if(surfaceTeam != 0){ // if standing on ink
             bool inOwnInk = surfaceTeam == team;
@@ -121,7 +173,12 @@ public class PlayerController : MonoBehaviour
         targetDir = input.Movement.Move.ReadValue<Vector2>(); targetDir.Normalize();
         currentDir = Vector2.SmoothDamp(currentDir, targetDir, ref currentDirVelocity, moveSmoothTime);
 
-        bool climbing = swimMode && isClimbing && climbSurfaceTeam == team;
+        // Eject from climbing when we've descended to the floor at the base of a wall.
+        // The sensor keeps reporting contact while the trigger overlaps the wall, so we
+        // gate on "grounded and not actively climbing up" rather than on sensor state.
+        // Holding up (currentDir.y > 0) still lets the player mount a wall from the ground.
+        bool atWallBase = controller.isGrounded && currentDir.y <= 0.01f;
+        bool climbing = swimMode && isClimbing && climbSurfaceTeam == team && !atWallBase;
         if (climbing)
         {
             // Reset any accumulated falling velocity on the first frame of wall contact.
@@ -150,15 +207,87 @@ public class PlayerController : MonoBehaviour
         controller.slopeLimit = 45f;
         controller.stepOffset = swimMode ? 0f : 0.3f; // disable step logic in squid mode to avoid "bouncing" off walls
         velocityY += (gravity * 3) * Time.deltaTime;
-        if (controller.isGrounded){ velocityY = 0.0f; }
-        Pos = transform.position;
+        if (controller.isGrounded){ velocityY = 0.0f; airSpeed = realSpeed; }
 
         if (velocityY > 10){ velocityY = 10; }
-        velocity = (transform.forward * currentDir.y + transform.right * currentDir.x) * realSpeed + Vector3.up * velocityY;
+        float hSpeed = controller.isGrounded ? realSpeed : airSpeed;
+        velocity = (transform.forward * currentDir.y + transform.right * currentDir.x) * hSpeed + Vector3.up * velocityY;
         controller.Move(velocity * Time.deltaTime);
 
         if(transform.position.y < -10){
-            transform.position = new Vector3(0, 3, 0);
+            Respawn();
+        }
+    }
+
+    [Header("Respawn")]
+    [SerializeField] Vector3 spawnPoint = new Vector3(0, 3, 0); // fallback if no tagged spawn exists
+    public void Respawn()
+    {
+        controller.enabled = false;
+        string tag = team == 1 ? "AlphaSpawn" : "BetaSpawn";
+        GameObject[] pts = GameObject.FindGameObjectsWithTag(tag);
+        transform.position = pts.Length > 0
+            ? pts[Random.Range(0, pts.Length)].transform.position
+            : spawnPoint;
+        controller.enabled = true;
+        velocityY = 0f;
+        isClimbing = false;
+        wasClimbing = false;
+    }
+
+    // ── Networking API ─────────────────────────────────────────────────────
+    // NetGameManager configures spawned entities and drives state in/out through these.
+    public void SetPlayerMode(PlayerMode mode) => playerMode = mode;
+    public void SetTeam(int t) => team = t;
+
+    // Snapshot of this (local) player's state to broadcast to other clients.
+    public PlayerStateData GetNetState(ulong steamId, uint tick)
+    {
+        return new PlayerStateData
+        {
+            steamId  = steamId,
+            position = transform.position,
+            bodyYaw  = transform.eulerAngles.y,
+            camPitch = cameraPitch,
+            moveDir  = new Vector2(currentDir.x, currentDir.y),
+            team     = team,
+            swimMode = swimMode,
+            climbing = swimMode && isClimbing && climbSurfaceTeam == team,
+            tick     = tick
+        };
+    }
+
+    // Apply a received snapshot to this remote player. Interpolation happens in Update.
+    public void ApplyNetState(PlayerStateData s)
+    {
+        if (playerMode != PlayerMode.Network) return;
+
+        netTargetPos = s.position;
+        netTargetYaw = s.bodyYaw;
+        netCamPitch  = s.camPitch;
+        currentDir   = s.moveDir;
+        team         = s.team;
+        swimMode     = s.swimMode;
+        isClimbing   = s.climbing;
+        climbSurfaceTeam = s.climbing ? s.team : 0; // keep viewmodel "in own ink" logic happy
+        // surfaceTeam is computed locally every frame by GetInkTeam (runs for remotes too).
+
+        // Match the controller capsule to the form so viewmodels/visuals scale correctly.
+        if (controller != null)
+        {
+            controller.height = swimMode ? 0.1f : 1.92f;
+            controller.radius = swimMode ? 0.1f : 0.5f;
+        }
+
+        if (!netInitialised)
+        {
+            // Remote entities are driven by interpolation, never by the controller.
+            // Disable it so it can't fight our transform writes, and snap to the first
+            // received pose so we don't lerp in from the prefab's origin.
+            netInitialised = true;
+            if (controller != null) controller.enabled = false;
+            transform.position = netTargetPos;
+            transform.rotation = Quaternion.Euler(0f, netTargetYaw, 0f);
         }
     }
 
@@ -247,11 +376,28 @@ public class PlayerController : MonoBehaviour
         isClimbing = false;
     }
 
+    void OnDestroy()
+    {
+        if (playerMode == PlayerMode.Client)
+            SteamGlobal.OnNetTick -= NetTickBroadcast;
+    }
+
+    // Fires off the Unity main thread at the network tick rate. Only reads the cached
+    // snapshot (a reference captured from the last main-thread frame) and hands it to
+    // the transport — no Unity object access here.
+    void NetTickBroadcast(uint tick)
+    {
+        PlayerStateData snap = cachedNetState;
+        if (snap == null) return;
+        snap.tick = tick;
+        SteamGlobal.SendAllData((ushort)NetMsg.PlayerState, snap);
+    }
+
     void Jump(){
         if (grounded) { velocityY += jump * 2; }
     }
     void TestCheckScores(){
-        FindObjectOfType<GameManager>().GetScores();
+        FindFirstObjectByType<NetGameManager>().GetScores();
     }
     void GetInkTeam(){
         RaycastHit inkHit;
@@ -259,10 +405,7 @@ public class PlayerController : MonoBehaviour
             Debug.DrawLine(transform.position + controller.center, inkHit.point, Color.blue);
             grounded = true;
             try{
-                int team = inkHit.collider.gameObject.GetComponent<SurfaceInkManager>().getSurfaceTeam(inkHit.textureCoord);
-                if (team == 0){ /*Debug.Log("NoTeam");*/ surfaceTeam = 0; }
-                else if (team == 1){ /*Debug.Log("AlphaTeam");*/ surfaceTeam = 1; }
-                else if (team == 2){/* Debug.Log("BetaTeam");*/ surfaceTeam = 2;}
+                surfaceTeam = inkHit.collider.gameObject.GetComponent<SurfaceInkManager>().getSurfaceTeam(inkHit.textureCoord);
             }
             catch{
                 //Debug.Log("No Ink Team");
