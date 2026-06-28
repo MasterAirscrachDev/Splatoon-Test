@@ -6,25 +6,24 @@ public class CameraAim : MonoBehaviour
 {
     [SerializeField] LayerMask aimLayerMask;
     public Vector3 target;
-    public float angle;
     RaycastHit hit;
+    float aimDistance = 10f;
     // Start is called before the first frame update
-    void Start()
-    {
-        
+    public void SetAimDistance(float distance){
+        aimDistance = distance;
     }
 
     // Update is called once per frame
     void Update()
     {
         //raycast forward
-        Physics.Raycast(transform.position, transform.forward, out hit, 100);
+        float camDistance = Mathf.Abs(transform.localPosition.z);
+        Physics.Raycast(transform.position, transform.forward, out hit, aimDistance + camDistance, aimLayerMask);
         if(hit.transform != null){
             target = hit.point;
         }
         else{
-            target = Vector3.zero;
-            angle = transform.eulerAngles.x;
+            target = transform.position + transform.forward * (aimDistance + camDistance);
         }
 
     }

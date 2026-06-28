@@ -5,7 +5,6 @@ using UnityEngine;
 public class ProjectileSystem : MonoBehaviour
 {
     int splashSize = 10, team = 1;
-    bool canRespawn = true;
     [SerializeField] float damage = 30f;
 
     Rigidbody         rb;
@@ -17,7 +16,7 @@ public class ProjectileSystem : MonoBehaviour
     static readonly int ShaderColor     = Shader.PropertyToID("_Color");
     static readonly int ShaderSeed      = Shader.PropertyToID("_Seed");
 
-    void Awake()
+    public void Setup(Vector3 velocity, int splashSize, int team, bool visible = true)
     {
         rb = GetComponent<Rigidbody>();
 
@@ -28,17 +27,17 @@ public class ProjectileSystem : MonoBehaviour
             if (r != null) { visual = r; break; }
         }
         propBlock = new MaterialPropertyBlock();
-    }
 
-    void Start()
-    {
-        // Setup() already ran (called synchronously after Instantiate before Start fires),
-        // so `team` is already correct here.
+        this.splashSize = splashSize;
+        this.team = team;
+        rb.linearVelocity = velocity;
         NetGameManager gm = FindFirstObjectByType<NetGameManager>();
         if (gm != null)
             inkColor = (team == 1) ? gm.AlphaTeam : gm.BetaTeam;
 
-        ApplyVisualColor();
+        if(visible){ ApplyVisualColor(); }
+        else{ Destroy(visual.gameObject); } // Destroy the visual if not visible (e.g., for hidden particles
+        
     }
 
     void ApplyVisualColor()
@@ -51,26 +50,8 @@ public class ProjectileSystem : MonoBehaviour
         visual.transform.localScale = Vector3.one * (splashSize * 0.035f); // scale the visual to match the splash size
     }
 
-    public void Setup(Vector3 velocity, float force, int splashSize, int team, bool canRespawn = true)
-    {
-        this.splashSize = splashSize;
-        this.team = team;
-        this.canRespawn = canRespawn;
-        rb.linearVelocity = velocity;
-        rb.AddForce(transform.forward * force);
-    }
-
-    void Update()
-    {
+    void Update() {
         UpdateVisualDirection();
-
-        if (canRespawn && Random.Range(0, 100) < 1)
-        {
-            GameObject drip = Instantiate(gameObject, transform.position, Quaternion.identity);
-            //flat random directional vector
-            Vector3 flatDir = new Vector3(Random.Range(-1f, 1f), 0, Random.Range(-1f, 1f)).normalized * 0.5f;
-            drip.GetComponent<ProjectileSystem>().Setup(flatDir, 0, Mathf.RoundToInt(splashSize * 0.8f), team, false);
-        }
         if (transform.position.y < -10)
         {
             Destroy(gameObject);
@@ -171,6 +152,7 @@ public class ProjectileSystem : MonoBehaviour
             u = Mathf.InverseLerp(b.min.z, b.max.z, p.z);
             v = Mathf.InverseLerp(b.min.y, b.max.y, p.y);
         }
+        //Debug.Log($"FallbackUV: hit {hit.point} local {p} normal {n} bounds {b} => UV ({u},{v})");
         return new Vector2(u, v);
     }
 

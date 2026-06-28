@@ -8,6 +8,12 @@ public class UIController : MonoBehaviour
 
     bool swimMode;
     Image inkTankImage;
+    RectTransform squidUIRect;
+
+    void Start()
+    {
+        squidUIRect = SquidUI != null ? SquidUI.GetComponent<RectTransform>() : null;
+    }
 
     public void SetSwimMode(bool swim) => swimMode = swim;
 
@@ -29,7 +35,20 @@ public class UIController : MonoBehaviour
     void Update()
     {
         if (SquidUI == null) return;
+
         Vector3 target = swimMode ? Vector3.one : Vector3.zero;
         SquidUI.localScale = Vector3.Lerp(SquidUI.localScale, target, Time.deltaTime * squidUISpeed);
+
+        if (swimMode && squidUIRect != null)
+        {
+            PlayerController player = NetGameManager.LocalPlayer;
+            Camera cam = Camera.main;
+            if (player != null && cam != null)
+            {
+                Vector3 screenPos = cam.WorldToScreenPoint(player.transform.position + Vector3.up);
+                if (screenPos.z > 0)
+                    squidUIRect.position = screenPos;
+            }
+        }
     }
 }

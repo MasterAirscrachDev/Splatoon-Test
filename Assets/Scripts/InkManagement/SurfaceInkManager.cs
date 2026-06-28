@@ -32,7 +32,7 @@ public class SurfaceInkManager : MonoBehaviour
 
     void Start()
     {
-        splatCompute = Resources.Load<ComputeShader>("SplatCompute");
+        splatCompute = Instantiate(Resources.Load<ComputeShader>("SplatCompute"));
         gameManager = FindFirstObjectByType<NetGameManager>();
 
         Renderer rend = GetComponent<Renderer>();
@@ -150,6 +150,7 @@ public class SurfaceInkManager : MonoBehaviour
 
     public void Splat(Vector2 texCoords, int splashSize, int team, bool broadcast = true)
     {
+        //Debug.Log($"[Splat] surface={SurfaceId} team={team} broadcast={broadcast}\n{new System.Diagnostics.StackTrace(true)}");
         int x = (int)(texCoords.x * size);
         int y = (int)(texCoords.y * size);
         splatCompute.SetTexture(KernelSplat, "InkTexture", splatMapRenderTexture);

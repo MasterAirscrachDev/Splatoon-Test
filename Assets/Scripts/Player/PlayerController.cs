@@ -17,8 +17,10 @@ public class PlayerController : MonoBehaviour
     [SerializeField] float moveSpeed = 6.0f;
     [SerializeField] float swimSpeed = 10.0f;
     [SerializeField] bool lockCursor = true, gyro;
+    [SerializeField] float viewmodelSwitchSpeed = 12f;
     [SerializeField] Vector3 velocity;
     [SerializeField] GameObject ViewmodelPlayer, ViewmodelSquid, SquidTrail, InkTankScaler;
+    [SerializeField] GameObject InkExitSplashPrefab;
     [Header("Ink")]
     [SerializeField] float inkRechargeRate = 0.1f;
     [SerializeField] float inkRechargeRateSquid = 0.55f;
@@ -31,6 +33,7 @@ public class PlayerController : MonoBehaviour
     float inkLevel = 1f;
     public float InkLevel => inkLevel;
     public bool IsSquid => swimMode;
+    public bool IsInInk => swimMode && (surfaceTeam == team || (isClimbing && climbSurfaceTeam == team));
     float realSpeed, airSpeed, cameraPitch = 0.0f, velocityY = 0.0f;
     CharacterController controller = null;
     ControlLayer input;
@@ -40,6 +43,9 @@ public class PlayerController : MonoBehaviour
     bool wasClimbing;
     Vector3 climbNormal;
     int climbSurfaceTeam;
+    bool prevInOwnInk;
+    float lastExitSplatTime = -1f;
+    bool effectivelyClimbing;
     Vector2 currentDir = Vector2.zero, currentDirVelocity = Vector2.zero, currentMouseDelta = Vector2.zero, currentMouseDeltaVelocity = Vector2.zero, targetDir;
 
     // Remote (Network mode) interpolation targets, fed by ApplyNetState.
@@ -87,6 +93,20 @@ public class PlayerController : MonoBehaviour
         if (InkTankScaler != null)
         {
             Renderer r = InkTankScaler.GetComponentInChildren<Renderer>();
+            if (r != null) r.material.color = teamColor;
+        }
+        // Swim trail — covers both mesh renderers and particle systems
+        if (SquidTrail != null)
+        {
+            Renderer tr = SquidTrail.GetComponentInChildren<Renderer>(true);
+            if (tr != null) tr.material.color = teamColor;
+            ParticleSystem ps = SquidTrail.GetComponentInChildren<ParticleSystem>(true);
+            if (ps != null) { var m = ps.main; m.startColor = teamColor; }
+        }
+        // Squid viewmodel body
+        if (ViewmodelSquid != null && ViewmodelSquid.transform.childCount > 0)
+        {
+            Renderer r = ViewmodelSquid.transform.GetChild(0).GetComponent<Renderer>();
             if (r != null) r.material.color = teamColor;
         }
         // HUD tank
@@ -168,7 +188,7 @@ public class PlayerController : MonoBehaviour
             }
         }
         else{
-            realSpeed = swimMode ? swimSpeed - 2 : moveSpeed;
+            realSpeed = swimMode ? swimSpeed / 4 : moveSpeed;
         }
         targetDir = input.Movement.Move.ReadValue<Vector2>(); targetDir.Normalize();
         currentDir = Vector2.SmoothDamp(currentDir, targetDir, ref currentDirVelocity, moveSmoothTime);
@@ -179,6 +199,7 @@ public class PlayerController : MonoBehaviour
         // Holding up (currentDir.y > 0) still lets the player mount a wall from the ground.
         bool atWallBase = controller.isGrounded && currentDir.y <= 0.01f;
         bool climbing = swimMode && isClimbing && climbSurfaceTeam == team && !atWallBase;
+        effectivelyClimbing = climbing;
         if (climbing)
         {
             // Reset any accumulated falling velocity on the first frame of wall contact.
@@ -213,6 +234,18 @@ public class PlayerController : MonoBehaviour
         float hSpeed = controller.isGrounded ? realSpeed : airSpeed;
         velocity = (transform.forward * currentDir.y + transform.right * currentDir.x) * hSpeed + Vector3.up * velocityY;
         controller.Move(velocity * Time.deltaTime);
+
+        // Spawn the ink-exit splash when transitioning out of own ink while swimming.
+        // The && swimMode guard prevents triggering when the player leaves swim mode while still on ink.
+        bool inOwnInkNow = swimMode && team != 0 && (surfaceTeam == team || (isClimbing && climbSurfaceTeam == team));
+        if (prevInOwnInk && !inOwnInkNow && swimMode && InkExitSplashPrefab != null && Time.time - lastExitSplatTime >= 0.2f)
+        {
+            lastExitSplatTime = Time.time;
+            Vector3 exitNormal = (isClimbing && climbSurfaceTeam == team) ? climbNormal : Vector3.up;
+            GameObject splash = Instantiate(InkExitSplashPrefab, transform.position + controller.center, Quaternion.FromToRotation(Vector3.up, exitNormal));
+            splash.GetComponent<InkEmitter>().Setup(team, 3, true);
+        }
+        prevInOwnInk = inOwnInkNow;
 
         if(transform.position.y < -10){
             Respawn();
@@ -252,7 +285,7 @@ public class PlayerController : MonoBehaviour
             moveDir  = new Vector2(currentDir.x, currentDir.y),
             team     = team,
             swimMode = swimMode,
-            climbing = swimMode && isClimbing && climbSurfaceTeam == team,
+            climbing = effectivelyClimbing,
             tick     = tick
         };
     }
@@ -268,7 +301,8 @@ public class PlayerController : MonoBehaviour
         currentDir   = s.moveDir;
         team         = s.team;
         swimMode     = s.swimMode;
-        isClimbing   = s.climbing;
+        isClimbing = s.climbing;
+        effectivelyClimbing = s.climbing;
         climbSurfaceTeam = s.climbing ? s.team : 0; // keep viewmodel "in own ink" logic happy
         // surfaceTeam is computed locally every frame by GetInkTeam (runs for remotes too).
 
@@ -291,34 +325,51 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    [SerializeField] float viewmodelSwitchSpeed = 12f;
+    
     void UpdateViewmodels()
     {
         if (ViewmodelPlayer == null || ViewmodelSquid == null) return;
-        bool inOwnInk = team != 0 && swimMode &&
-            (surfaceTeam == team || (isClimbing && climbSurfaceTeam == team) && !grounded);
 
-        Vector3 playerTarget = swimMode ? Vector3.zero : Vector3.one;
-        Vector3 squidTarget  = (swimMode && !inOwnInk) ? Vector3.one : Vector3.zero;
+        Vector3 playerTarget = swimMode ? new Vector3(1,0,1) : Vector3.one;
+        Vector3 squidTarget  = (swimMode && !IsInInk) ? Vector3.one : Vector3.zero;
 
-        ViewmodelPlayer.transform.localScale = Vector3.Lerp(
-            ViewmodelPlayer.transform.localScale, playerTarget, Time.deltaTime * viewmodelSwitchSpeed);
-        ViewmodelSquid.transform.localScale = Vector3.Lerp(
-            ViewmodelSquid.transform.localScale, squidTarget, Time.deltaTime * viewmodelSwitchSpeed);
+        ViewmodelPlayer.transform.localScale = Vector3.Lerp(ViewmodelPlayer.transform.localScale, playerTarget, Time.deltaTime * viewmodelSwitchSpeed);
+        ViewmodelSquid.transform.localScale  = Vector3.Lerp(ViewmodelSquid.transform.localScale,  squidTarget,  Time.deltaTime * viewmodelSwitchSpeed);
+
+        // Hide player model once fully flattened so it doesn't render at near-zero scale
+        ViewmodelPlayer.SetActive(ViewmodelPlayer.transform.localScale.y > 0.05f);
+
+        // Align squid viewmodel with movement direction (mirrors swim trail logic)
+        if (swimMode && currentDir.magnitude > 0.05f)
+        {
+            Vector3 moveDir, upHint;
+            if (effectivelyClimbing)
+            {
+                Vector3 wallRight = Vector3.Cross(Vector3.up, climbNormal).normalized;
+                Vector3 wallUp    = Vector3.Cross(climbNormal, wallRight).normalized;
+                moveDir = (wallUp * currentDir.y - wallRight * currentDir.x).normalized;
+                upHint  = climbNormal;
+            }
+            else
+            {
+                moveDir = (transform.forward * currentDir.y + transform.right * currentDir.x).normalized;
+                upHint  = Vector3.up;
+            }
+            if (moveDir.sqrMagnitude > 0.001f)
+                ViewmodelSquid.transform.rotation = Quaternion.LookRotation(moveDir, upHint);
+        }
     }
     void UpdateSquidTrail()
     {
         if (SquidTrail == null) return;
-
-        bool inOwnInk = team != 0 && (surfaceTeam == team || (isClimbing && climbSurfaceTeam == team));
         float moveMag = currentDir.magnitude;
-        bool show     = swimMode && inOwnInk && moveMag > 0.05f;
+        bool show     = swimMode && IsInInk && moveMag > 0.05f;
 
         SquidTrail.SetActive(show);
         if (!show) return;
 
         Vector3 moveDir, upHint;
-        if (isClimbing && climbSurfaceTeam == team)
+        if (effectivelyClimbing)
         {
             Vector3 wallRight = Vector3.Cross(Vector3.up, climbNormal).normalized;
             Vector3 wallUp    = Vector3.Cross(climbNormal, wallRight).normalized;
@@ -359,7 +410,7 @@ public class PlayerController : MonoBehaviour
 
     public bool ConsumeInk(float amount)
     {
-        if (inkLevel < amount || swimMode) return false;
+        if (inkLevel < amount || swimMode || ViewmodelPlayer.transform.localScale.y < 0.98f) return false;
         inkLevel -= amount;
         return true;
     }
@@ -394,7 +445,7 @@ public class PlayerController : MonoBehaviour
     }
 
     void Jump(){
-        if (grounded) { velocityY += jump * 2; }
+        if (grounded || IsInInk) { velocityY += jump * 2; }
     }
     void TestCheckScores(){
         FindFirstObjectByType<NetGameManager>().GetScores();

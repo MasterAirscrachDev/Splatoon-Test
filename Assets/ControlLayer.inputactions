@@ -1,4 +1,5 @@
 {
+    "version": 1,
     "name": "ControlLayer",
     "maps": [
         {
@@ -9,7 +10,7 @@
                     "name": "Attack",
                     "type": "Button",
                     "id": "fa90112e-e9a6-4dd4-9500-0ff27f20eca5",
-                    "expectedControlType": "Button",
+                    "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false
@@ -48,7 +49,7 @@
                     "name": "Squidmode",
                     "type": "Button",
                     "id": "e3a5f52f-b553-4487-98b5-4ca534a4e554",
-                    "expectedControlType": "Button",
+                    "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false
@@ -226,11 +227,39 @@
                 {
                     "name": "",
                     "id": "c21571a5-726e-46f6-944a-e5fa83dbfff7",
-                    "path": "<Keyboard>/g",
+                    "path": "<Keyboard>/f",
                     "interactions": "",
                     "processors": "",
                     "groups": "",
                     "action": "Debug",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                }
+            ]
+        },
+        {
+            "name": "GameControl",
+            "id": "e5f8077d-dcaf-4f17-8d4c-9e5ca4bed78f",
+            "actions": [
+                {
+                    "name": "GameStart",
+                    "type": "Button",
+                    "id": "fe321542-a039-48a6-9e4e-44e33a0929a4",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "",
+                    "id": "e4722abb-ed81-468f-86a5-cf8d80ed86af",
+                    "path": "<Keyboard>/g",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "GameStart",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

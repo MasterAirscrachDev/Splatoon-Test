@@ -96,7 +96,7 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
                     ""name"": ""Attack"",
                     ""type"": ""Button"",
                     ""id"": ""fa90112e-e9a6-4dd4-9500-0ff27f20eca5"",
-                    ""expectedControlType"": ""Button"",
+                    ""expectedControlType"": """",
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
@@ -135,7 +135,7 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
                     ""name"": ""Squidmode"",
                     ""type"": ""Button"",
                     ""id"": ""e3a5f52f-b553-4487-98b5-4ca534a4e554"",
-                    ""expectedControlType"": ""Button"",
+                    ""expectedControlType"": """",
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
@@ -313,11 +313,39 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
                 {
                     ""name"": """",
                     ""id"": ""c21571a5-726e-46f6-944a-e5fa83dbfff7"",
-                    ""path"": ""<Keyboard>/g"",
+                    ""path"": ""<Keyboard>/f"",
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
                     ""action"": ""Debug"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                }
+            ]
+        },
+        {
+            ""name"": ""GameControl"",
+            ""id"": ""e5f8077d-dcaf-4f17-8d4c-9e5ca4bed78f"",
+            ""actions"": [
+                {
+                    ""name"": ""GameStart"",
+                    ""type"": ""Button"",
+                    ""id"": ""fe321542-a039-48a6-9e4e-44e33a0929a4"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                }
+            ],
+            ""bindings"": [
+                {
+                    ""name"": """",
+                    ""id"": ""e4722abb-ed81-468f-86a5-cf8d80ed86af"",
+                    ""path"": ""<Keyboard>/g"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""GameStart"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 }
@@ -358,12 +386,16 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         m_Movement_Look = m_Movement.FindAction("Look", throwIfNotFound: true);
         m_Movement_Jump = m_Movement.FindAction("Jump", throwIfNotFound: true);
         m_Movement_Debug = m_Movement.FindAction("Debug", throwIfNotFound: true);
+        // GameControl
+        m_GameControl = asset.FindActionMap("GameControl", throwIfNotFound: true);
+        m_GameControl_GameStart = m_GameControl.FindAction("GameStart", throwIfNotFound: true);
     }
 
     ~@ControlLayer()
     {
         UnityEngine.Debug.Assert(!m_Weapon.enabled, "This will cause a leak and performance issues, ControlLayer.Weapon.Disable() has not been called.");
         UnityEngine.Debug.Assert(!m_Movement.enabled, "This will cause a leak and performance issues, ControlLayer.Movement.Disable() has not been called.");
+        UnityEngine.Debug.Assert(!m_GameControl.enabled, "This will cause a leak and performance issues, ControlLayer.GameControl.Disable() has not been called.");
     }
 
     /// <summary>
@@ -671,6 +703,102 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
     /// Provides a new <see cref="MovementActions" /> instance referencing this action map.
     /// </summary>
     public MovementActions @Movement => new MovementActions(this);
+
+    // GameControl
+    private readonly InputActionMap m_GameControl;
+    private List<IGameControlActions> m_GameControlActionsCallbackInterfaces = new List<IGameControlActions>();
+    private readonly InputAction m_GameControl_GameStart;
+    /// <summary>
+    /// Provides access to input actions defined in input action map "GameControl".
+    /// </summary>
+    public struct GameControlActions
+    {
+        private @ControlLayer m_Wrapper;
+
+        /// <summary>
+        /// Construct a new instance of the input action map wrapper class.
+        /// </summary>
+        public GameControlActions(@ControlLayer wrapper) { m_Wrapper = wrapper; }
+        /// <summary>
+        /// Provides access to the underlying input action "GameControl/GameStart".
+        /// </summary>
+        public InputAction @GameStart => m_Wrapper.m_GameControl_GameStart;
+        /// <summary>
+        /// Provides access to the underlying input action map instance.
+        /// </summary>
+        public InputActionMap Get() { return m_Wrapper.m_GameControl; }
+        /// <inheritdoc cref="UnityEngine.InputSystem.InputActionMap.Enable()" />
+        public void Enable() { Get().Enable(); }
+        /// <inheritdoc cref="UnityEngine.InputSystem.InputActionMap.Disable()" />
+        public void Disable() { Get().Disable(); }
+        /// <inheritdoc cref="UnityEngine.InputSystem.InputActionMap.enabled" />
+        public bool enabled => Get().enabled;
+        /// <summary>
+        /// Implicitly converts an <see ref="GameControlActions" /> to an <see ref="InputActionMap" /> instance.
+        /// </summary>
+        public static implicit operator InputActionMap(GameControlActions set) { return set.Get(); }
+        /// <summary>
+        /// Adds <see cref="InputAction.started"/>, <see cref="InputAction.performed"/> and <see cref="InputAction.canceled"/> callbacks provided via <param cref="instance" /> on all input actions contained in this map.
+        /// </summary>
+        /// <param name="instance">Callback instance.</param>
+        /// <remarks>
+        /// If <paramref name="instance" /> is <c>null</c> or <paramref name="instance"/> have already been added this method does nothing.
+        /// </remarks>
+        /// <seealso cref="GameControlActions" />
+        public void AddCallbacks(IGameControlActions instance)
+        {
+            if (instance == null || m_Wrapper.m_GameControlActionsCallbackInterfaces.Contains(instance)) return;
+            m_Wrapper.m_GameControlActionsCallbackInterfaces.Add(instance);
+            @GameStart.started += instance.OnGameStart;
+            @GameStart.performed += instance.OnGameStart;
+            @GameStart.canceled += instance.OnGameStart;
+        }
+
+        /// <summary>
+        /// Removes <see cref="InputAction.started"/>, <see cref="InputAction.performed"/> and <see cref="InputAction.canceled"/> callbacks provided via <param cref="instance" /> on all input actions contained in this map.
+        /// </summary>
+        /// <remarks>
+        /// Calling this method when <paramref name="instance" /> have not previously been registered has no side-effects.
+        /// </remarks>
+        /// <seealso cref="GameControlActions" />
+        private void UnregisterCallbacks(IGameControlActions instance)
+        {
+            @GameStart.started -= instance.OnGameStart;
+            @GameStart.performed -= instance.OnGameStart;
+            @GameStart.canceled -= instance.OnGameStart;
+        }
+
+        /// <summary>
+        /// Unregisters <param cref="instance" /> and unregisters all input action callbacks via <see cref="GameControlActions.UnregisterCallbacks(IGameControlActions)" />.
+        /// </summary>
+        /// <seealso cref="GameControlActions.UnregisterCallbacks(IGameControlActions)" />
+        public void RemoveCallbacks(IGameControlActions instance)
+        {
+            if (m_Wrapper.m_GameControlActionsCallbackInterfaces.Remove(instance))
+                UnregisterCallbacks(instance);
+        }
+
+        /// <summary>
+        /// Replaces all existing callback instances and previously registered input action callbacks associated with them with callbacks provided via <param cref="instance" />.
+        /// </summary>
+        /// <remarks>
+        /// If <paramref name="instance" /> is <c>null</c>, calling this method will only unregister all existing callbacks but not register any new callbacks.
+        /// </remarks>
+        /// <seealso cref="GameControlActions.AddCallbacks(IGameControlActions)" />
+        /// <seealso cref="GameControlActions.RemoveCallbacks(IGameControlActions)" />
+        /// <seealso cref="GameControlActions.UnregisterCallbacks(IGameControlActions)" />
+        public void SetCallbacks(IGameControlActions instance)
+        {
+            foreach (var item in m_Wrapper.m_GameControlActionsCallbackInterfaces)
+                UnregisterCallbacks(item);
+            m_Wrapper.m_GameControlActionsCallbackInterfaces.Clear();
+            AddCallbacks(instance);
+        }
+    }
+    /// <summary>
+    /// Provides a new <see cref="GameControlActions" /> instance referencing this action map.
+    /// </summary>
+    public GameControlActions @GameControl => new GameControlActions(this);
     private int m_MainSchemeIndex = -1;
     /// <summary>
     /// Provides access to the input control scheme.
@@ -741,5 +869,20 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnDebug(InputAction.CallbackContext context);
+    }
+    /// <summary>
+    /// Interface to implement callback methods for all input action callbacks associated with input actions defined by "GameControl" which allows adding and removing callbacks.
+    /// </summary>
+    /// <seealso cref="GameControlActions.AddCallbacks(IGameControlActions)" />
+    /// <seealso cref="GameControlActions.RemoveCallbacks(IGameControlActions)" />
+    public interface IGameControlActions
+    {
+        /// <summary>
+        /// Method invoked when associated input action "GameStart" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnGameStart(InputAction.CallbackContext context);
     }
 }

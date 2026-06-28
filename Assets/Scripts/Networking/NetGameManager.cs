@@ -9,9 +9,14 @@ using Steamworks;
 // objects must enqueue to mainThread and drain it in Update().
 public class NetGameManager : MonoBehaviour
 {
+    public static NetGameManager Instance { get; private set; }
+    public static PlayerController LocalPlayer { get; private set; }
+
     [Header("Spawning")]
     [SerializeField] GameObject playerEntityPrefab;
     [SerializeField] int maxPlayers = 8;
+    [SerializeField] bool devMode;
+    [SerializeField] bool autoLobby;
 
     [Header("Team Colours")]
     [SerializeField] Color alphaTeam = Color.cyan;
@@ -19,17 +24,21 @@ public class NetGameManager : MonoBehaviour
     public Color AlphaTeam => alphaTeam;
     public Color BetaTeam  => betaTeam;
 
+    const string LobbyTag = "TestSplatoongame";
+
     readonly Dictionary<ulong, PlayerController> players = new Dictionary<ulong, PlayerController>();
     readonly ConcurrentQueue<System.Action> mainThread = new ConcurrentQueue<System.Action>();
 
     SurfaceInkManager[] surfaceManagers;
     PlayerController localPlayer;
     ulong localId;
+    SteamNetwork steamNet;
+    ControlLayer input;
 
     void Awake()
     {
-        // Assign deterministic IDs to all inkable surfaces. All clients load the same scene
-        // so the sort order is identical everywhere.
+        Instance = this;
+
         var all = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None);
         System.Array.Sort(all, (a, b) =>
         {
@@ -41,6 +50,33 @@ public class NetGameManager : MonoBehaviour
         surfaceManagers = all;
         for (int i = 0; i < surfaceManagers.Length; i++)
             surfaceManagers[i].SurfaceId = i;
+
+        if (autoLobby && !devMode)
+        {
+            steamNet = FindFirstObjectByType<SteamNetwork>();
+            if (steamNet != null) steamNet.onSteamSetup += OnSteamReady;
+        }
+    }
+
+    void Start()
+    {
+        input = new ControlLayer();
+        input.Enable();
+        input.GameControl.GameStart.performed += _ => OnGameStart();
+
+        if (devMode)
+        {
+            localPlayer = InstantiateEntity(Vector3.zero, PlayerMode.Client, 1);
+            LocalPlayer = localPlayer;
+            players[localId] = localPlayer;
+        }
+    }
+
+    void OnDestroy()
+    {
+        if (Instance == this) { Instance = null; LocalPlayer = null; }
+        if (steamNet != null) steamNet.onSteamSetup -= OnSteamReady;
+        input?.Disable();
     }
 
     void OnEnable()
@@ -50,6 +86,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.Bind((ushort)NetMsg.PlayerDespawn, OnPlayerDespawnMsg);
         SteamGlobal.Bind((ushort)NetMsg.PlayerState,   OnPlayerStateMsg);
         SteamGlobal.Bind((ushort)NetMsg.Splat,         OnSplatMsg);
+        SteamGlobal.Bind((ushort)NetMsg.InkReset,      OnInkResetMsg);
         SurfaceInkManager.OnSplatApplied += OnLocalSplat;
     }
 
@@ -60,7 +97,31 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.UnBind((ushort)NetMsg.PlayerDespawn, OnPlayerDespawnMsg);
         SteamGlobal.UnBind((ushort)NetMsg.PlayerState,   OnPlayerStateMsg);
         SteamGlobal.UnBind((ushort)NetMsg.Splat,         OnSplatMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.InkReset,      OnInkResetMsg);
         SurfaceInkManager.OnSplatApplied -= OnLocalSplat;
+    }
+
+    // ── Auto-lobby ─────────────────────────────────────────────────────────
+    async void OnSteamReady(bool success)
+    {
+        if (!success) return;
+
+        var lobbies = await SteamGlobal.GetAllPublicLobbies(
+            distance: SteamLobbySearchDistance.Worldwide,
+            filters: new Dictionary<string, string> { { "game", LobbyTag } },
+            requireOpenSlots: 1);
+
+        if (lobbies != null && lobbies.Length > 0)
+        {
+            Debug.Log($"[AutoLobby] Joining existing lobby ({lobbies[0].Id})");
+            await SteamGlobal.JoinLobbyFromID(lobbies[0].Id);
+        }
+        else
+        {
+            Debug.Log("[AutoLobby] No lobby found — hosting");
+            await SteamGlobal.CreateLobby(maxPlayers, HostMode.Public,
+                new Dictionary<string, string> { { "game", LobbyTag } });
+        }
     }
 
     // ── Public lobby API (wire to UI buttons) ─────────────────────────────
@@ -100,9 +161,26 @@ public class NetGameManager : MonoBehaviour
         }
     }
 
+    // ── Game start / ink reset ─────────────────────────────────────────────
+    void OnGameStart()
+    {
+        if(!SteamGlobal.isHost){return;}
+        ClearAllInk();
+        if (!devMode)
+            SteamGlobal.SendAllData((ushort)NetMsg.InkReset,
+                new MatchEventData { phase = MatchPhase.Playing, serverTime = Time.time });
+    }
+
+    void ClearAllInk()
+    {
+        if (surfaceManagers == null) return;
+        foreach (var m in surfaceManagers) m.ClearInk();
+    }
+
     // ── Lobby lifecycle ────────────────────────────────────────────────────
     void HandleLobbyUpdate(LobbyData data)
     {
+        if (devMode) return;
         LobbyEvent ev = data.lobbyEvent;
         ulong who = data.dataUserID.Value;
         mainThread.Enqueue(() =>
@@ -129,10 +207,16 @@ public class NetGameManager : MonoBehaviour
         if (localPlayer != null) return;
         localId = SteamGlobal.steamID.Value;
 
-        int team = SteamGlobal.isHost ? 1 : 2;
-        Vector3 pos = PickSpawnPoint(team);
+        // Alternate teams by join order: even index → Alpha (1), odd → Beta (2)
+        int team = 1;
+        var members = SteamGlobal.GetLobbyPlayerInfo();
+        if (members != null)
+            for (int i = 0; i < members.Length; i++)
+                if (members[i].Item2 == localId) { team = (i % 2 == 0) ? 1 : 2; break; }
 
+        Vector3 pos = PickSpawnPoint(team);
         localPlayer = InstantiateEntity(pos, PlayerMode.Client, team);
+        LocalPlayer = localPlayer;
         players[localId] = localPlayer;
 
         SteamGlobal.SendAllData((ushort)NetMsg.PlayerSpawn, new PlayerSpawnData
@@ -149,7 +233,6 @@ public class NetGameManager : MonoBehaviour
         PlayerController pc = InstantiateEntity(d.position, PlayerMode.Network, d.team);
         players[d.steamId] = pc;
 
-        // Reply once so the newcomer learns about us.
         if (localPlayer != null)
             SteamGlobal.SendDirectData((ushort)NetMsg.PlayerSpawn, new PlayerSpawnData
             {
@@ -163,7 +246,7 @@ public class NetGameManager : MonoBehaviour
     PlayerController InstantiateEntity(Vector3 pos, PlayerMode mode, int team)
     {
         GameObject go = Instantiate(playerEntityPrefab, pos, Quaternion.identity);
-        PlayerController pc = go.GetComponent<PlayerController>();
+        PlayerController pc = go.transform.GetChild(0).GetComponent<PlayerController>();
         pc.SetPlayerMode(mode);
         pc.SetTeam(team);
         if (mode == PlayerMode.Network) DisableLocalOnlyComponents(go);
@@ -196,10 +279,10 @@ public class NetGameManager : MonoBehaviour
             if (kv.Value != null && kv.Key != localId) Destroy(kv.Value.gameObject);
         players.Clear();
         localPlayer = null;
+        LocalPlayer = null;
         localId = 0;
     }
 
-    // Returns a random spawn point Transform position for the given team using scene tags.
     static Vector3 PickSpawnPoint(int team)
     {
         string tag = team == 1 ? "AlphaSpawn" : "BetaSpawn";
@@ -209,13 +292,12 @@ public class NetGameManager : MonoBehaviour
     }
 
     // ── Main-thread drain ──────────────────────────────────────────────────
-    // State broadcast is now handled by each PlayerController on OnNetTick.
     void Update()
     {
         while (mainThread.TryDequeue(out var action)) action?.Invoke();
     }
 
-    // ── Message handlers (off main thread — only deserialise + enqueue) ───
+    // ── Message handlers ───────────────────────────────────────────────────
     void OnPlayerSpawnMsg(object data, SteamId from)
     {
         if (data is PlayerSpawnData d) mainThread.Enqueue(() => SpawnRemotePlayer(d));
@@ -237,14 +319,12 @@ public class NetGameManager : MonoBehaviour
             });
     }
 
-    // Called on main thread (C# event from Splat()). Relay to all remotes.
     void OnLocalSplat(SplatData data)
     {
         if (localPlayer == null) return;
         SteamGlobal.SendAllData((ushort)NetMsg.Splat, data);
     }
 
-    // Off main thread — only deserialise + enqueue.
     void OnSplatMsg(object data, SteamId from)
     {
         if (data is SplatData d)
@@ -254,5 +334,10 @@ public class NetGameManager : MonoBehaviour
                 if (surfaceManagers == null || d.surfaceId < 0 || d.surfaceId >= surfaceManagers.Length) return;
                 surfaceManagers[d.surfaceId].Splat(d.uv, d.splashSize, d.team, broadcast: false);
             });
+    }
+
+    void OnInkResetMsg(object data, SteamId from)
+    {
+        mainThread.Enqueue(ClearAllInk);
     }
 }
