@@ -12,6 +12,10 @@ public class InkEmitter : MonoBehaviour
         this.team = team;
         this.splashSize = splashSize;
         this.instaClear = instaClear;
+        if(instaClear)
+        {
+            Destroy(gameObject, 10f); //fail case
+        }
     }
 
     void OnTriggerStay(Collider other)

@@ -42,13 +42,16 @@ public class PlayerHitbox : MonoBehaviour
         capsule.height = squid ? swimHeight : standHeight;
         capsule.radius = squid ? swimRadius : standRadius;
         capsule.center = squid ? swimCenter : standCenter;
+        // Disabled while dead so a frozen, hidden body can't absorb hits. player.IsDead
+        // is network-replicated, so this also disables the collider on remote copies.
+        capsule.enabled = player == null || !player.IsDead;
     }
 
     // Returns true if this hit was lethal. Friendly fire is ignored (same team or no team).
     public bool TakeDamage(float amount, int fromTeam)
     {
         if (health <= 0f) return false;
-        if (player != null && fromTeam == player.Team) return false;
+        if (player != null && (fromTeam == player.Team || player.IsDead)) return false;
 
         health -= amount;
         if (health <= 0f)
@@ -65,8 +68,7 @@ public class PlayerHitbox : MonoBehaviour
 
     void Die()
     {
-        // Local death: respawn and refill. Networking will hook in here to broadcast death.
-        if (player != null) player.Respawn();
         ResetHealth();
+        if (player != null) player.OnDeath();
     }
 }

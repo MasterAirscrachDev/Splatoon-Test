@@ -7,6 +7,9 @@ public class SurfaceInkManager : MonoBehaviour
 {
     [SerializeField] float pixelsPerUnit = 32f;
     [SerializeField] float splatScale = 1.0f; // scale of the splat texture in world units
+    // Faces whose normal tilts more than this from world-up are treated as walls and
+    // excluded from the top-down score (floors and gentler slopes still count).
+    [SerializeField] float maxFloorAngle = 50f;
     public float PixelsPerUnit => pixelsPerUnit;
 
     // Assigned by NetGameManager at scene load. Identical on every client (all surfaces are scene-placed).
@@ -15,16 +18,20 @@ public class SurfaceInkManager : MonoBehaviour
     public static System.Action<SplatData> OnSplatApplied;
 
     int size;
-    int coveredPixelCount; // pixels inside the mesh's UV triangles — used for accurate scoring
+    int coveredPixelCount;    // pixels inside the mesh's UV triangles — used for accurate scoring
+    int topCoveredPixelCount; // subset of the above that lies on floor/slope faces
     NetGameManager gameManager;
     ComputeShader splatCompute;
     RenderTexture splatMapRenderTexture;
+    Texture2D topMaskTexture; // R8: 1 where a pixel maps to a floor/slope face, 0 for walls
 
     const int KernelSplat = 0;
     const int KernelGetScores = 1;
     const int KernelGetTeamAtPixel = 2;
+    const int KernelGetTopScores = 3;
 
     ComputeBuffer scoreBuffer;
+    ComputeBuffer topScoreBuffer;
     ComputeBuffer pixelTeamBuffer;
 
     int cachedSurfaceTeam = 0;
@@ -47,7 +54,7 @@ public class SurfaceInkManager : MonoBehaviour
             size = 256;
         }
 
-        coveredPixelCount = CalculateUVCoverage();
+        BuildCoverageMasks();
         InitializeSplatCompute();
         if (rend != null)
         {
@@ -65,22 +72,46 @@ public class SurfaceInkManager : MonoBehaviour
         return smr != null ? smr.sharedMesh : null;
     }
 
-    // Rasterises the mesh's UV triangles into a boolean mask to count how many texture
-    // pixels actually map to a surface. Pixels outside every triangle can never be painted
-    // and must not inflate the neutral (unpainted) score.
-    int CalculateUVCoverage()
+    // Rasterises the mesh's UV triangles into boolean masks. `covered` counts every pixel
+    // that maps to a surface (pixels outside all triangles can never be painted and must
+    // not inflate the neutral score). `topCov` is the subset lying on floor/slope faces —
+    // each triangle's world-space normal is classified against maxFloorAngle so the
+    // top-down score can exclude walls. The top mask is uploaded to the GPU as topMaskTexture.
+    void BuildCoverageMasks()
     {
         Mesh mesh = GetSharedMesh();
-        if (mesh == null) return size * size;
-        Vector2[] uvs = mesh.uv;
-        if (uvs == null || uvs.Length == 0) return size * size;
+        Vector2[] uvs = mesh != null ? mesh.uv : null;
+
+        // No usable UV data: classify the whole surface by its transform up-axis (all or nothing).
+        if (mesh == null || uvs == null || uvs.Length == 0)
+        {
+            coveredPixelCount = size * size;
+            bool topFacing = Vector3.Angle(transform.up, Vector3.up) <= maxFloorAngle;
+            topCoveredPixelCount = topFacing ? coveredPixelCount : 0;
+            CreateTopMask(topFacing ? (byte)255 : (byte)0);
+            return;
+        }
 
         int[] tris = mesh.triangles;
+        Vector3[] verts = mesh.vertices;
+        Vector3[] norms = (mesh.normals != null && mesh.normals.Length == verts.Length) ? mesh.normals : null;
+
         bool[] covered = new bool[size * size];
+        bool[] topCov  = new bool[size * size];
 
         for (int ti = 0; ti < tris.Length; ti += 3)
         {
-            Vector2 a = uvs[tris[ti]], b = uvs[tris[ti + 1]], c = uvs[tris[ti + 2]];
+            int i0 = tris[ti], i1 = tris[ti + 1], i2 = tris[ti + 2];
+            Vector2 a = uvs[i0], b = uvs[i1], c = uvs[i2];
+
+            // World-space face normal — prefer authored vertex normals (respect winding/intent),
+            // fall back to the geometric normal from world-space vertex positions.
+            Vector3 wn = norms != null
+                ? transform.TransformDirection(norms[i0] + norms[i1] + norms[i2]).normalized
+                : Vector3.Cross(
+                    transform.TransformPoint(verts[i1]) - transform.TransformPoint(verts[i0]),
+                    transform.TransformPoint(verts[i2]) - transform.TransformPoint(verts[i0])).normalized;
+            bool topFacing = Vector3.Angle(wn, Vector3.up) <= maxFloorAngle;
 
             int px0 = Mathf.Max(0,      Mathf.FloorToInt(Mathf.Min(Mathf.Min(a.x, b.x), c.x) * size));
             int px1 = Mathf.Min(size-1, Mathf.CeilToInt (Mathf.Max(Mathf.Max(a.x, b.x), c.x) * size));
@@ -91,17 +122,42 @@ public class SurfaceInkManager : MonoBehaviour
             for (int px = px0; px <= px1; px++)
             {
                 int idx = py * size + px;
-                if (covered[idx]) continue;
+                // Nothing left to learn about this pixel if it's covered and (already top, or this face isn't top).
+                if (covered[idx] && (topCov[idx] || !topFacing)) continue;
 
                 Vector2 p = new Vector2((px + 0.5f) / size, (py + 0.5f) / size);
                 if (PointInTriangle(p, a, b, c))
+                {
                     covered[idx] = true;
+                    if (topFacing) topCov[idx] = true;
+                }
             }
         }
 
-        int count = 0;
-        for (int i = 0; i < covered.Length; i++) if (covered[i]) count++;
-        return count;
+        int count = 0, topCount = 0;
+        byte[] mask = new byte[size * size];
+        for (int i = 0; i < covered.Length; i++)
+        {
+            if (covered[i]) count++;
+            if (topCov[i]) { topCount++; mask[i] = 255; }
+        }
+        coveredPixelCount = count;
+        topCoveredPixelCount = topCount;
+        CreateTopMask(mask);
+    }
+
+    void CreateTopMask(byte fill)
+    {
+        byte[] data = new byte[size * size];
+        if (fill != 0) for (int i = 0; i < data.Length; i++) data[i] = fill;
+        CreateTopMask(data);
+    }
+
+    void CreateTopMask(byte[] data)
+    {
+        topMaskTexture = new Texture2D(size, size, TextureFormat.R8, false) { filterMode = FilterMode.Point };
+        topMaskTexture.SetPixelData(data, 0);
+        topMaskTexture.Apply(false, true); // upload and free the CPU copy
     }
 
     static bool PointInTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
@@ -122,11 +178,14 @@ public class SurfaceInkManager : MonoBehaviour
         splatMapRenderTexture.Create();
 
         scoreBuffer = new ComputeBuffer(3, sizeof(int));
+        topScoreBuffer = new ComputeBuffer(3, sizeof(int));
         pixelTeamBuffer = new ComputeBuffer(1, sizeof(int));
 
         splatCompute.SetTexture(KernelSplat,          "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(KernelGetScores,       "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(KernelGetTeamAtPixel,  "InkTexture", splatMapRenderTexture);
+        splatCompute.SetTexture(KernelGetTopScores,    "InkTexture", splatMapRenderTexture);
+        splatCompute.SetTexture(KernelGetTopScores,    "TopMask",    topMaskTexture);
 
         splatCompute.SetBuffer(KernelSplat,           "TeamScores",  scoreBuffer);
         splatCompute.SetBuffer(KernelSplat,           "PixelTeam",   pixelTeamBuffer);
@@ -134,6 +193,7 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetBuffer(KernelGetScores,        "PixelTeam",   pixelTeamBuffer);
         splatCompute.SetBuffer(KernelGetTeamAtPixel,   "TeamScores",  scoreBuffer);
         splatCompute.SetBuffer(KernelGetTeamAtPixel,   "PixelTeam",   pixelTeamBuffer);
+        splatCompute.SetBuffer(KernelGetTopScores,     "TeamScores",  topScoreBuffer);
 
         Vector4 alphaTeam = new Vector4(gameManager.AlphaTeam.r, gameManager.AlphaTeam.g, gameManager.AlphaTeam.b, gameManager.AlphaTeam.a);
         Vector4 betaTeam  = new Vector4(gameManager.BetaTeam.r,  gameManager.BetaTeam.g,  gameManager.BetaTeam.b,  gameManager.BetaTeam.a);
@@ -188,6 +248,25 @@ public class SurfaceInkManager : MonoBehaviour
         });
     }
 
+    // Like CheckScoresAsync but only tallies floor/slope pixels (walls excluded via the
+    // top mask). Uses a dedicated score buffer so it can run alongside a full-score pass.
+    public void CheckTopScoresAsync(System.Action<Vector3Int> callback)
+    {
+        topScoreBuffer.SetData(new int[] { 0, 0, 0 });
+        splatCompute.SetTexture(KernelGetTopScores, "InkTexture", splatMapRenderTexture);
+        splatCompute.SetTexture(KernelGetTopScores, "TopMask", topMaskTexture);
+        splatCompute.SetBuffer(KernelGetTopScores, "TeamScores", topScoreBuffer);
+        splatCompute.Dispatch(KernelGetTopScores, size / 8, size / 8, 1);
+
+        AsyncGPUReadback.Request(topScoreBuffer, request =>
+        {
+            if (request.hasError) return;
+            var data = request.GetData<int>();
+            int neutral = Mathf.Max(0, topCoveredPixelCount - data[0] - data[1]);
+            callback(new Vector3Int(data[0], data[1], neutral));
+        });
+    }
+
     public int getSurfaceTeam(Vector2 texCoords)
     {
         if (!teamReadbackPending)
@@ -213,6 +292,8 @@ public class SurfaceInkManager : MonoBehaviour
     void OnDestroy()
     {
         scoreBuffer?.Release();
+        topScoreBuffer?.Release();
         pixelTeamBuffer?.Release();
+        if (topMaskTexture != null) Destroy(topMaskTexture);
     }
 }

@@ -40,13 +40,8 @@ public class NetGameManager : MonoBehaviour
         Instance = this;
 
         var all = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None);
-        System.Array.Sort(all, (a, b) =>
-        {
-            Vector3 pa = a.transform.position, pb = b.transform.position;
-            int cx = pa.x.CompareTo(pb.x); if (cx != 0) return cx;
-            int cy = pa.y.CompareTo(pb.y); if (cy != 0) return cy;
-            return pa.z.CompareTo(pb.z);
-        });
+        // Sort by scene hierarchy path (string) — deterministic across clients, no float ambiguity.
+        System.Array.Sort(all, (a, b) => HierarchyPath(a.transform).CompareTo(HierarchyPath(b.transform)));
         surfaceManagers = all;
         for (int i = 0; i < surfaceManagers.Length; i++)
             surfaceManagers[i].SurfaceId = i;
@@ -87,6 +82,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.Bind((ushort)NetMsg.PlayerState,   OnPlayerStateMsg);
         SteamGlobal.Bind((ushort)NetMsg.Splat,         OnSplatMsg);
         SteamGlobal.Bind((ushort)NetMsg.InkReset,      OnInkResetMsg);
+        SteamGlobal.Bind((ushort)NetMsg.Teleport,      OnTeleportMsg);
         SurfaceInkManager.OnSplatApplied += OnLocalSplat;
     }
 
@@ -98,6 +94,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.UnBind((ushort)NetMsg.PlayerState,   OnPlayerStateMsg);
         SteamGlobal.UnBind((ushort)NetMsg.Splat,         OnSplatMsg);
         SteamGlobal.UnBind((ushort)NetMsg.InkReset,      OnInkResetMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.Teleport,      OnTeleportMsg);
         SurfaceInkManager.OnSplatApplied -= OnLocalSplat;
     }
 
@@ -138,26 +135,35 @@ public class NetGameManager : MonoBehaviour
     }
 
     // ── Scoring ────────────────────────────────────────────────────────────
-    public void GetScores()
+    // Full turf coverage across every inkable face (walls included).
+    public void GetScores() => AccumulateScores(false);
+    // Classic top-down coverage — floors and slopes only, walls excluded.
+    public void GetTopDownScores() => AccumulateScores(true);
+
+    void AccumulateScores(bool topDownOnly)
     {
         SurfaceInkManager[] managers = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None);
         if (managers.Length == 0) return;
 
         int pending = managers.Length;
         Vector3Int total = Vector3Int.zero;
+        System.Action<Vector3Int> onSurface = scores =>
+        {
+            total += scores;
+            pending--;
+            if (pending == 0)
+            {
+                float t = total.x + total.y + total.z;
+                if (t <= 0) return;
+                string label = topDownOnly ? "[Top-down] " : "[Full] ";
+                Debug.Log($"{label}Alpha: {total.x / t * 100:f2}%  Beta: {total.y / t * 100:f2}%  Neutral: {total.z / t * 100:f2}%");
+            }
+        };
+
         foreach (var mgr in managers)
         {
-            mgr.CheckScoresAsync(scores =>
-            {
-                total += scores;
-                pending--;
-                if (pending == 0)
-                {
-                    float t = total.x + total.y + total.z;
-                    if (t <= 0) return;
-                    Debug.Log($"Alpha: {total.x / t * 100:f2}%  Beta: {total.y / t * 100:f2}%  Neutral: {total.z / t * 100:f2}%");
-                }
-            });
+            if (topDownOnly) mgr.CheckTopScoresAsync(onSurface);
+            else             mgr.CheckScoresAsync(onSurface);
         }
     }
 
@@ -261,6 +267,18 @@ public class NetGameManager : MonoBehaviour
         foreach (var ca  in go.GetComponentsInChildren<CameraAim>(true))       ca.enabled  = false;
         foreach (var wca in go.GetComponentsInChildren<WeaponCameraAim>(true)) wca.enabled = false;
         foreach (var ui  in go.GetComponentsInChildren<UIController>(true))    ui.enabled  = false;
+        // Remote entity InkEmitters must be off: their physics position lags the real player, so
+        // local trigger contacts can hit a different surface and would broadcast an incorrect splat.
+        // Swim ink for remote players arrives via the local player's own OnSplatApplied broadcasts.
+        foreach (var ie  in go.GetComponentsInChildren<InkEmitter>(true))      ie.enabled  = false;
+    }
+
+    static string HierarchyPath(Transform t)
+    {
+        string path = t.name;
+        Transform cur = t.parent;
+        while (cur != null) { path = cur.name + "/" + path; cur = cur.parent; }
+        return path;
     }
 
     void DespawnPlayer(ulong steamId)
@@ -316,6 +334,17 @@ public class NetGameManager : MonoBehaviour
                 if (s.steamId == localId) return;
                 if (players.TryGetValue(s.steamId, out var pc) && pc != null)
                     pc.ApplyNetState(s);
+            });
+    }
+
+    void OnTeleportMsg(object data, SteamId from)
+    {
+        if (data is TeleportData d)
+            mainThread.Enqueue(() =>
+            {
+                if (d.steamId == localId) return;
+                if (players.TryGetValue(d.steamId, out var pc) && pc != null)
+                    pc.ApplyTeleport(d.position, d.bodyYaw);
             });
     }
 

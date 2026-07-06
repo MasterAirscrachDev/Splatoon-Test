@@ -47,7 +47,8 @@ public enum NetMsg : ushort
     ProjectileSpawn, // spawn a visual-only projectile on remote clients
     Damage,          // a player took damage / died
     MatchEvent,      // match phase changes (start / end / reset)
-    InkReset         // clear all ink surfaces before a match
+    InkReset,        // clear all ink surfaces before a match
+    Teleport         // instant reposition (respawn) — bypasses PlayerState interpolation
 }
 
 // ── Per-player networked state (owning client broadcasts every send tick) ──
@@ -62,6 +63,7 @@ public class PlayerStateData
     public int team;
     public bool swimMode;
     public bool climbing;
+    public bool dead;
     public uint tick;
 }
 
@@ -84,6 +86,16 @@ public class SplatData
     public NVector2 uv;
     public int splashSize;
     public int team;
+}
+
+// ── Instant reposition (respawn). Skips PlayerState interpolation so the
+//    remote copy snaps instead of sliding across the level. ─────────────────
+[System.Serializable]
+public class TeleportData
+{
+    public ulong steamId;
+    public NVector3 position;
+    public float bodyYaw;
 }
 
 // ── Visual-only projectile spawn for remote clients ───────────────────────

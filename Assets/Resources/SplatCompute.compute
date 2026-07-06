@@ -1,8 +1,10 @@
 #pragma kernel Splat
 #pragma kernel GetScores
 #pragma kernel GetTeamAtPixel
+#pragma kernel GetTopScores
 
 RWTexture2D<float4> InkTexture;
+Texture2D<float> TopMask;   // 1 = pixel belongs to a floor/slope face, 0 = wall (used by GetTopScores)
 float4 AlphaColor;
 float4 BetaColor;
 float4 NoColor;
@@ -83,6 +85,20 @@ void GetScores(uint3 id : SV_DispatchThreadID) {
         InterlockedAdd(TeamScores[1], 1);
     } else {
         InterlockedAdd(TeamScores[2], 1);
+    }
+}
+
+// Same as GetScores but skips pixels whose face is too steep (walls), so the tally
+// reflects only floors and slopes — the classic top-down turf count. Neutral is
+// derived on the CPU from the precomputed top-facing coverage count.
+[numthreads(8,8,1)]
+void GetTopScores(uint3 id : SV_DispatchThreadID) {
+    if (TopMask.Load(int3(id.x, id.y, 0)) < 0.5) return;
+    float4 color = InkTexture[int2(id.x, id.y)];
+    if (ColorNear(color, AlphaColor)) {
+        InterlockedAdd(TeamScores[0], 1);
+    } else if (ColorNear(color, BetaColor)) {
+        InterlockedAdd(TeamScores[1], 1);
     }
 }
 

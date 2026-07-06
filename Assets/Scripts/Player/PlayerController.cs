@@ -30,9 +30,11 @@ public class PlayerController : MonoBehaviour
     public bool IsLocalPlayer => playerMode == PlayerMode.Client;
     int surfaceTeam = 0;
     bool swimMode;
+    bool isDead;
     float inkLevel = 1f;
     public float InkLevel => inkLevel;
     public bool IsSquid => swimMode;
+    public bool IsDead => isDead;
     public bool IsInInk => swimMode && (surfaceTeam == team || (isClimbing && climbSurfaceTeam == team));
     float realSpeed, airSpeed, cameraPitch = 0.0f, velocityY = 0.0f;
     CharacterController controller = null;
@@ -163,6 +165,7 @@ public class PlayerController : MonoBehaviour
     void UpdateMovement()
     {
         if (playerMode != PlayerMode.Client) return;
+        if (isDead) return;
         if(input.Movement.Squidmode.ReadValue<float>() != 0){
             swimMode = true;
             controller.height = 0.1f;
@@ -254,18 +257,73 @@ public class PlayerController : MonoBehaviour
 
     [Header("Respawn")]
     [SerializeField] Vector3 spawnPoint = new Vector3(0, 3, 0); // fallback if no tagged spawn exists
+
+    void HideModels()
+    {
+        if (ViewmodelPlayer != null) ViewmodelPlayer.SetActive(false);
+        if (ViewmodelSquid  != null) ViewmodelSquid.SetActive(false);
+        if (SquidTrail      != null) SquidTrail.SetActive(false);
+    }
+
+    void ShowModels()
+    {
+        if (ViewmodelPlayer != null) ViewmodelPlayer.SetActive(true);
+        if (ViewmodelSquid  != null) ViewmodelSquid.SetActive(true);
+    }
+
+    public void OnDeath()
+    {
+        if (isDead || playerMode != PlayerMode.Client) return;
+        isDead   = true;
+        swimMode = true;
+        velocity = Vector3.zero;
+        velocityY = 0f;
+        HideModels();
+        StartCoroutine(RespawnAfterDelay(5f));
+    }
+
+    System.Collections.IEnumerator RespawnAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        Respawn();
+    }
+
     public void Respawn()
     {
         controller.enabled = false;
         string tag = team == 1 ? "AlphaSpawn" : "BetaSpawn";
         GameObject[] pts = GameObject.FindGameObjectsWithTag(tag);
-        transform.position = pts.Length > 0
+        Vector3 pos = pts.Length > 0
             ? pts[Random.Range(0, pts.Length)].transform.position
             : spawnPoint;
+        transform.position = pos;
         controller.enabled = true;
-        velocityY = 0f;
+        velocityY  = 0f;
+        velocity   = Vector3.zero;
         isClimbing = false;
         wasClimbing = false;
+        isDead     = false;
+        swimMode   = false;
+        ShowModels();
+
+        if (playerMode == PlayerMode.Client)
+            SteamGlobal.SendAllData((ushort)NetMsg.Teleport, new TeleportData
+            {
+                steamId  = localSteamId,
+                position = pos,
+                bodyYaw  = transform.eulerAngles.y
+            });
+    }
+
+    // Applied to a remote (Network mode) copy on receipt of a Teleport message.
+    // Bypasses the usual position lerp so respawns snap instantly instead of sliding.
+    public void ApplyTeleport(Vector3 pos, float yaw)
+    {
+        if (playerMode != PlayerMode.Network) return;
+        netTargetPos = pos;
+        netTargetYaw = yaw;
+        transform.position = pos;
+        transform.rotation = Quaternion.Euler(0f, yaw, 0f);
     }
 
     // ── Networking API ─────────────────────────────────────────────────────
@@ -286,6 +344,7 @@ public class PlayerController : MonoBehaviour
             team     = team,
             swimMode = swimMode,
             climbing = effectivelyClimbing,
+            dead     = isDead,
             tick     = tick
         };
     }
@@ -305,6 +364,12 @@ public class PlayerController : MonoBehaviour
         effectivelyClimbing = s.climbing;
         climbSurfaceTeam = s.climbing ? s.team : 0; // keep viewmodel "in own ink" logic happy
         // surfaceTeam is computed locally every frame by GetInkTeam (runs for remotes too).
+
+        if (s.dead != isDead)
+        {
+            isDead = s.dead;
+            if (isDead) HideModels(); else ShowModels();
+        }
 
         // Match the controller capsule to the form so viewmodels/visuals scale correctly.
         if (controller != null)
@@ -328,6 +393,7 @@ public class PlayerController : MonoBehaviour
     
     void UpdateViewmodels()
     {
+        if (isDead) return;
         if (ViewmodelPlayer == null || ViewmodelSquid == null) return;
 
         Vector3 playerTarget = swimMode ? new Vector3(1,0,1) : Vector3.one;
@@ -361,7 +427,7 @@ public class PlayerController : MonoBehaviour
     }
     void UpdateSquidTrail()
     {
-        if (SquidTrail == null) return;
+        if (isDead || SquidTrail == null) return;
         float moveMag = currentDir.magnitude;
         bool show     = swimMode && IsInInk && moveMag > 0.05f;
 
@@ -448,7 +514,9 @@ public class PlayerController : MonoBehaviour
         if (grounded || IsInInk) { velocityY += jump * 2; }
     }
     void TestCheckScores(){
-        FindFirstObjectByType<NetGameManager>().GetScores();
+        NetGameManager gm = FindFirstObjectByType<NetGameManager>();
+        gm.GetScores();
+        gm.GetTopDownScores();
     }
     void GetInkTeam(){
         RaycastHit inkHit;
