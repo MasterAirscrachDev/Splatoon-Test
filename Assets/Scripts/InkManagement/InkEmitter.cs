@@ -14,7 +14,7 @@ public class InkEmitter : MonoBehaviour
         this.instaClear = instaClear;
         if(instaClear)
         {
-            Destroy(gameObject, 10f); //fail case
+            Destroy(gameObject, 2f); //fail case
         }
     }
 

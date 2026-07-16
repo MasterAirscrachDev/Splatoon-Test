@@ -2,9 +2,14 @@
 #pragma kernel GetScores
 #pragma kernel GetTeamAtPixel
 #pragma kernel GetTopScores
+#pragma kernel ComputeNormals
 
 RWTexture2D<float4> InkTexture;
+RWTexture2D<float4> NormalTexture;   // runtime ink normal map (RGB-encoded), written by ComputeNormals
 Texture2D<float> TopMask;   // 1 = pixel belongs to a floor/slope face, 0 = wall (used by GetTopScores)
+float NormalStrength;       // slope of the ink rim — higher = more pronounced bump
+float NoiseStrength;        // amplitude of the surface noise that breaks up flat ink tops
+float NoiseScale;           // frequency of that noise (in noise-cells per texel)
 float4 AlphaColor;
 float4 BetaColor;
 float4 NoColor;
@@ -16,9 +21,13 @@ int SplashSize;
 RWStructuredBuffer<int> TeamScores;
 RWStructuredBuffer<int> PixelTeam;
 
+// High-quality, precision-robust hash (Dave Hoskins). The previous frac(dot(p,p+k))
+// hash had strong diagonal correlation and broke down at large coordinates, producing
+// structured, glyph-like ("hieroglyphic") artifacts once sampled at fine noise scales.
 float hash21(float2 p) {
-    p = frac(p * float2(127.1, 311.7));
-    return frac(dot(p, p + 19.19));
+    float3 p3 = frac(float3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return frac((p3.x + p3.y) * p3.z);
 }
 
 // Bilinearly interpolated value noise — smooth blobs instead of per-pixel speckle
@@ -57,9 +66,14 @@ float4 GetColor(int2 PixCoords, int3 id, int radius, float4 old) {
 
     float dist = length(float2(dx - wx, dy - wy));
 
-    // SDF AA: smooth 3-pixel feather centred on the warped edge.
-    // Because shape and AA come from the same SDF, they can't conflict.
-    float alpha = 1.0 - smoothstep(-1.5, 1.5, dist - r);
+    // SDF AA: feather width is a fraction of the splat's own texel radius (clamped to a
+    // sane range) rather than a fixed pixel count. A fixed-texel feather would be a huge
+    // fraction of a small splat (mushy, no flat interior) and a sliver on a large one
+    // (razor edge) — worse, since `r` already bakes in each surface's splatScale, a fixed
+    // feather also made edge sharpness inconsistent across differently-configured surfaces.
+    // Tying it to r keeps edge softness proportional everywhere.
+    float featherHalfWidth = clamp(r * 0.5, 1.0, 4.0);
+    float alpha = 1.0 - smoothstep(-featherHalfWidth, featherHalfWidth, dist - r);
     if (alpha < 0.01) return old;
 
     float4 color = (Team == 1) ? AlphaColor : BetaColor;
@@ -100,6 +114,34 @@ void GetTopScores(uint3 id : SV_DispatchThreadID) {
     } else if (ColorNear(color, BetaColor)) {
         InterlockedAdd(TeamScores[1], 1);
     }
+}
+
+// Ink height at a texel: coverage (alpha) as the base, perturbed by value noise so
+// solid interiors aren't perfectly flat. Noise is scaled by alpha so it only rides on
+// inked pixels and is centred on zero so it perturbs the surface without inflating it.
+float InkHeight(int2 c) {
+    float a = InkTexture[c].a;
+    float n = valueNoise(float2(c.x, c.y) * NoiseScale) - 0.5;
+    return a * (1.0 + n * NoiseStrength);
+}
+
+// Derives a tangent-space normal map from the ink height field. Central differences over
+// neighbouring texels give the gradient, so ink edges become a raised rim and the noise
+// breaks up the tops, while unpainted regions stay flat (0,0,1).
+// Output is plain RGB-encoded (xyz*0.5+0.5); the surface shader decodes it directly.
+[numthreads(8,8,1)]
+void ComputeNormals(uint3 id : SV_DispatchThreadID) {
+    int x = (int)id.x, y = (int)id.y;
+    int xl = max(x - 1, 0), xr = min(x + 1, Size - 1);
+    int yd = max(y - 1, 0), yu = min(y + 1, Size - 1);
+
+    float hl = InkHeight(int2(xl, y));
+    float hr = InkHeight(int2(xr, y));
+    float hd = InkHeight(int2(x, yd));
+    float hu = InkHeight(int2(x, yu));
+
+    float3 n = normalize(float3((hl - hr) * NormalStrength, (hd - hu) * NormalStrength, 1.0));
+    NormalTexture[int2(x, y)] = float4(n * 0.5 + 0.5, 1.0);
 }
 
 // Single-thread kernel: reads one pixel and writes team id (0/1/2) to PixelTeam[0]

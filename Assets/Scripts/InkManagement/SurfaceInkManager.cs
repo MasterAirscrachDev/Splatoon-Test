@@ -10,6 +10,20 @@ public class SurfaceInkManager : MonoBehaviour
     // Faces whose normal tilts more than this from world-up are treated as walls and
     // excluded from the top-down score (floors and gentler slopes still count).
     [SerializeField] float maxFloorAngle = 50f;
+    // Intensity of the raised ink rim derived from splat coverage. 0 disables the dynamic normal map.
+    // Tuned/tested at the default pixelsPerUnit (see ReferencePixelsPerUnit below).
+    float inkNormalStrength = 0.5f;
+    // The gradient in ComputeNormals is computed per-texel, but a texel covers a different
+    // world distance on every surface (1 / pixelsPerUnit). Left uncorrected, the same
+    // inkNormalStrength produces a visibly different bump slope on a fine-texel surface than
+    // a coarse one. RegenerateNormals compensates by this ratio; at pixelsPerUnit == this
+    // reference value the correction is 1 (matches the already-tuned default look).
+    const float ReferencePixelsPerUnit = 32f;
+    // Surface noise mixed into the ink height so splat tops aren't perfectly flat.
+    // Derived from splatScale (see CalculateNoiseScale) so bump grain stays proportional
+    // to splat size across surfaces without per-object tuning. Calibrated against
+    // splatScale 5 -> 0.025 and splatScale 1.5 -> 0.05; not valid far outside that range.
+    float inkNoiseScale;
     public float PixelsPerUnit => pixelsPerUnit;
 
     // Assigned by NetGameManager at scene load. Identical on every client (all surfaces are scene-placed).
@@ -23,12 +37,15 @@ public class SurfaceInkManager : MonoBehaviour
     NetGameManager gameManager;
     ComputeShader splatCompute;
     RenderTexture splatMapRenderTexture;
+    RenderTexture normalMapRenderTexture; // dynamic ink normal map, regenerated when splats change
     Texture2D topMaskTexture; // R8: 1 where a pixel maps to a floor/slope face, 0 for walls
+    bool normalsDirty;
 
     const int KernelSplat = 0;
     const int KernelGetScores = 1;
     const int KernelGetTeamAtPixel = 2;
     const int KernelGetTopScores = 3;
+    const int KernelComputeNormals = 4;
 
     ComputeBuffer scoreBuffer;
     ComputeBuffer topScoreBuffer;
@@ -54,14 +71,46 @@ public class SurfaceInkManager : MonoBehaviour
             size = 256;
         }
 
+        inkNoiseScale = CalculateNoiseScale(splatScale);
         BuildCoverageMasks();
         InitializeSplatCompute();
         if (rend != null)
         {
             rend.material.mainTexture = splatMapRenderTexture;
-            // Tile detail normal at ink-pixel density: pixelsPerUnit tiles per world unit
-            rend.material.SetTextureScale("_DetailNormalMap", new Vector2(pixelsPerUnit / 16, pixelsPerUnit / 16));
+            rend.material.SetTexture("_BumpMap", normalMapRenderTexture);
         }
+    }
+
+    // Coalesces every splat in a frame into a single normal-map regeneration pass.
+    void Update()
+    {
+        if (!normalsDirty) return;
+        normalsDirty = false;
+        RegenerateNormals();
+    }
+
+    // Linear fit through (splatScale 5 -> noiseScale 0.025) and (splatScale 1.5 -> noiseScale 0.05),
+    // so bump grain size stays visually consistent across surfaces of differing splat scale.
+    static float CalculateNoiseScale(float splatScale)
+    {
+        const float x1 = 5f,   y1 = 0.025f;
+        const float x2 = 1.5f, y2 = 0.05f;
+        const float slope = (y2 - y1) / (x2 - x1);
+        const float intercept = y1 - slope * x1;
+        return intercept + slope * splatScale;
+    }
+
+    void RegenerateNormals()
+    {
+        if (inkNormalStrength <= 0f) return;
+        // Re-set each pass so inspector tweaks take effect live during play.
+        float worldScale = pixelsPerUnit / ReferencePixelsPerUnit;
+        splatCompute.SetFloat("NormalStrength", inkNormalStrength * worldScale);
+        splatCompute.SetFloat("NoiseStrength", 1); //tested as good
+        splatCompute.SetFloat("NoiseScale", inkNoiseScale);
+        splatCompute.SetTexture(KernelComputeNormals, "InkTexture", splatMapRenderTexture);
+        splatCompute.SetTexture(KernelComputeNormals, "NormalTexture", normalMapRenderTexture);
+        splatCompute.Dispatch(KernelComputeNormals, size / 8, size / 8, 1);
     }
 
     Mesh GetSharedMesh()
@@ -177,6 +226,11 @@ public class SurfaceInkManager : MonoBehaviour
         splatMapRenderTexture.filterMode = FilterMode.Bilinear;
         splatMapRenderTexture.Create();
 
+        normalMapRenderTexture = new RenderTexture(size, size, 0, RenderTextureFormat.ARGB32);
+        normalMapRenderTexture.enableRandomWrite = true;
+        normalMapRenderTexture.filterMode = FilterMode.Bilinear;
+        normalMapRenderTexture.Create();
+
         scoreBuffer = new ComputeBuffer(3, sizeof(int));
         topScoreBuffer = new ComputeBuffer(3, sizeof(int));
         pixelTeamBuffer = new ComputeBuffer(1, sizeof(int));
@@ -186,6 +240,8 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetTexture(KernelGetTeamAtPixel,  "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(KernelGetTopScores,    "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(KernelGetTopScores,    "TopMask",    topMaskTexture);
+        splatCompute.SetTexture(KernelComputeNormals,  "InkTexture",    splatMapRenderTexture);
+        splatCompute.SetTexture(KernelComputeNormals,  "NormalTexture", normalMapRenderTexture);
 
         splatCompute.SetBuffer(KernelSplat,           "TeamScores",  scoreBuffer);
         splatCompute.SetBuffer(KernelSplat,           "PixelTeam",   pixelTeamBuffer);
@@ -205,7 +261,9 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetInts("TeamQueryCoords", new int[2] { 0, 0 });
         splatCompute.SetInt("SplashSize", 0);
         splatCompute.SetInt("Team", 1);
+        splatCompute.SetFloat("NormalStrength", inkNormalStrength);
         splatCompute.Dispatch(KernelSplat, size / 8, size / 8, 1);
+        RegenerateNormals(); // prime the normal map to flat (matches the cleared ink)
     }
 
     public void Splat(Vector2 texCoords, int splashSize, int team, bool broadcast = true)
@@ -218,6 +276,7 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetInt("SplashSize", Mathf.RoundToInt(splashSize * splatScale));
         splatCompute.SetInt("Team", team);
         splatCompute.Dispatch(KernelSplat, size / 8, size / 8, 1);
+        normalsDirty = true;
         if (broadcast)
             OnSplatApplied?.Invoke(new SplatData { surfaceId = SurfaceId, uv = texCoords, splashSize = splashSize, team = team });
     }
@@ -228,6 +287,7 @@ public class SurfaceInkManager : MonoBehaviour
         RenderTexture.active = splatMapRenderTexture;
         GL.Clear(false, true, Color.clear);
         RenderTexture.active = prev;
+        normalsDirty = true; // rebuild the (now flat) normal map next frame
     }
 
     public void CheckScoresAsync(System.Action<Vector3Int> callback)
@@ -295,5 +355,6 @@ public class SurfaceInkManager : MonoBehaviour
         topScoreBuffer?.Release();
         pixelTeamBuffer?.Release();
         if (topMaskTexture != null) Destroy(topMaskTexture);
+        if (normalMapRenderTexture != null) normalMapRenderTexture.Release();
     }
 }

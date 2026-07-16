@@ -8,9 +8,6 @@ Shader "Ink/InkSurface"
         _Smoothness  ("Smoothness",            Range(0,1))  = 0.4
         _AlphaCutoff ("Alpha Cutoff",          Range(0,1))  = 0.1
 
-        [Header(Detail)]
-        _DetailNormalMap ("Detail Normal Map", 2D)          = "bump"  {}
-
         [Header(Underlay Layer)]
         [Toggle(_UNDERLAY_ON)] _UnderlayToggle ("Use Underlay (ignores Alpha Cutoff)", Float) = 0
         _UnderlayTex    ("Underlay Albedo",    2D)          = "white" {}
@@ -33,7 +30,6 @@ Shader "Ink/InkSurface"
 
         sampler2D _MainTex;
         sampler2D _BumpMap;
-        sampler2D _DetailNormalMap;
         sampler2D _UnderlayTex;
         sampler2D _UnderlayBump;
         half _Smoothness;
@@ -43,17 +39,14 @@ Shader "Ink/InkSurface"
         {
             float2 uv_MainTex;
             float2 uv_UnderlayTex;
-            // uv_DetailNormalMap is auto-scaled by _DetailNormalMap_ST,
-            // so SetTextureScale("_DetailNormalMap", ...) in SurfaceInkManager
-            // controls how many times the detail normal tiles across the surface.
-            float2 uv_DetailNormalMap;
         };
 
         void surf(Input IN, inout SurfaceOutputStandard o)
         {
             half4 ink      = tex2D(_MainTex,  IN.uv_MainTex);
-            half3 inkNorm  = UnpackNormal(tex2D(_BumpMap, IN.uv_MainTex));
-            half3 detail   = UnpackNormal(tex2D(_DetailNormalMap, IN.uv_DetailNormalMap));
+            // _BumpMap is a runtime-generated, uncompressed RGB normal map (from SurfaceInkManager's
+            // ComputeNormals pass), so decode it directly rather than via UnpackNormal (DXT5nm).
+            half3 inkNorm  = tex2D(_BumpMap, IN.uv_MainTex).xyz * 2.0 - 1.0;
 
             #ifdef _UNDERLAY_ON
                 half4 base      = tex2D(_UnderlayTex,  IN.uv_UnderlayTex);
@@ -61,13 +54,12 @@ Shader "Ink/InkSurface"
 
                 // Blend ink over underlay, weighted by ink alpha
                 o.Albedo     = lerp(base.rgb,       ink.rgb,   ink.a);
-                half3 blendN = lerp(baseNorm,        inkNorm,   ink.a);
-                o.Normal     = BlendNormals(blendN, detail);
+                o.Normal     = lerp(baseNorm,        inkNorm,   ink.a);
                 o.Smoothness = lerp(_UnderlaySmooth, _Smoothness, ink.a);
                 o.Alpha      = 1.0; // always opaque when underlay is active
             #else
                 o.Albedo     = ink.rgb;
-                o.Normal     = BlendNormals(inkNorm, detail);
+                o.Normal     = inkNorm;
                 o.Smoothness = _Smoothness;
                 o.Alpha      = ink.a; // clipped against _AlphaCutoff
             #endif
