@@ -6,11 +6,16 @@ public class ProjectileSystem : MonoBehaviour
 {
     int splashSize = 10, team = 1;
     [SerializeField] float damage = 30f;
+    [SerializeField] GameObject splashParticlesPrefab;
 
     Rigidbody         rb;
     Renderer          visual;
     MaterialPropertyBlock propBlock;
     Color             inkColor = Color.white;
+    // DeleteProjectile() defers destruction by 0.05s so same-frame OnTriggerEnter callbacks
+    // still complete — without this guard, a projectile overlapping multiple colliders in
+    // that window could Splat/spawn particles more than once for a single impact.
+    bool hasImpacted;
 
     static readonly int ShaderDirection = Shader.PropertyToID("_Direction");
     static readonly int ShaderColor     = Shader.PropertyToID("_Color");
@@ -75,6 +80,7 @@ public class ProjectileSystem : MonoBehaviour
     void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag("Projectile")) return;
+        if (hasImpacted) return;
 
         // Player hits take priority over surface splats. Teammates (and the shooter,
         // who overlaps this trigger on spawn) are passed through: no damage, no destroy,
@@ -84,6 +90,7 @@ public class ProjectileSystem : MonoBehaviour
         {
             if (hitbox.Team != team)
             {
+                hasImpacted = true;
                 hitbox.TakeDamage(damage, team);
                 DeleteProjectile();
             }
@@ -109,7 +116,9 @@ public class ProjectileSystem : MonoBehaviour
                 if (uv.sqrMagnitude < 0.0001f)
                     uv = FallbackUV(hit, inkManager);
                 //Debug.Log($"Projectile hit {other.name} at {hit.point} with UV {uv}");
+                hasImpacted = true;
                 inkManager.Splat(uv, splashSize, team);
+                InkParticles.Spawn(splashParticlesPrefab, hit.point, Quaternion.FromToRotation(Vector3.up, hit.normal), inkColor);
             }
         }
 

@@ -39,13 +39,13 @@ public class SurfaceInkManager : MonoBehaviour
     RenderTexture splatMapRenderTexture;
     RenderTexture normalMapRenderTexture; // dynamic ink normal map, regenerated when splats change
     Texture2D topMaskTexture; // R8: 1 where a pixel maps to a floor/slope face, 0 for walls
-    bool normalsDirty;
 
     const int KernelSplat = 0;
     const int KernelGetScores = 1;
     const int KernelGetTeamAtPixel = 2;
     const int KernelGetTopScores = 3;
     const int KernelComputeNormals = 4;
+    const int KernelPaintTrailNormal = 5;
 
     ComputeBuffer scoreBuffer;
     ComputeBuffer topScoreBuffer;
@@ -81,14 +81,6 @@ public class SurfaceInkManager : MonoBehaviour
         }
     }
 
-    // Coalesces every splat in a frame into a single normal-map regeneration pass.
-    void Update()
-    {
-        if (!normalsDirty) return;
-        normalsDirty = false;
-        RegenerateNormals();
-    }
-
     // Linear fit through (splatScale 5 -> noiseScale 0.025) and (splatScale 1.5 -> noiseScale 0.05),
     // so bump grain size stays visually consistent across surfaces of differing splat scale.
     static float CalculateNoiseScale(float splatScale)
@@ -100,9 +92,20 @@ public class SurfaceInkManager : MonoBehaviour
         return intercept + slope * splatScale;
     }
 
-    void RegenerateNormals()
+    // Computes a clamped texel-space bounding box (and matching thread-group counts) around a
+    // point, so compute dispatches touch only the region they affect instead of the whole texture.
+    void ComputeBounds(int x, int y, int boundRadius, out int minX, out int minY, out int groupsX, out int groupsY)
     {
-        if (inkNormalStrength <= 0f) return;
+        minX = Mathf.Clamp(x - boundRadius, 0, size - 1);
+        minY = Mathf.Clamp(y - boundRadius, 0, size - 1);
+        int maxX = Mathf.Clamp(x + boundRadius, 0, size - 1);
+        int maxY = Mathf.Clamp(y + boundRadius, 0, size - 1);
+        groupsX = Mathf.CeilToInt((maxX - minX + 1) / 8f);
+        groupsY = Mathf.CeilToInt((maxY - minY + 1) / 8f);
+    }
+
+    void SetNormalUniforms()
+    {
         // Re-set each pass so inspector tweaks take effect live during play.
         float worldScale = pixelsPerUnit / ReferencePixelsPerUnit;
         splatCompute.SetFloat("NormalStrength", inkNormalStrength * worldScale);
@@ -110,7 +113,29 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetFloat("NoiseScale", inkNoiseScale);
         splatCompute.SetTexture(KernelComputeNormals, "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(KernelComputeNormals, "NormalTexture", normalMapRenderTexture);
+    }
+
+    void RegenerateNormalsFull()
+    {
+        if (inkNormalStrength <= 0f) return;
+        SetNormalUniforms();
+        splatCompute.SetInts("BoundsMin", new int[2] { 0, 0 });
+        splatCompute.SetInt("MaskToSplat", 0); // unconditional full rebuild
         splatCompute.Dispatch(KernelComputeNormals, size / 8, size / 8, 1);
+    }
+
+    // Rebuilds normals only within the given box (e.g. right after a Splat call, scoped to
+    // that same splat's bounds), and only for texels the splat's own organic/warped shape
+    // actually reached (MaskToSplat) — not just texels inside the padded box. Everything
+    // else in the box, including any trail indent that happened to sit in a corner the ink
+    // never touched, is left exactly as it was.
+    void RegenerateNormalsRegion(int minX, int minY, int groupsX, int groupsY)
+    {
+        if (inkNormalStrength <= 0f) return;
+        SetNormalUniforms();
+        splatCompute.SetInts("BoundsMin", new int[2] { minX, minY });
+        splatCompute.SetInt("MaskToSplat", 1);
+        splatCompute.Dispatch(KernelComputeNormals, groupsX, groupsY, 1);
     }
 
     Mesh GetSharedMesh()
@@ -242,6 +267,7 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetTexture(KernelGetTopScores,    "TopMask",    topMaskTexture);
         splatCompute.SetTexture(KernelComputeNormals,  "InkTexture",    splatMapRenderTexture);
         splatCompute.SetTexture(KernelComputeNormals,  "NormalTexture", normalMapRenderTexture);
+        splatCompute.SetTexture(KernelPaintTrailNormal, "NormalTexture", normalMapRenderTexture);
 
         splatCompute.SetBuffer(KernelSplat,           "TeamScores",  scoreBuffer);
         splatCompute.SetBuffer(KernelSplat,           "PixelTeam",   pixelTeamBuffer);
@@ -263,7 +289,7 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetInt("Team", 1);
         splatCompute.SetFloat("NormalStrength", inkNormalStrength);
         splatCompute.Dispatch(KernelSplat, size / 8, size / 8, 1);
-        RegenerateNormals(); // prime the normal map to flat (matches the cleared ink)
+        RegenerateNormalsFull(); // prime the normal map to flat (matches the cleared ink)
     }
 
     public void Splat(Vector2 texCoords, int splashSize, int team, bool broadcast = true)
@@ -271,14 +297,51 @@ public class SurfaceInkManager : MonoBehaviour
         //Debug.Log($"[Splat] surface={SurfaceId} team={team} broadcast={broadcast}\n{new System.Diagnostics.StackTrace(true)}");
         int x = (int)(texCoords.x * size);
         int y = (int)(texCoords.y * size);
+        int radius = Mathf.RoundToInt(splashSize * splatScale);
+
+        // Dispatch only a bounding box around the splat instead of the whole texture — the
+        // domain warp in GetColor can push the visible edge out by up to r*0.4, plus the
+        // feather margin, so pad generously to avoid clipping the blob.
+        int boundRadius = Mathf.CeilToInt(radius * 1.4f) + 4;
+        ComputeBounds(x, y, boundRadius, out int minX, out int minY, out int groupsX, out int groupsY);
+
         splatCompute.SetTexture(KernelSplat, "InkTexture", splatMapRenderTexture);
         splatCompute.SetInts("PixelCoords", new int[2] { x, y });
-        splatCompute.SetInt("SplashSize", Mathf.RoundToInt(splashSize * splatScale));
+        splatCompute.SetInts("BoundsMin", new int[2] { minX, minY });
+        splatCompute.SetInt("SplashSize", radius);
         splatCompute.SetInt("Team", team);
-        splatCompute.Dispatch(KernelSplat, size / 8, size / 8, 1);
-        normalsDirty = true;
+        splatCompute.Dispatch(KernelSplat, groupsX, groupsY, 1);
+
+        // Rebuild normals immediately, scoped to the same box — cheap now both kernels are
+        // bounded, and it leaves trail indents anywhere else on the surface untouched.
+        RegenerateNormalsRegion(minX, minY, groupsX, groupsY);
+
         if (broadcast)
             OnSplatApplied?.Invoke(new SplatData { surfaceId = SurfaceId, uv = texCoords, splashSize = splashSize, team = team });
+    }
+
+    // "Reverse splat" — stamps an indent directly onto the normal map so a swum-through path
+    // shows a visible groove. Never touches InkTexture: coverage, colour and scoring are
+    // completely unaffected, only the surface's apparent shape at that spot changes. Safe to
+    // call every frame from a moving player — blend eases each stamp toward the target depth
+    // rather than adding onto the last one, so lingering in one spot converges instead of
+    // distorting further.
+    public void PaintTrailNormal(Vector2 texCoords, int radius, float depth = 1f, float blend = 0.25f)
+    {
+        if (inkNormalStrength <= 0f) return; // no normal map to indent
+        int x = (int)(texCoords.x * size);
+        int y = (int)(texCoords.y * size);
+        int texRadius = Mathf.Max(1, Mathf.RoundToInt(radius * splatScale));
+
+        ComputeBounds(x, y, texRadius + 2, out int minX, out int minY, out int groupsX, out int groupsY);
+
+        splatCompute.SetTexture(KernelPaintTrailNormal, "NormalTexture", normalMapRenderTexture);
+        splatCompute.SetVector("TrailCenter", new Vector4(x, y, 0f, 0f));
+        splatCompute.SetFloat("TrailRadius", texRadius);
+        splatCompute.SetFloat("TrailDepth", depth);
+        splatCompute.SetFloat("TrailBlend", blend);
+        splatCompute.SetInts("BoundsMin", new int[2] { minX, minY });
+        splatCompute.Dispatch(KernelPaintTrailNormal, groupsX, groupsY, 1);
     }
 
     public void ClearInk()
@@ -287,7 +350,7 @@ public class SurfaceInkManager : MonoBehaviour
         RenderTexture.active = splatMapRenderTexture;
         GL.Clear(false, true, Color.clear);
         RenderTexture.active = prev;
-        normalsDirty = true; // rebuild the (now flat) normal map next frame
+        RegenerateNormalsFull(); // full rebuild — also wipes any trail indents, matching a full ink reset
     }
 
     public void CheckScoresAsync(System.Action<Vector3Int> callback)

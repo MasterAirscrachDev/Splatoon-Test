@@ -75,14 +75,21 @@ Shader "Ink/InkVolume"
             {
                 float4 vertex : POSITION;
                 float3 normal : NORMAL;
+                // Shuriken writes each particle's current colour (Start Colour / Colour over
+                // Lifetime) into this stream automatically for mesh-mode particles — no Custom
+                // Vertex Streams setup needed. Meshes with no colour channel (the projectile's
+                // static blob) get an implicit white default from Unity, so this is a no-op
+                // there and _Color/MaterialPropertyBlock keeps driving the colour as before.
+                float4 color  : COLOR;
             };
 
             struct v2f
             {
-                float4 pos      : SV_POSITION;
-                float3 worldN   : TEXCOORD0;
-                float3 worldPos : TEXCOORD1;
-                float3 objPos   : TEXCOORD2; // pre-deformation object space — noise anchor
+                float4 pos       : SV_POSITION;
+                float3 worldN    : TEXCOORD0;
+                float3 worldPos  : TEXCOORD1;
+                float3 objPos    : TEXCOORD2; // pre-deformation object space — noise anchor
+                float4 vertColor : COLOR0;
             };
 
             v2f vert(appdata v)
@@ -109,10 +116,11 @@ Shader "Ink/InkVolume"
                     pos += localDir * proj * (stretch - 1.0);
                 }
 
-                o.pos      = UnityObjectToClipPos(float4(pos, 1.0));
-                o.worldN   = UnityObjectToWorldNormal(v.normal);
-                o.worldPos = mul(unity_ObjectToWorld, float4(pos, 1.0)).xyz;
-                o.objPos   = v.vertex.xyz; // pre-deformation, for fragment noise
+                o.pos       = UnityObjectToClipPos(float4(pos, 1.0));
+                o.worldN    = UnityObjectToWorldNormal(v.normal);
+                o.worldPos  = mul(unity_ObjectToWorld, float4(pos, 1.0)).xyz;
+                o.objPos    = v.vertex.xyz; // pre-deformation, for fragment noise
+                o.vertColor = v.color;
                 return o;
             }
 
@@ -123,6 +131,12 @@ Shader "Ink/InkVolume"
                 float3 L = normalize(_WorldSpaceLightPos0.xyz);
 
                 float NdotV = saturate(dot(N, V));
+
+                // Combines the material colour with the per-particle vertex colour so a
+                // ParticleSystem's Start Colour / Colour over Lifetime can drive the tint
+                // directly — for the non-particle projectile mesh, vertColor defaults to
+                // white and this is exactly _Color, unchanged from before.
+                float4 tint = _Color * i.vertColor;
 
                 // ── 3-D fluid noise (object space, seed-offset) ───────────────
                 float3 np = i.objPos * _NoiseFreq + _Time.y * _FlowSpeed + _Seed;
@@ -139,7 +153,7 @@ Shader "Ink/InkVolume"
 
                 // ── Body color ────────────────────────────────────────────────
                 float  colorShift = (n0 - 0.5) * _ColorVar;
-                float3 inkRGB     = saturate(_Color.rgb + colorShift);
+                float3 inkRGB     = saturate(tint.rgb + colorShift);
                 float3 bodyColor  = inkRGB * absorption * lerp(1.0, 0.65, absorption * 0.4);
 
                 float  NdotL  = saturate(dot(Np, L));
@@ -165,7 +179,8 @@ Shader "Ink/InkVolume"
                 color += envColor * F * _ReflStr;
 
                 // ── Alpha ─────────────────────────────────────────────────────
-                float alpha = _Color.a * _Opacity * absorption;
+                // tint.a folds in the particle's own alpha-over-lifetime fade, if any.
+                float alpha = tint.a * _Opacity * absorption;
 
                 return float4(color, alpha);
             }

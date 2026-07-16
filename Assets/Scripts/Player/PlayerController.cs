@@ -21,6 +21,7 @@ public class PlayerController : MonoBehaviour
     [SerializeField] Vector3 velocity;
     [SerializeField] GameObject ViewmodelPlayer, ViewmodelSquid, SquidTrail, InkTankScaler;
     [SerializeField] GameObject InkExitSplashPrefab;
+    [SerializeField] GameObject swimSplashParticlesPrefab;
     [Header("Ink")]
     [SerializeField] float inkRechargeRate = 0.1f;
     [SerializeField] float inkRechargeRateSquid = 0.55f;
@@ -36,11 +37,14 @@ public class PlayerController : MonoBehaviour
     public bool IsSquid => swimMode;
     public bool IsDead => isDead;
     public bool IsInInk => swimMode && (surfaceTeam == team || (isClimbing && climbSurfaceTeam == team));
+    public float SlopeLimit => controller.slopeLimit;
     float realSpeed, airSpeed, cameraPitch = 0.0f, velocityY = 0.0f;
     CharacterController controller = null;
     ControlLayer input;
     [SerializeField] Material mat;
-    bool grounded;
+    [SerializeField] float groundStickForce = 3f; // keeps the capsule pressed onto slopes instead of separating/reacquiring each frame
+    [SerializeField] float climbSlideCap = 3f; // max gravity slide speed while climbing — kept well below realSpeed so gravity slows a climb, never fully arrests it
+    [SerializeField] float climbJumpScale = 0.4f; // wall kick-off strength while climbing, as a fraction of the normal jump impulse
     bool isClimbing;
     bool wasClimbing;
     Vector3 climbNormal;
@@ -48,6 +52,9 @@ public class PlayerController : MonoBehaviour
     bool prevInOwnInk;
     float lastExitSplatTime = -1f;
     bool effectivelyClimbing;
+    SurfaceInkManager groundInk; // cached each frame by GetInkTeam; also used to indent the swim trail
+    Vector2 groundInkUV;
+    Vector3 groundNormal = Vector3.up; // cached each frame by GetInkTeam; feeds slope-aligned squid orientation
     Vector2 currentDir = Vector2.zero, currentDirVelocity = Vector2.zero, currentMouseDelta = Vector2.zero, currentMouseDeltaVelocity = Vector2.zero, targetDir;
 
     // Remote (Network mode) interpolation targets, fed by ApplyNetState.
@@ -166,6 +173,8 @@ public class PlayerController : MonoBehaviour
     {
         if (playerMode != PlayerMode.Client) return;
         if (isDead) return;
+
+        float prevHeight = controller.height;
         if(input.Movement.Squidmode.ReadValue<float>() != 0){
             swimMode = true;
             controller.height = 0.1f;
@@ -176,6 +185,16 @@ public class PlayerController : MonoBehaviour
             isClimbing = false; // dismount wall when leaving squid mode
             controller.height = 1.92f;
             controller.radius = 0.5f;
+        }
+        if (controller.height != prevHeight)
+        {
+            // controller.center never changes (the capsule stays centred on the player's
+            // origin — the same point the camera and UI anchor to) — so shrinking/growing the
+            // capsule around a fixed centre moves its bottom relative to the floor. Nudge the
+            // origin once, by exactly half the height delta, so the capsule's bottom stays on
+            // the ground across the transition without moving the origin (or viewmodels, which
+            // sit at a fixed local offset from it) every frame.
+            transform.position += Vector3.up * ((controller.height - prevHeight) / 2f);
         }
         gameObject.layer = swimMode ? 11 : 7;
         realSpeed = 6;
@@ -213,7 +232,11 @@ public class PlayerController : MonoBehaviour
             controller.stepOffset = 0f;
 
             velocityY += gravity * 0.1f * Time.deltaTime;
-            velocityY  = Mathf.Max(velocityY, -realSpeed);
+            // Capped well below realSpeed, not at it — the cap used to equal realSpeed, so
+            // once gravity fully accumulated (a few seconds of climbing) it exactly cancelled
+            // a full-up climb input (net wallUp speed = realSpeed + velocityY = 0), making
+            // climbing stop dead instead of merely slowing.
+            velocityY  = Mathf.Max(velocityY, -climbSlideCap);
 
             Vector3 wallRight = Vector3.Cross(Vector3.up, climbNormal).normalized;
             Vector3 wallUp    = Vector3.Cross(climbNormal, wallRight).normalized;
@@ -231,21 +254,32 @@ public class PlayerController : MonoBehaviour
         controller.slopeLimit = 45f;
         controller.stepOffset = swimMode ? 0f : 0.3f; // disable step logic in squid mode to avoid "bouncing" off walls
         velocityY += (gravity * 3) * Time.deltaTime;
-        if (controller.isGrounded){ velocityY = 0.0f; airSpeed = realSpeed; }
+        // A small constant downward "stick" instead of zeroing velocityY keeps the capsule
+        // pressed onto sloped ground. Zeroing it outright lets the capsule separate from a
+        // downward slope for a frame (it fell exactly 0 while the floor dropped away), then
+        // reacquire with a visible snap next frame — worse the steeper/faster the descent.
+        if (controller.isGrounded){ velocityY = -groundStickForce; airSpeed = realSpeed; }
 
         if (velocityY > 10){ velocityY = 10; }
         float hSpeed = controller.isGrounded ? realSpeed : airSpeed;
         velocity = (transform.forward * currentDir.y + transform.right * currentDir.x) * hSpeed + Vector3.up * velocityY;
         controller.Move(velocity * Time.deltaTime);
 
-        // Spawn the ink-exit splash when transitioning out of own ink while swimming.
-        // The && swimMode guard prevents triggering when the player leaves swim mode while still on ink.
+        // Spawn a splash when transitioning into or out of own ink while swimming.
         bool inOwnInkNow = swimMode && team != 0 && (surfaceTeam == team || (isClimbing && climbSurfaceTeam == team));
+        Vector3 inkNormal = (isClimbing && climbSurfaceTeam == team) ? climbNormal : groundNormal;
+
+        if (!prevInOwnInk && inOwnInkNow)
+        {
+            InkParticles.Spawn(swimSplashParticlesPrefab, transform.position + controller.center,
+                Quaternion.FromToRotation(Vector3.up, inkNormal), teamColor);
+        }
+
+        // The && swimMode guard prevents triggering when the player leaves swim mode while still on ink.
         if (prevInOwnInk && !inOwnInkNow && swimMode && InkExitSplashPrefab != null && Time.time - lastExitSplatTime >= 0.2f)
         {
             lastExitSplatTime = Time.time;
-            Vector3 exitNormal = (isClimbing && climbSurfaceTeam == team) ? climbNormal : Vector3.up;
-            GameObject splash = Instantiate(InkExitSplashPrefab, transform.position + controller.center, Quaternion.FromToRotation(Vector3.up, exitNormal));
+            GameObject splash = Instantiate(InkExitSplashPrefab, transform.position + controller.center, Quaternion.FromToRotation(Vector3.up, inkNormal));
             splash.GetComponent<InkEmitter>().Setup(team, 3, true);
         }
         prevInOwnInk = inOwnInkNow;
@@ -371,7 +405,8 @@ public class PlayerController : MonoBehaviour
             if (isDead) HideModels(); else ShowModels();
         }
 
-        // Match the controller capsule to the form so viewmodels/visuals scale correctly.
+        // Match the controller capsule to the form (cosmetic only — this capsule never
+        // collides, see below). Centre is left untouched, same as the local player.
         if (controller != null)
         {
             controller.height = swimMode ? 0.1f : 1.92f;
@@ -418,8 +453,12 @@ public class PlayerController : MonoBehaviour
             }
             else
             {
-                moveDir = (transform.forward * currentDir.y + transform.right * currentDir.x).normalized;
-                upHint  = Vector3.up;
+                // Project onto the slope plane so moveDir and upHint are guaranteed orthogonal.
+                // A raw horizontal moveDir paired with a tilted upHint aren't orthogonal, so
+                // LookRotation's internal correction produced an inconsistent-looking tilt.
+                Vector3 flatDir = (transform.forward * currentDir.y + transform.right * currentDir.x).normalized;
+                moveDir = Vector3.ProjectOnPlane(flatDir, groundNormal).normalized;
+                upHint  = groundNormal; // tilt the squid to match the floor/slope beneath it
             }
             if (moveDir.sqrMagnitude > 0.001f)
                 ViewmodelSquid.transform.rotation = Quaternion.LookRotation(moveDir, upHint);
@@ -444,8 +483,15 @@ public class PlayerController : MonoBehaviour
         }
         else
         {
-            moveDir = (transform.forward * currentDir.y + transform.right * currentDir.x).normalized;
-            upHint  = Vector3.up; // trail lies flat on floor
+            Vector3 flatDir = (transform.forward * currentDir.y + transform.right * currentDir.x).normalized;
+            moveDir = Vector3.ProjectOnPlane(flatDir, groundNormal).normalized; // orthogonal to upHint, see UpdateViewmodels
+            upHint  = groundNormal; // trail lies flat on the floor/slope
+
+            // Indent the ink's normal map along the swim path so you can see where players
+            // have swum. Floor only for now — wall climbing doesn't track the climbed
+            // surface's own UV/SurfaceInkManager, only groundInk from the downward raycast.
+            if (groundInk != null)
+                groundInk.PaintTrailNormal(groundInkUV, 4, 4, 0.01f);
         }
 
         if (moveDir.sqrMagnitude > 0.001f)
@@ -511,7 +557,15 @@ public class PlayerController : MonoBehaviour
     }
 
     void Jump(){
-        if (grounded || IsInInk) { velocityY += jump * 2; }
+        // Climbing already has its own vertical input (currentDir.y in the wall-move branch),
+        // so the full ground/ink jump impulse stacked on top and launched players off the
+        // wall far harder than intended — but zero response ("does nothing") over-corrected.
+        // A scaled-down kick-off gives a felt push without the original overpowered launch.
+        if (effectivelyClimbing) { velocityY += jump * 2 * climbJumpScale; return; }
+        // Unified to the same signal UpdateMovement uses for gravity/ground resolution —
+        // previously Jump() read a separate raycast-derived bool that (like the raycast
+        // itself) went stale in swim mode once the capsule wasn't recentring on shrink.
+        if (controller.isGrounded || IsInInk) { velocityY += jump * 2; }
     }
     void TestCheckScores(){
         NetGameManager gm = FindFirstObjectByType<NetGameManager>();
@@ -522,18 +576,15 @@ public class PlayerController : MonoBehaviour
         RaycastHit inkHit;
         if (Physics.Raycast(transform.position + controller.center, Vector3.down, out inkHit, (controller.height / 2) + 0.3f)){
             Debug.DrawLine(transform.position + controller.center, inkHit.point, Color.blue);
-            grounded = true;
-            try{
-                surfaceTeam = inkHit.collider.gameObject.GetComponent<SurfaceInkManager>().getSurfaceTeam(inkHit.textureCoord);
-            }
-            catch{
-                //Debug.Log("No Ink Team");
-            }
-            
+            groundInk = inkHit.collider.GetComponent<SurfaceInkManager>();
+            groundInkUV = inkHit.textureCoord;
+            groundNormal = inkHit.normal;
+            surfaceTeam = groundInk != null ? groundInk.getSurfaceTeam(groundInkUV) : 0;
         }else{
             Debug.DrawRay(transform.position + controller.center, Vector3.down * ((controller.height / 2) + 0.3f), Color.red);
-            grounded = false;
             surfaceTeam = 0;
+            groundInk = null;
+            groundNormal = Vector3.up;
         }
     }
 }

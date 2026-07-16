@@ -9,6 +9,13 @@ public class WallClimbSensor : MonoBehaviour
 {
     PlayerController player;
 
+    // Extra margin above the CharacterController's own slopeLimit before a surface counts as
+    // climbable. Without this gap, a slope sitting almost exactly at slopeLimit could read as
+    // "walkable" to the controller one frame and "climbable" to this sensor the next — the
+    // controller's own ground handling is unreliable right at that boundary, so the two
+    // systems could disagree and flicker between walking and climbing on the same slope.
+    [SerializeField] float climbMarginDeg = 5f;
+
     // Tracks how many ink surfaces are currently inside the trigger
     // so exiting one wall doesn't clear contact while another is still active.
     readonly HashSet<Collider> activeContacts = new HashSet<Collider>();
@@ -49,9 +56,13 @@ public class WallClimbSensor : MonoBehaviour
             if (!other.Raycast(new Ray(origin - dir * 2f, dir), out RaycastHit hit, 3f))
                 continue;
 
-            if (Mathf.Abs(hit.normal.y) > 0.7f)
+            // Anything the CharacterController itself would treat as walkable ground (plus a
+            // margin) is never a climbable wall, so the sensor stays in sync with slopeLimit
+            // instead of using an independent hardcoded cutoff.
+            float climbThreshold = Mathf.Cos((player.SlopeLimit + climbMarginDeg) * Mathf.Deg2Rad);
+            if (Mathf.Abs(hit.normal.y) > climbThreshold)
             {
-                // White: hit something but it's a floor/ceiling, not a wall
+                // White: hit something but it's a floor/ceiling/shallow slope, not a wall
                 Debug.DrawLine(origin, hit.point, Color.white);
                 continue;
             }

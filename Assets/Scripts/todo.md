@@ -1,5 +1,7 @@
-ink spawning not not checking client onlys
+jumping not working at all
 
-jumping unrealiable (ensure grounded)
+getting big horizontal speed when reaching top of wall
 
-getting in a sudo ink state where we think we are in ink but we are not
+wall jump boosting too far (tune values)
+
+rework shoot system to be more inline with the game

@@ -48,6 +48,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   damage: 30
+  splashParticlesPrefab: {fileID: 7281054443066359860, guid: 18c5884bb54d6ee46ae2a5e7a69f61b7, type: 3}
 --- !u!54 &5979602811974540494
 Rigidbody:
   m_ObjectHideFlags: 0
