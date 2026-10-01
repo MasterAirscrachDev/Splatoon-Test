@@ -6,9 +6,8 @@ using UnityEngine.SceneManagement;
 using static ClimbTestLayout;
 using Face = ClimbTestBox.Face;
 
-// Generates Assets/Tests/ClimbTest/ClimbTest.unity: a row of climbing test stations (see
-// ClimbTestLayout) plus a dev-mode NetGameManager (spawns a local player, no Steam) and a
-// ClimbTestRunner. Regenerate after changing the layout rather than hand-editing the scene.
+// Generates ClimbTest.unity: the test stations, a dev-mode NetGameManager (local player, no
+// Steam) and a ClimbTestRunner. Regenerate rather than hand-editing the scene.
 public static class ClimbTestSceneBuilder
 {
     const string Root      = "Assets/Tests/ClimbTest";
@@ -16,6 +15,7 @@ public static class ClimbTestSceneBuilder
     const string MeshDir   = Root + "/Meshes";
     const string InkMaterialPath = "Assets/Materials/InkMaterial 1.mat";
     const string PlayerPrefabPath = "Assets/Prefabs/PlayerEntity - VOID.prefab";
+    const string ProjectilePrefabPath = "Assets/Prefabs/Projectile.prefab";
     const int Own = 1, Enemy = 2;
 
     static Material inkMaterial;
@@ -31,7 +31,7 @@ public static class ClimbTestSceneBuilder
                 return;
             }
 
-        // Team colours come from the scene currently open (the real game scene), if it has a manager.
+        // Team colours from the open game scene, if any.
         Color alpha = Color.cyan, beta = Color.magenta;
         NetGameManager existing = Object.FindFirstObjectByType<NetGameManager>();
         if (existing != null)
@@ -62,7 +62,10 @@ public static class ClimbTestSceneBuilder
         so.FindProperty("betaTeam").colorValue = beta;
         so.ApplyModifiedPropertiesWithoutUndo();
 
-        new GameObject("ClimbTestRunner").AddComponent<ClimbTestRunner>();
+        ClimbTestRunner runner = new GameObject("ClimbTestRunner").AddComponent<ClimbTestRunner>();
+        SerializedObject rso = new SerializedObject(runner);
+        rso.FindProperty("projectilePrefab").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ProjectilePrefabPath);
+        rso.ApplyModifiedPropertiesWithoutUndo();
 
         foreach (Station s in System.Enum.GetValues(typeof(Station)))
             BuildStation(s);
@@ -82,7 +85,7 @@ public static class ClimbTestSceneBuilder
 
         Vector3 spawn = new Vector3(0f, 0.05f, -6f);
         float spawnYaw = 0f;
-        // 8m deep so a player popping up over the top lip has room to land and stop on top.
+        // 8m deep so a pop over the top lip has room to land.
         Vector3 wall = new Vector3(8f, WallHeight, 8f);
         Vector3 wallCenter = new Vector3(0f, WallHeight / 2f, 4f);
 
@@ -145,9 +148,7 @@ public static class ClimbTestSceneBuilder
     {
         GameObject go = new GameObject(name);
         go.layer = inkLayer;
-        // Fully static like the real map's surfaces, so play mode static-batches them the same
-        // way (static batching replaces the MeshFilter's mesh with an unreadable combined one,
-        // which SurfaceInkManager has to cope with).
+        // Fully static like the real map, so static batching is exercised too.
         GameObjectUtility.SetStaticEditorFlags(go, (StaticEditorFlags)~0);
         go.transform.SetParent(parent, false);
         go.transform.localPosition = localCenter;
@@ -160,7 +161,7 @@ public static class ClimbTestSceneBuilder
 
         SurfaceInkManager ink = go.AddComponent<SurfaceInkManager>();
         SerializedObject so = new SerializedObject(ink);
-        // ~512² ink texture whatever the box size, to keep the scene's memory modest.
+        // ~512² ink texture whatever the box size.
         so.FindProperty("pixelsPerUnit").floatValue = 400f / Mathf.Max(size.x, size.y, size.z);
         so.FindProperty("splatScale").floatValue = 1f;
         so.ApplyModifiedPropertiesWithoutUndo();

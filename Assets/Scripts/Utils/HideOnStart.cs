@@ -1,8 +1,8 @@
 using UnityEngine;
 
+// Removes this object's renderer at runtime, leaving it visible only in the editor.
 public class HideOnStart : MonoBehaviour
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         Destroy(GetComponent<Renderer>());

@@ -37,16 +37,13 @@ Shader "Ink/InkVolume"
 
         Pass
         {
-            // ForwardBase so the built-in pipeline actually supplies the main directional light
-            // (_LightColor0 / _WorldSpaceLightPos0) and ambient SH to this pass; without a
-            // LightMode tag neither is guaranteed to be set.
+            // ForwardBase so the pass gets the main light and ambient SH.
             Tags { "LightMode"="ForwardBase" }
 
             CGPROGRAM
             #pragma vertex   vert
             #pragma fragment frag
-            // Same target as InkSurface.shader: below 3.0, UNITY_BRDF_PBS quietly selects the
-            // cheapest BRDF variant, which shades differently from the surface ink's.
+            // Match InkSurface: below 3.0 UNITY_BRDF_PBS falls back to a cheaper BRDF.
             #pragma target 3.0
             #include "UnityCG.cginc"
             #include "UnityLightingCommon.cginc"
@@ -87,12 +84,7 @@ Shader "Ink/InkVolume"
             {
                 float4 vertex : POSITION;
                 float3 normal : NORMAL;
-                // Shuriken writes each particle's current colour (Start Colour / Colour over
-                // Lifetime) into this stream automatically for mesh-mode particles — no Custom
-                // Vertex Streams setup needed. Meshes with no colour channel (the projectile's
-                // static blob) get an implicit white default from Unity, so this is a no-op
-                // there and _Color/MaterialPropertyBlock keeps driving the colour as before.
-                float4 color  : COLOR;
+                float4 color  : COLOR; // particle colour; white for plain meshes
             };
 
             struct v2f
@@ -110,9 +102,7 @@ Shader "Ink/InkVolume"
                 float3 pos = v.vertex.xyz;
 
                 // ── Vertex noise displacement (shape) ─────────────────────────
-                // Sampled in object space so the pattern is locked to the mesh.
-                // Displacement is also in object space so it scales with the object.
-                // _Seed offsets the domain so every projectile looks different.
+                // Object space, so it is locked to (and scales with) the mesh. _Seed varies each blob.
                 float3 shapePosA = pos * (_NoiseFreq * 0.5) + _Time.y * _FlowSpeed * 0.4 + _Seed;
                 float3 shapePosB = shapePosA * 1.7 + float3(7.3, 13.1, 5.7);
                 float  disp = (valueNoise3(shapePosA) * 0.65
@@ -144,11 +134,7 @@ Shader "Ink/InkVolume"
 
                 float NdotV = saturate(dot(N, V));
 
-                // Combines the material colour with the per-particle vertex colour so a
-                // ParticleSystem's Start Colour / Colour over Lifetime can drive the tint
-                // directly — for the non-particle projectile mesh, vertColor defaults to
-                // white and this is exactly _Color, unchanged from before.
-                float4 tint = _Color * i.vertColor;
+                float4 tint = _Color * i.vertColor; // vertColor = particle colour, white for plain meshes
 
                 // ── 3-D fluid noise (object space, seed-offset) ───────────────
                 float3 np = i.objPos * _NoiseFreq + _Time.y * _FlowSpeed + _Seed;
@@ -167,12 +153,7 @@ Shader "Ink/InkVolume"
                 float  colorShift = (n0 - 0.5) * _ColorVar;
                 float3 inkRGB     = saturate(tint.rgb + colorShift);
 
-                // Body lighting uses the same Standard BRDF as the ink surfaces (InkSurface.shader
-                // is a Standard surface shader, metallic 0, smoothness _BodySmoothness), so a blob
-                // of ink reads as the same colour as the ink it lands in. The old custom model
-                // (extra darkening from absorption, flat ambient, fixed 0.08 reflectance, no broad
-                // specular sheen) measured at ~68% of the surface ink's brightness under identical
-                // lighting. Absorption now only drives alpha.
+                // Standard BRDF like InkSurface, so blobs match surface ink colour. Absorption only drives alpha.
                 half3 specColor; half oneMinusReflectivity;
                 half3 diffColor = DiffuseAndSpecularFromMetallic(inkRGB, 0, specColor, oneMinusReflectivity);
 
@@ -182,8 +163,7 @@ Shader "Ink/InkVolume"
                 mainLight.ndotl = saturate(dot(Np, L)); // legacy field; the BRDF computes its own
 
                 // ── Environment reflection (Unity reflection probe / skybox) ──
-                // SH ambient like the surface, but a sharp (_Gloss) probe reflection rather than
-                // the surface's rough one. That crisp reflection is what makes it read as liquid.
+                // SH ambient like the surface, but a sharp (_Gloss) reflection for the liquid look.
                 UnityIndirect indirect;
                 indirect.diffuse = ShadeSH9(float4(Np, 1.0));
                 Unity_GlossyEnvironmentData envData = UnityGlossyEnvironmentSetup(_Gloss, V, Np, specColor);

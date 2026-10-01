@@ -17,13 +17,11 @@ Shader "Ink/InkSurface"
 
     SubShader
     {
-        // AlphaTest queue: drawn before transparent objects.
-        // When underlay is on, o.Alpha=1 so the cutoff never clips anything.
+        // AlphaTest queue; with the underlay on, Alpha = 1 so nothing is clipped.
         Tags { "RenderType"="TransparentCutout" "Queue"="AlphaTest" }
 
         CGPROGRAM
-        // alphatest:_AlphaCutoff automatically inserts clip(o.Alpha - _AlphaCutoff).
-        // Setting o.Alpha = 1 in underlay mode makes every pixel pass.
+        // alphatest:_AlphaCutoff inserts clip(o.Alpha - _AlphaCutoff).
         #pragma surface surf Standard fullforwardshadows alphatest:_AlphaCutoff
         #pragma shader_feature _UNDERLAY_ON
         #pragma target 3.0
@@ -44,8 +42,7 @@ Shader "Ink/InkSurface"
         void surf(Input IN, inout SurfaceOutputStandard o)
         {
             half4 ink      = tex2D(_MainTex,  IN.uv_MainTex);
-            // _BumpMap is a runtime-generated, uncompressed RGB normal map (from SurfaceInkManager's
-            // ComputeNormals pass), so decode it directly rather than via UnpackNormal (DXT5nm).
+            // Runtime RGB-encoded normal map (not DXT5nm), so decode directly.
             half3 inkNorm  = tex2D(_BumpMap, IN.uv_MainTex).xyz * 2.0 - 1.0;
 
             #ifdef _UNDERLAY_ON

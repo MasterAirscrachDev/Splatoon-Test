@@ -28,9 +28,7 @@ float4 FillColor;      // solid colour written by FillRegion (alpha 0 erases)
 int4 FillRect;         // FillRegion texel rect: xy = min (inclusive), zw = max (exclusive)
 RWStructuredBuffer<int> TeamScores;
 
-// High-quality, precision-robust hash (Dave Hoskins). The previous frac(dot(p,p+k))
-// hash had strong diagonal correlation and broke down at large coordinates, producing
-// structured, glyph-like ("hieroglyphic") artifacts once sampled at fine noise scales.
+// Dave Hoskins hash: no diagonal artifacts at large coordinates, unlike frac(dot(...)).
 float hash21(float2 p) {
     float3 p3 = frac(float3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
@@ -49,16 +47,12 @@ float valueNoise(float2 p) {
     );
 }
 
-// Pixels with faded alpha (edge band) count as painted only when majority solid.
-// Comparing only RGB survives ARGB32 quantisation (~0.004 error per channel).
+// Painted = mostly opaque and RGB within ARGB32 quantisation of the team colour.
 bool ColorNear(float4 a, float4 b) {
     return a.a > 0.5 && all(abs(a.rgb - b.rgb) < 0.01);
 }
 
-// Alpha the current splat (PixelCoords/SplashSize) contributes at a texel — 0 outside the
-// blob and its feather band, up to 1 solidly inside. Shared by GetColor (to paint) and
-// ComputeNormals (to tell whether a texel is actually part of this splat's organic,
-// domain-warped shape, as opposed to merely sitting inside its padded bounding box).
+// Alpha the current splat contributes at a texel (0 outside its blob and feather band).
 float SplatAlpha(int2 texel) {
     float r = (float)SplashSize;
     if (r <= 0) return 0.0;
@@ -67,9 +61,7 @@ float SplatAlpha(int2 texel) {
     float dy = texel.y - PixelCoords.y;
     float2 p = float2(texel);
 
-    // Domain warp: two independent noise channels displace the distance field,
-    // producing large organic lobes rather than a noisy ring around a hard circle.
-    // freq controls lobe size (lower = bigger), amp controls how far the edge deforms.
+    // Domain warp: two noise channels displace the distance field into organic lobes.
     float freq = 3.5 / max(r, 1.0); // ~7 lobes regardless of splat pixel radius
     float amp  = r * 0.4;
     float wx = (valueNoise(p * freq)                      - 0.5) * amp;
@@ -77,12 +69,7 @@ float SplatAlpha(int2 texel) {
 
     float dist = length(float2(dx - wx, dy - wy));
 
-    // SDF AA: feather width is a fraction of the splat's own texel radius (clamped to a
-    // sane range) rather than a fixed pixel count. A fixed-texel feather would be a huge
-    // fraction of a small splat (mushy, no flat interior) and a sliver on a large one
-    // (razor edge) — worse, since `r` already bakes in each surface's splatScale, a fixed
-    // feather also made edge sharpness inconsistent across differently-configured surfaces.
-    // Tying it to r keeps edge softness proportional everywhere.
+    // Feather scales with the splat radius, so edge softness is proportional on every surface.
     float featherHalfWidth = clamp(r * 0.5, 1.0, 4.0);
     return 1.0 - smoothstep(-featherHalfWidth, featherHalfWidth, dist - r);
 }
@@ -100,10 +87,7 @@ float4 GetColor(int2 texel, float4 old) {
     return color;
 }
 
-// SurfaceInkManager dispatches only enough thread groups to cover a bounding box around
-// the splat (see BoundsMin), instead of the whole texture — a splat's blast radius is
-// almost always a tiny fraction of a surface's total resolution, and every thread pays for
-// two valueNoise() calls in GetColor before it can even test whether it's inside the blob.
+// Dispatched only over the splat's bounding box (BoundsMin).
 [numthreads(8,8,1)]
 void Splat(uint3 id : SV_DispatchThreadID) {
     int2 texel = BoundsMin + int2(id.xy);
@@ -123,9 +107,7 @@ void GetScores(uint3 id : SV_DispatchThreadID) {
     }
 }
 
-// Same as GetScores but skips pixels whose face is too steep (walls), so the tally
-// reflects only floors and slopes — the classic top-down turf count. Neutral is
-// derived on the CPU from the precomputed top-facing coverage count.
+// GetScores for floor/slope texels only (TopMask); neutral is derived on the CPU.
 [numthreads(8,8,1)]
 void GetTopScores(uint3 id : SV_DispatchThreadID) {
     if (TopMask.Load(int3(id.x, id.y, 0)) < 0.5) return;
@@ -137,26 +119,15 @@ void GetTopScores(uint3 id : SV_DispatchThreadID) {
     }
 }
 
-// Ink height at a texel: coverage (alpha) as the base, perturbed by value noise so
-// solid interiors aren't perfectly flat. Noise is scaled by alpha so it only rides on
-// inked pixels and is centred on zero so it perturbs the surface without inflating it.
+// Coverage as height, perturbed by zero-centred noise so ink tops aren't flat.
 float InkHeight(int2 c) {
     float a = InkTexture[c].a;
     float n = valueNoise(float2(c.x, c.y) * NoiseScale) - 0.5;
     return a * (1.0 + n * NoiseStrength);
 }
 
-// Derives a tangent-space normal map from the ink height field. Central differences over
-// neighbouring texels give the gradient, so ink edges become a raised rim and the noise
-// breaks up the tops, while unpainted regions stay flat (0,0,1).
-// Output is plain RGB-encoded (xyz*0.5+0.5); the surface shader decodes it directly.
-// Bounding-box scoped via BoundsMin, same as Splat — critical for PaintTrailNormal below:
-// a splat elsewhere on the surface only rebuilds normals in its own small box, so it never
-// touches (and can't erase) trail indents stamped anywhere else on the texture.
-// When MaskToSplat is set (SurfaceInkManager sets it right after a Splat call), also skips
-// any texel in that box the splat's actual organic/warped shape never reached — otherwise
-// every texel in the padded square gets rebuilt from the ink height field, erasing a trail
-// indent that happened to sit in a corner of the square the ink itself never touched.
+// Tangent-space normals from the ink height field (central differences), RGB-encoded.
+// With MaskToSplat, only texels the current splat reached are rebuilt, so trail indents survive.
 [numthreads(8,8,1)]
 void ComputeNormals(uint3 id : SV_DispatchThreadID) {
     int2 texel = BoundsMin + int2(id.xy);
@@ -175,20 +146,13 @@ void ComputeNormals(uint3 id : SV_DispatchThreadID) {
     NormalTexture[texel] = float4(n * 0.5 + 0.5, 1.0);
 }
 
-// Synthetic (non-texture) height for a smooth circular dip — deepest at TrailCenter, flat
-// at TrailRadius. Pure function of distance, no texture read needed.
+// Smooth circular dip: deepest at TrailCenter, flat at TrailRadius.
 float TrailHeight(float2 texelPos) {
     float dist = length(texelPos - TrailCenter);
     return -smoothstep(TrailRadius, 0.0, dist) * TrailDepth;
 }
 
-// "Reverse splat": stamps an indent directly onto the existing normal map. Never touches
-// InkTexture, so coverage/colour/scoring are completely unaffected — only the surface's
-// apparent shape changes at that spot. The dent's normal is derived the same way
-// ComputeNormals derives the ink rim (central differences over a height field), then eased
-// into whatever normal is already there by TrailBlend rather than added on top of it, so
-// repeated stamps over the same texel (e.g. a player lingering in one spot) converge to a
-// fixed depth instead of compounding into a degenerate normal.
+// Stamps a trail indent into the normal map only, eased in by TrailBlend so repeats converge.
 [numthreads(8,8,1)]
 void PaintTrailNormal(uint3 id : SV_DispatchThreadID) {
     int2 texel = BoundsMin + int2(id.xy);
@@ -207,8 +171,7 @@ void PaintTrailNormal(uint3 id : SV_DispatchThreadID) {
     NormalTexture[texel] = float4(blended * 0.5 + 0.5, 1.0);
 }
 
-// Writes FillColor solidly over a texel rectangle — no splat shape or feathering. Used to set
-// up exact, known ink states (test scenes, tools) rather than during gameplay.
+// Solid fill over FillRect, for setting up known ink states (tests, tools).
 [numthreads(8,8,1)]
 void FillRegion(uint3 id : SV_DispatchThreadID) {
     int2 texel = BoundsMin + int2(id.xy);

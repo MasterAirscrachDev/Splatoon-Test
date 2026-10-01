@@ -7,13 +7,9 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using static ClimbTestLayout;
 
-// Drives the local player through scripted climbing scenarios in ClimbTest.unity and checks
-// the outcome of each, logging "[ClimbTest] PASS/FAIL" lines plus a summary (and showing them
-// on screen). Time is stepped at a fixed 1/60 s (Time.captureDeltaTime) so runs are repeatable
-// regardless of editor frame rate.
-//
-// Manual use: F1–F9 teleports to station 1–9 (see ClimbTestLayout.Station), F12 reruns all
-// scenarios. Hardware input works normally whenever a run isn't in progress.
+// Runs scripted movement scenarios in ClimbTest.unity and logs "[ClimbTest] PASS/FAIL" plus a
+// summary (also shown on screen). Fixed 1/60 s steps make runs repeatable.
+// Manual use: F1–F9 teleport to stations 1–9, F12 reruns everything.
 public class ClimbTestRunner : MonoBehaviour
 {
     [SerializeField] bool runOnStart = true;
@@ -21,6 +17,8 @@ public class ClimbTestRunner : MonoBehaviour
     [SerializeField] string filter = "";
     [Tooltip("Leave play mode once an automatic run finishes (for command-line runs).")]
     [SerializeField] bool exitPlayModeWhenDone = false;
+    [Tooltip("Projectile prefab for the pooling scenario (assigned by ClimbTestSceneBuilder).")]
+    [SerializeField] GameObject projectilePrefab;
     [Tooltip("Write a per-frame CSV of each scenario to <project>/Logs/ClimbTest/.")]
     [SerializeField] bool writeTraces = true;
 
@@ -60,8 +58,7 @@ public class ClimbTestRunner : MonoBehaviour
     readonly List<string> notes = new List<string>();
     readonly List<Result> results = new List<Result>();
     int errorLogs;
-    // Errors logged while the scene starts up (e.g. a surface failing to initialise its ink),
-    // before any scenario runs. Reported as their own failing result.
+    // Errors logged during scene startup, reported as their own failing result.
     int startupErrors;
     string firstStartupError;
     bool running;
@@ -159,7 +156,7 @@ public class ClimbTestRunner : MonoBehaviour
         if (pass) Debug.Log(line); else Debug.LogWarning(line);
     }
 
-    // Per-frame CSV of the scenario, for diagnosing failures: <project>/Logs/ClimbTest/NN_name.csv
+    // Per-frame CSV for diagnosing failures: <project>/Logs/ClimbTest/NN_name.csv
     void WriteTrace(int index, string name)
     {
         if (!writeTraces) return;
@@ -304,8 +301,7 @@ public class ClimbTestRunner : MonoBehaviour
             if (f.climbing && !f.squid) { Fail($"climbing while not in swim form at t={f.t:F2}"); break; }
             if (i > 0)
             {
-                // Changing form deliberately shifts the origin (and so the body centre) by up
-                // to ~0.9m vertically plus the wall push-out, so allow more on those frames.
+                // Form changes shift the origin ~0.9m by design.
                 bool formChange = f.squid != frames[i - 1].squid;
                 float step = Vector3.Distance(f.pos, frames[i - 1].pos);
                 if (step > (formChange ? 1.5f : 0.75f))
@@ -327,6 +323,7 @@ public class ClimbTestRunner : MonoBehaviour
             new Scenario { name = name, station = st, body = body, spawn = spawn };
 
         yield return S("Lobby: switching form glides the camera instead of snapping", Station.Lobby, CameraFormSwitch);
+        yield return S("Lobby: pooled projectiles splat where they land and are reused", Station.Lobby, ProjectilePooling);
         yield return S("FlatWall: climb up and over the top", Station.FlatWall, ClimbUpAndOver);
         yield return S("FlatWall: no input on the wall slides slowly without letting go", Station.FlatWall, HoldStillOnWall);
         yield return S("FlatWall: climb down to the floor and swim away", Station.FlatWall, ClimbDownAndAway);
@@ -347,8 +344,7 @@ public class ClimbTestRunner : MonoBehaviour
 
     IEnumerator CameraFormSwitch()
     {
-        // Each form switch moves the player's origin ~0.9m; the camera rig must ease across
-        // that instead of jumping with it. Track the rig's world height frame by frame.
+        // Each form switch moves the origin ~0.9m; the camera rig must ease across it.
         Transform rig = player.CameraRig;
         if (rig == null) { Fail("player has no camera rig"); yield break; }
         var heights = new List<float> { rig.position.y };
@@ -373,9 +369,46 @@ public class ClimbTestRunner : MonoBehaviour
         }
     }
 
+    IEnumerator ProjectilePooling()
+    {
+        if (projectilePrefab == null) { Fail("runner has no projectile prefab assigned (rebuild the test scene)"); yield break; }
+        int CountAll()    => FindObjectsByType<ProjectileSystem>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length;
+        int CountActive() => FindObjectsByType<ProjectileSystem>(FindObjectsInactive.Exclude, FindObjectsSortMode.None).Length;
+
+        // Three volleys of 6 team-2 shots straight down onto the floor, half with hidden visuals.
+        int before = CountAll(), afterFirst = 0;
+        var targets = new List<Vector3>();
+        for (int volley = 0; volley < 3; volley++)
+        {
+            for (int i = 0; i < 6; i++)
+            {
+                Vector3 p = station.TransformPoint(new Vector3(-6f + i * 2.4f, 3f, 4f + volley * 2.5f));
+                targets.Add(new Vector3(p.x, station.position.y, p.z));
+                ProjectilePool.Get(projectilePrefab, p, Quaternion.LookRotation(Vector3.down))
+                              .Setup(Vector3.down * 8f, 10, 2, visible: i % 2 == 0);
+            }
+            yield return Hold(Still, false, 0.6f, "volley");
+            if (volley == 0) afterFirst = CountAll() - before;
+        }
+        yield return Hold(Still, false, 0.3f, "settle");
+
+        int created = CountAll() - before, stillActive = CountActive();
+        Note($"{targets.Count} shots used {created} instances");
+        if (afterFirst == 0) Fail("no projectile instances were created");
+        if (created > afterFirst) Fail($"pool didn't reuse instances ({afterFirst} after the first volley, {created} after three)");
+        if (stillActive > 0) Fail($"{stillActive} projectile(s) never returned to the pool");
+
+        int painted = 0;
+        foreach (Vector3 t in targets)
+            if (Physics.Raycast(t + Vector3.up, Vector3.down, out RaycastHit hit, 2f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)
+                && hit.collider.TryGetComponent(out SurfaceInkManager ink) && ink.getSurfaceTeam(hit.textureCoord) == 2)
+                painted++;
+        if (painted < targets.Count) Fail($"only {painted}/{targets.Count} shots painted where they landed");
+    }
+
     IEnumerator ClimbUpAndOver()
     {
-        // Stop pushing once on top, or the player swims straight off the far side of the block.
+        // Stop once on top, or the player swims off the far side.
         yield return HoldUntil(Fwd, true, 8f, "climb", f => f.pos.y > WallHeight - 0.3f && f.pos.z > 0.5f && f.grounded);
         yield return Hold(Still, true, 0.5f, "settle");
 
@@ -394,16 +427,14 @@ public class ClimbTestRunner : MonoBehaviour
         int inkToggles = Toggles(frames, f => f.inInk);
         if (inkToggles > 2) Fail($"squid hide/show (IsInInk) toggled {inkToggles} times");
 
-        // Reaching the top should pop the squid up off the lip and let it fall back onto the top
-        // surface, not switch straight from climbing to swimming along it.
+        // Reaching the top should pop off the lip, not switch straight to swimming.
         int lastClimb = frames.FindLastIndex(f => f.climbing);
         if (lastClimb >= 0 && lastClimb < frames.Count - 1)
         {
             List<Frame> after = frames.Skip(lastClimb + 1).ToList();
             float hop = after.Max(f => f.pos.y) - WallHeight;
             Note($"popped {hop:F2}m above the top");
-            // Top-of-wall pop keeps a fraction (climbPopTopLift) of the climb's upward speed:
-            // a hop, not a launch. Bounds are loose so they don't encode the tuned value.
+            // Loose bounds so they don't encode the tuned climbPopTopLift.
             if (hop < 0.05f) Fail($"didn't pop up off the top of the wall (peak {hop:F2}m above the lip)");
             if (hop > 1.0f) Fail($"launched off the top of the wall ({hop:F2}m above the lip)");
             List<Frame> early = after.Where(f => f.t <= after[0].t + 0.1f).ToList();
@@ -417,7 +448,7 @@ public class ClimbTestRunner : MonoBehaviour
         List<Frame> mid = frames.Where(f => f.climbing && f.pos.y > 1f && f.pos.y < WallHeight - 1f).ToList();
         float speed = VerticalSpeed(mid);
         Note($"climb speed {speed:F1} m/s");
-        // Unboosted climbing is 0.8x own-ink swim speed (12 m/s), less the slow gravity slide.
+        // climbSpeedFactor (0.8) x 12 m/s, less the gravity slide.
         if (mid.Count > 1 && (speed < 8f || speed > 10.5f)) Fail($"unboosted climb speed is {speed:F1} m/s (expected ~9.6)");
 
         float rot = MaxRotStep(frames, f => f.climbing && f.pos.y > 1f && f.pos.y < WallHeight - 1f);
@@ -617,8 +648,7 @@ public class ClimbTestRunner : MonoBehaviour
         if (!CheckPopOff()) yield break;
         float popT = Last.t, popY = Last.pos.y;
 
-        // Keep holding up: pop off with momentum, fall back for the 0.2s no-swim window, then
-        // swim back into the ink on the wall.
+        // Keep holding up: pop off, fall through the no-swim window, then re-grab the ink.
         yield return HoldUntil(Fwd, true, 2f, "after", f => f.climbing || f.grounded);
         List<Frame> after = Phase("after");
 
@@ -627,7 +657,7 @@ public class ClimbTestRunner : MonoBehaviour
 
         float peak = after.Max(f => f.pos.y);
         Note($"popped off at {popY:F2}, peaked at {peak:F2}");
-        // Ink-edge pop keeps a quarter of the climb's upward speed: a slight lift, then fall back.
+        // Ink-edge pop keeps only a little upward speed.
         if (peak < popY + 0.01f) Fail($"popping off didn't keep any upward momentum (peak {peak - popY:F2}m above the pop)");
         if (peak > popY + 0.3f) Fail($"popped too high off the edge of the ink ({peak - popY:F2}m above the pop)");
 
@@ -637,15 +667,12 @@ public class ClimbTestRunner : MonoBehaviour
 
     IEnumerator PartialWallBob()
     {
-        // Holding up at the edge of the ink: repeatedly pop off and re-grab the ink below.
-        // Each pop-off's exit splash paints a little more ink above the edge (intended), so the
-        // edge creeps upward; what must never happen is re-grabbing sooner than the no-swim
-        // window, or climbing further past the edge than one splash could have painted.
+        // Holding up at the ink edge bobs: pop off, re-grab below, repeat. Exit splashes creep the
+        // edge up a little each time; it must never re-grab early or jump past a splash's reach.
         yield return Hold(Fwd, true, 4f, "bob");
         if (FirstTime(frames, f => f.climbing) < 0f) { Fail("never engaged climbing on the inked lower half"); yield break; }
         if (frames.Where(f => f.t > 1f).Any(f => f.grounded)) Fail("fell all the way to the floor instead of re-grabbing the ink below");
 
-        // Walk the climbing on/off segments: pop heights, and the off-wall gaps between them.
         var pops = new List<float>();
         float offSince = -1f, segTop = float.MinValue, shortestGap = float.MaxValue;
         for (int i = 1; i < frames.Count; i++)
@@ -665,7 +692,7 @@ public class ClimbTestRunner : MonoBehaviour
 
     IEnumerator ShallowRampUp()
     {
-        // Stop just short of the top edge so the run doesn't sail off the end of the ramp.
+        // Stop short of the top so the run doesn't sail off the end.
         float topY = RampSurfacePoint(30f, Ramp30Length, Ramp30Length).y;
         yield return HoldUntil(Fwd, true, 3f, "up", f => f.pos.y > topY - 0.8f);
         float climbed = FirstTime(frames, f => f.climbing);

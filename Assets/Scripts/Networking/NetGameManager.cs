@@ -3,10 +3,9 @@ using System.Collections.Generic;
 using UnityEngine;
 using Steamworks;
 
-// Unified game manager — absorbs GameManager (team colours, scoring). Does NOT modify
-// SteamNetwork / SteamGlobal. State broadcast is driven by SteamGlobal.OnNetTick on each
-// PlayerController, not by a timer here. Off-thread rule: any handler that touches Unity
-// objects must enqueue to mainThread and drain it in Update().
+// Game manager: lobby, player spawning, team colours, scoring and network message routing.
+// Steam callbacks arrive off the main thread, so handlers touching Unity objects enqueue to
+// mainThread, drained in Update.
 public class NetGameManager : MonoBehaviour
 {
     public static NetGameManager Instance { get; private set; }
@@ -39,8 +38,7 @@ public class NetGameManager : MonoBehaviour
     {
         Instance = this;
 
-        var all = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None);
-        // Sort by scene hierarchy path (string) — deterministic across clients, no float ambiguity.
+        var all = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None); // sorted by path so ids match on every client
         System.Array.Sort(all, (a, b) => HierarchyPath(a.transform).CompareTo(HierarchyPath(b.transform)));
         surfaceManagers = all;
         for (int i = 0; i < surfaceManagers.Length; i++)
@@ -71,7 +69,7 @@ public class NetGameManager : MonoBehaviour
     {
         if (Instance == this) { Instance = null; LocalPlayer = null; }
         if (steamNet != null) steamNet.onSteamSetup -= OnSteamReady;
-        input?.Disable();
+        input?.Dispose();
     }
 
     void OnEnable()
@@ -135,10 +133,8 @@ public class NetGameManager : MonoBehaviour
     }
 
     // ── Scoring ────────────────────────────────────────────────────────────
-    // Full turf coverage across every inkable face (walls included).
-    public void GetScores() => AccumulateScores(false);
-    // Classic top-down coverage — floors and slopes only, walls excluded.
-    public void GetTopDownScores() => AccumulateScores(true);
+    public void GetScores() => AccumulateScores(false);       // every inkable face
+    public void GetTopDownScores() => AccumulateScores(true); // floors and slopes only
 
     void AccumulateScores(bool topDownOnly)
     {
@@ -170,7 +166,7 @@ public class NetGameManager : MonoBehaviour
     // ── Game start / ink reset ─────────────────────────────────────────────
     void OnGameStart()
     {
-        if(!SteamGlobal.isHost){return;}
+        if (!SteamGlobal.isHost) return;
         ClearAllInk();
         if (!devMode)
             SteamGlobal.SendAllData((ushort)NetMsg.InkReset,
@@ -213,8 +209,7 @@ public class NetGameManager : MonoBehaviour
         if (localPlayer != null) return;
         localId = SteamGlobal.steamID.Value;
 
-        // Alternate teams by join order: even index → Alpha (1), odd → Beta (2)
-        int team = 1;
+        int team = 1; // alternate by join order: even = alpha, odd = beta
         var members = SteamGlobal.GetLobbyPlayerInfo();
         if (members != null)
             for (int i = 0; i < members.Length; i++)
@@ -255,8 +250,7 @@ public class NetGameManager : MonoBehaviour
     PlayerController InstantiateEntity(Vector3 pos, PlayerMode mode, int team, string playerName)
     {
         GameObject go = Instantiate(playerEntityPrefab, pos, Quaternion.identity);
-        // The prefab's name carries a "VOID" placeholder for the player's name
-        // ("PlayerEntity - VOID"); fill it in (this also drops Unity's "(Clone)" suffix).
+        // "VOID" in the prefab name is a placeholder for the player's name.
         go.name = playerEntityPrefab.name.Replace("VOID", playerName);
         PlayerController pc = go.transform.GetChild(0).GetComponent<PlayerController>();
         pc.SetPlayerMode(mode);
@@ -273,13 +267,11 @@ public class NetGameManager : MonoBehaviour
         foreach (var ca  in go.GetComponentsInChildren<CameraAim>(true))       ca.enabled  = false;
         foreach (var wca in go.GetComponentsInChildren<WeaponCameraAim>(true)) wca.enabled = false;
         foreach (var ui  in go.GetComponentsInChildren<UIController>(true))    ui.enabled  = false;
-        // Remote entity InkEmitters must be off: their physics position lags the real player, so
-        // local trigger contacts can hit a different surface and would broadcast an incorrect splat.
-        // Swim ink for remote players arrives via the local player's own OnSplatApplied broadcasts.
+        // Off: a remote copy lags the real player and would splat the wrong place. Their ink arrives over the network.
         foreach (var ie  in go.GetComponentsInChildren<InkEmitter>(true))      ie.enabled  = false;
     }
 
-    // Display names. Steam may be unavailable (dev mode / no Steam client), so fall back cleanly.
+    // Steam may be unavailable (dev mode), so fall back cleanly.
     static string LocalPlayerName()
     {
         try { if (SteamClient.IsValid) return SteamClient.Name; } catch { }
@@ -288,7 +280,6 @@ public class NetGameManager : MonoBehaviour
 
     static string RemotePlayerName(ulong steamId)
     {
-        // Lobby members' names are known to Steam once they're in the lobby with us.
         var members = SteamGlobal.GetLobbyPlayerInfo();
         if (members != null)
             foreach (var m in members)
@@ -305,20 +296,27 @@ public class NetGameManager : MonoBehaviour
         return path;
     }
 
+    // The PlayerController sits on the entity root's first child; destroy the whole entity.
+    static void DestroyEntity(PlayerController pc)
+    {
+        if (pc != null) Destroy(pc.transform.root.gameObject);
+    }
+
     void DespawnPlayer(ulong steamId)
     {
         if (steamId == localId) return;
         if (players.TryGetValue(steamId, out var pc))
         {
-            if (pc != null) Destroy(pc.gameObject);
+            DestroyEntity(pc);
             players.Remove(steamId);
         }
     }
 
+    // Leaving or losing the lobby removes every entity, local player included (rejoining respawns it).
     void ClearAll()
     {
-        foreach (var kv in players)
-            if (kv.Value != null && kv.Key != localId) Destroy(kv.Value.gameObject);
+        foreach (var kv in players) DestroyEntity(kv.Value);
+        if (localPlayer != null && !players.ContainsValue(localPlayer)) DestroyEntity(localPlayer);
         players.Clear();
         localPlayer = null;
         LocalPlayer = null;

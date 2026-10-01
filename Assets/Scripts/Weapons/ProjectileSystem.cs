@@ -1,48 +1,52 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
+// Pooled ink projectile (see ProjectilePool): damages enemy hitboxes, splats ink surfaces.
 public class ProjectileSystem : MonoBehaviour
 {
     int splashSize = 10, team = 1;
     [SerializeField] float damage = 30f;
     [SerializeField] GameObject splashParticlesPrefab;
 
-    Rigidbody         rb;
-    Renderer          visual;
+    Rigidbody             rb;
+    Renderer              visual;
     MaterialPropertyBlock propBlock;
-    Color             inkColor = Color.white;
-    // DeleteProjectile() defers destruction by 0.05s so same-frame OnTriggerEnter callbacks
-    // still complete — without this guard, a projectile overlapping multiple colliders in
-    // that window could Splat/spawn particles more than once for a single impact.
-    bool hasImpacted;
+    Color                 inkColor = Color.white;
+    bool  hasImpacted;     // removal is deferred, so guard against impacting twice meanwhile
+    float releaseAt = -1f; // when the deferred return to the pool happens
 
     static readonly int ShaderDirection = Shader.PropertyToID("_Direction");
     static readonly int ShaderColor     = Shader.PropertyToID("_Color");
     static readonly int ShaderSeed      = Shader.PropertyToID("_Seed");
 
-    public void Setup(Vector3 velocity, int splashSize, int team, bool visible = true)
+    void Awake()
     {
         rb = GetComponent<Rigidbody>();
-
-        // Find the first renderer on a child — skip the root (it has the collider, not the visual)
-        foreach (Transform child in transform)
+        foreach (Transform child in transform) // visual is the first child renderer
         {
             Renderer r = child.GetComponent<Renderer>();
             if (r != null) { visual = r; break; }
         }
         propBlock = new MaterialPropertyBlock();
+    }
 
+    // Resets all per-shot state (instances are reused).
+    public void Setup(Vector3 velocity, int splashSize, int team, bool visible = true)
+    {
+        hasImpacted = false;
+        releaseAt = -1f;
         this.splashSize = splashSize;
         this.team = team;
         rb.linearVelocity = velocity;
-        NetGameManager gm = FindFirstObjectByType<NetGameManager>();
+        rb.angularVelocity = Vector3.zero;
+        NetGameManager gm = NetGameManager.Instance;
         if (gm != null)
             inkColor = (team == 1) ? gm.AlphaTeam : gm.BetaTeam;
 
-        if(visible){ ApplyVisualColor(); }
-        else{ Destroy(visual.gameObject); } // Destroy the visual if not visible (e.g., for hidden particles
-        
+        if (visual != null)
+        {
+            visual.gameObject.SetActive(visible); // hidden filler shots keep the visual for reuse
+            if (visible) ApplyVisualColor();
+        }
     }
 
     void ApplyVisualColor()
@@ -52,25 +56,24 @@ public class ProjectileSystem : MonoBehaviour
         propBlock.SetColor(ShaderColor, inkColor);
         propBlock.SetFloat(ShaderSeed, Random.Range(0f, 100f));
         visual.SetPropertyBlock(propBlock);
-        visual.transform.localScale = Vector3.one * (splashSize * 0.035f); // scale the visual to match the splash size
+        visual.transform.localScale = Vector3.one * (splashSize * 0.035f);
     }
 
-    void Update() {
+    void Update()
+    {
+        if (releaseAt >= 0f && Time.time >= releaseAt) { ProjectilePool.Release(this); return; }
         UpdateVisualDirection();
-        if (transform.position.y < -10)
-        {
-            Destroy(gameObject);
-        }
+        if (transform.position.y < -10) ProjectilePool.Release(this);
     }
 
     void UpdateVisualDirection()
     {
         if (visual == null || rb == null) return;
 
-        Vector3 vel   = rb.linearVelocity;
-        float   speed = vel.magnitude;
-        Vector3 dir   = speed > 0.1f ? vel / speed : Vector3.down;
-        float   stretch = 1f + speed * 0.12f; // grows with speed; tune the 0.06 multiplier
+        Vector3 vel     = rb.linearVelocity;
+        float   speed   = vel.magnitude;
+        Vector3 dir     = speed > 0.1f ? vel / speed : Vector3.down;
+        float   stretch = 1f + speed * 0.12f;
 
         visual.GetPropertyBlock(propBlock);
         propBlock.SetVector(ShaderDirection, new Vector4(dir.x, dir.y, dir.z, stretch));
@@ -82,9 +85,7 @@ public class ProjectileSystem : MonoBehaviour
         if (other.CompareTag("Projectile")) return;
         if (hasImpacted) return;
 
-        // Player hits take priority over surface splats. Teammates (and the shooter,
-        // who overlaps this trigger on spawn) are passed through: no damage, no destroy,
-        // so the projectile flies on to hit the wall behind them.
+        // Enemy hitboxes take the hit; teammates (and the shooter) are passed through.
         PlayerHitbox hitbox = other.GetComponentInParent<PlayerHitbox>();
         if (hitbox != null)
         {
@@ -103,70 +104,21 @@ public class ProjectileSystem : MonoBehaviour
             Vector3 vel = rb != null ? rb.linearVelocity : Vector3.zero;
             Vector3 dir = vel.sqrMagnitude > 0.01f ? vel.normalized : Vector3.down;
 
-            // Cast against `other` directly — it's the exact collider that fired OnTriggerEnter,
-            // bypassing any base/physics colliders that Physics.Raycast would hit first.
-            // Offset 0.5 + distance 2 handles fast projectiles that have penetrated the surface.
-            RaycastHit hit;
-            if (other.Raycast(new Ray(transform.position - dir * 0.5f, dir), out hit, 2f))
+            // Cast against this exact collider, starting behind us in case we've already penetrated it.
+            if (other.Raycast(new Ray(transform.position - dir * 0.5f, dir), out RaycastHit hit, 2f))
             {
-                // textureCoord is only populated by non-convex MeshColliders.
-                // Walls often use BoxColliders or convex meshes, giving (0,0).
-                // Fall back to deriving UV from world position via the renderer's local bounds.
-                Vector2 uv = hit.textureCoord;
-                if (uv.sqrMagnitude < 0.0001f)
-                    uv = FallbackUV(hit, inkManager);
-                //Debug.Log($"Projectile hit {other.name} at {hit.point} with UV {uv}");
                 hasImpacted = true;
-                inkManager.Splat(uv, splashSize, team);
+                inkManager.Splat(inkManager.UVFromHit(hit), splashSize, team);
                 InkParticles.Spawn(splashParticlesPrefab, hit.point, Quaternion.FromToRotation(Vector3.up, hit.normal), inkColor);
             }
         }
 
-        // Always destroy on any non-projectile contact. Unity defers Destroy to end-of-frame
-        // so all OnTriggerEnter callbacks in the same physics step still complete.
         DeleteProjectile();
     }
 
-    // Derives a 0-1 UV from the hit world position when textureCoord is unavailable.
-    // Projects the hit point into local space and normalises against the renderer's bounds.
-    // Works for any flat surface regardless of orientation (floor, wall, ceiling).
-    static Vector2 FallbackUV(RaycastHit hit, SurfaceInkManager inkManager)
-    {
-        Renderer rend = inkManager.GetComponent<Renderer>();
-        if (rend == null) return Vector2.zero;
-
-        Bounds b = rend.localBounds;
-        if (b.size.sqrMagnitude < 0.0001f) return Vector2.zero;
-
-        Vector3 p = inkManager.transform.InverseTransformPoint(hit.point);
-
-        // The surface normal (in local space) identifies the depth axis.
-        // The two remaining axes become U and V.
-        Vector3 n = inkManager.transform.InverseTransformDirection(hit.normal);
-        float ax = Mathf.Abs(n.x), ay = Mathf.Abs(n.y), az = Mathf.Abs(n.z);
-
-        float u, v;
-        if (ay >= ax && ay >= az)       // floor / ceiling — normal is mostly Y
-        {
-            u = Mathf.InverseLerp(b.min.x, b.max.x, p.x);
-            v = Mathf.InverseLerp(b.min.z, b.max.z, p.z);
-        }
-        else if (az >= ax)              // wall facing ±Z — normal is mostly Z
-        {
-            u = Mathf.InverseLerp(b.min.x, b.max.x, p.x);
-            v = Mathf.InverseLerp(b.min.y, b.max.y, p.y);
-        }
-        else                            // wall facing ±X — normal is mostly X
-        {
-            u = Mathf.InverseLerp(b.min.z, b.max.z, p.z);
-            v = Mathf.InverseLerp(b.min.y, b.max.y, p.y);
-        }
-        //Debug.Log($"FallbackUV: hit {hit.point} local {p} normal {n} bounds {b} => UV ({u},{v})");
-        return new Vector2(u, v);
-    }
-
+    // Returns to the pool shortly, so other trigger callbacks this physics step still complete.
     public void DeleteProjectile()
     {
-        Destroy(gameObject, 0.05f);
+        if (releaseAt < 0f) releaseAt = Time.time + 0.05f;
     }
 }

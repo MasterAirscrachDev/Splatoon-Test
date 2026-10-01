@@ -1,11 +1,7 @@
 using UnityEngine;
 
-// Networked data structures for this game. Sent through SteamGlobal.SendAllData /
-// SendDirectData (BinaryFormatter), so every type here must be [System.Serializable]
-// and must avoid raw Unity types — use the NVector*/NColor wrappers below.
-//
-// (The previous contents were example data classes from another project and have been
-// replaced. SteamNetwork / SteamGlobal are untouched.)
+// Network message types. Sent via BinaryFormatter, so they must be [Serializable] and use the
+// NVector*/NColor wrappers instead of Unity types.
 
 // ── Serialization helpers ─────────────────────────────────────────────────
 [System.Serializable]
@@ -35,9 +31,7 @@ public class NColor
     public static implicit operator NColor(Color c) => new NColor(c);
 }
 
-// ── Message IDs ───────────────────────────────────────────────────────────
-// Passed as the dataID to SteamGlobal.SendAllData / SendDirectData / Bind.
-// The transport reserves its own low IDs internally, so these can start at 0.
+// ── Message IDs (the transport offsets these past its own internal IDs) ──
 public enum NetMsg : ushort
 {
     PlayerSpawn,     // a player entity exists / should be created on remotes
@@ -51,7 +45,7 @@ public enum NetMsg : ushort
     Teleport         // instant reposition (respawn) — bypasses PlayerState interpolation
 }
 
-// ── Per-player networked state (owning client broadcasts every send tick) ──
+// ── Per-player state, broadcast by the owning client every tick ──────────
 [System.Serializable]
 public class PlayerStateData
 {
@@ -75,11 +69,10 @@ public class PlayerSpawnData
     public int team;
     public NVector3 position;
     public bool isHostPlayer;
-    public string playerName; // sender's Steam persona name, so remotes can label the entity
+    public string playerName; // sender's Steam name
 }
 
-// ── Splat replay. surfaceId is a deterministic index shared across clients
-//    (all inkable surfaces are scene-placed, so order is identical everywhere). ──
+// ── Splat replay (surfaceId is the same on every client) ────────────────
 [System.Serializable]
 public class SplatData
 {
@@ -89,8 +82,7 @@ public class SplatData
     public int team;
 }
 
-// ── Instant reposition (respawn). Skips PlayerState interpolation so the
-//    remote copy snaps instead of sliding across the level. ─────────────────
+// ── Instant reposition (respawn), bypassing interpolation ───────────────
 [System.Serializable]
 public class TeleportData
 {

@@ -1,25 +1,21 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
+// Points the weapon at the owning player's camera aim target.
 public class WeaponCameraAim : MonoBehaviour
 {
     CameraAim camAim;
-    // Start is called before the first frame update
+
     void Start()
     {
-        camAim = FindFirstObjectByType<CameraAim>();
+        PlayerController owner = GetComponentInParent<PlayerController>();
+        camAim = owner != null ? owner.GetComponentInChildren<CameraAim>(true) : null; // our own camera, not any player's
     }
 
-    // Update is called once per frame
     void Update()
     {
+        if (camAim == null) return;
         Debug.DrawLine(transform.position, camAim.target, Color.red);
-        if(camAim.target != Vector3.zero){
-            transform.LookAt(camAim.target);
-        }
-        else{
-            transform.localRotation = Quaternion.Euler(0, 0, 0);
-        }
+        if (camAim.target != Vector3.zero) transform.LookAt(camAim.target);
+        else transform.localRotation = Quaternion.identity;
     }
 }

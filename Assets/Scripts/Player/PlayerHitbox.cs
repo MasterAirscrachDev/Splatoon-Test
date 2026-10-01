@@ -1,10 +1,6 @@
 using UnityEngine;
 
-// Capsule hitbox that receives damage from projectiles. Place on a child of the player
-// (or the root) with a CapsuleCollider. The collider is driven to a small "squid" shape
-// while in swim mode and a tall "stand" shape otherwise, so the player is harder to hit
-// while swimming. Health/death is handled locally here; networking will later broadcast
-// damage and death events through this same TakeDamage entry point.
+// Player hitbox: a trigger capsule that shrinks in squid form. Health and death are local for now.
 [RequireComponent(typeof(CapsuleCollider))]
 public class PlayerHitbox : MonoBehaviour
 {
@@ -31,7 +27,7 @@ public class PlayerHitbox : MonoBehaviour
     void Awake()
     {
         capsule = GetComponent<CapsuleCollider>();
-        capsule.isTrigger = true; // projectiles use trigger detection; player has the Rigidbody
+        capsule.isTrigger = true;
         if (player == null) player = GetComponentInParent<PlayerController>();
         health = maxHealth;
     }
@@ -42,12 +38,10 @@ public class PlayerHitbox : MonoBehaviour
         capsule.height = squid ? swimHeight : standHeight;
         capsule.radius = squid ? swimRadius : standRadius;
         capsule.center = squid ? swimCenter : standCenter;
-        // Disabled while dead so a frozen, hidden body can't absorb hits. player.IsDead
-        // is network-replicated, so this also disables the collider on remote copies.
-        capsule.enabled = player == null || !player.IsDead;
+        capsule.enabled = player == null || !player.IsDead; // IsDead is replicated, so this covers remotes too
     }
 
-    // Returns true if this hit was lethal. Friendly fire is ignored (same team or no team).
+    // Returns true if the hit was lethal. Ignores friendly fire and hits while dead.
     public bool TakeDamage(float amount, int fromTeam)
     {
         if (health <= 0f) return false;

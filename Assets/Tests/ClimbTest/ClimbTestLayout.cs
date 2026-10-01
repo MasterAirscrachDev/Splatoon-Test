@@ -1,10 +1,7 @@
 using UnityEngine;
 
-// Single source of truth for the climb test scene's geometry, shared by the editor builder
-// (ClimbTestSceneBuilder, which places everything) and the runtime ClimbTestRunner (whose
-// assertions depend on where walls actually are). All positions are station-local: each
-// station sits on its own floor whose top surface is y = 0, with the wall under test (if any)
-// having its front face on the z = 0 plane, facing -Z towards the spawn point.
+// Climb test scene geometry, shared by the scene builder and the runner's assertions.
+// Station-local: floor top at y = 0, the wall under test's front face on z = 0 facing -Z.
 public static class ClimbTestLayout
 {
     public enum Station { Lobby, FlatWall, Ledge, Pillar, InnerCorner, NeutralWall, EnemyWall, PartialWall, Ramp30, Ramp60 }
@@ -41,10 +38,8 @@ public static class ClimbTestLayout
     }
 }
 
-// Box mesh layout used for every test surface: each face gets its own UV island (a 3x2 grid),
-// unlike Unity's built-in cube where all six faces share one UV square and so can't be
-// painted independently. On side faces u runs left→right as seen from outside and v runs
-// bottom→top, so "fill the bottom half of the front face" is just a sub-rect of its island.
+// Test box UV layout: one island per face in a 3x2 grid (Unity's cube shares one UV square
+// across all faces). On side faces u runs left→right from outside and v bottom→top.
 public static class ClimbTestBox
 {
     public enum Face { Front, Right, Back, Left, Top, Bottom } // Front = -Z

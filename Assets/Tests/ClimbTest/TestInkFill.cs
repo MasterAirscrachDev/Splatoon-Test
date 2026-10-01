@@ -1,8 +1,7 @@
 using System.Collections;
 using UnityEngine;
 
-// Paints fixed regions of a surface with known ink at scene start, so test stations begin in
-// an exact state (own-ink wall, enemy wall, half-painted wall...) instead of relying on splats.
+// Paints fixed regions of a surface at scene start, so test stations begin in a known ink state.
 [RequireComponent(typeof(SurfaceInkManager))]
 public class TestInkFill : MonoBehaviour
 {
@@ -17,7 +16,7 @@ public class TestInkFill : MonoBehaviour
 
     IEnumerator Start()
     {
-        yield return null; // SurfaceInkManager creates its textures in Start; let every Start run first
+        yield return null; // after SurfaceInkManager.Start creates its textures
         SurfaceInkManager ink = GetComponent<SurfaceInkManager>();
         foreach (Region r in regions) ink.FillRegion(r.uv, r.team);
     }

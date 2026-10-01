@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
+// SurfaceInkManager inspector buttons to preview texel density as a grid on the surface.
 [CustomEditor(typeof(SurfaceInkManager))]
 public class InkDensityCalibratorEditor : Editor
 {
