@@ -148,12 +148,28 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.Dispatch(KernelComputeNormals, groupsX, groupsY, 1);
     }
 
+    // This surface's original mesh, in its own local space. When the object is static-batched
+    // (the map is marked fully static), entering play mode swaps the MeshFilter's mesh for a
+    // "Combined Mesh" that holds the whole batch in world space and isn't CPU-readable, so
+    // reading its UVs threw and Start never created the ink textures. The MeshCollider keeps
+    // the original mesh, so use that instead whenever the filter's mesh is batched/unreadable.
     Mesh GetSharedMesh()
     {
+        Renderer rend = GetComponent<Renderer>();
+        bool batched = rend != null && rend.isPartOfStaticBatch;
+
         MeshFilter mf = GetComponent<MeshFilter>();
-        if (mf != null && mf.sharedMesh != null) return mf.sharedMesh;
+        if (!batched && mf != null && mf.sharedMesh != null && mf.sharedMesh.isReadable) return mf.sharedMesh;
+
+        MeshCollider mc = GetComponent<MeshCollider>();
+        if (mc != null && mc.sharedMesh != null && mc.sharedMesh.isReadable) return mc.sharedMesh;
+
         SkinnedMeshRenderer smr = GetComponent<SkinnedMeshRenderer>();
-        return smr != null ? smr.sharedMesh : null;
+        if (smr != null && smr.sharedMesh != null && smr.sharedMesh.isReadable) return smr.sharedMesh;
+
+        Debug.LogWarning($"[SurfaceInkManager] {name}: no readable source mesh (static-batched with no " +
+                         "MeshCollider, or Read/Write disabled); scoring falls back to whole-surface coverage.", this);
+        return null;
     }
 
     // Rasterises the mesh's UV triangles into boolean masks. `covered` counts every pixel

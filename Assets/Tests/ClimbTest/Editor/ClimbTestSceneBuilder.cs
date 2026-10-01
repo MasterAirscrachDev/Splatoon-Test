@@ -82,8 +82,9 @@ public static class ClimbTestSceneBuilder
 
         Vector3 spawn = new Vector3(0f, 0.05f, -6f);
         float spawnYaw = 0f;
-        Vector3 wall = new Vector3(8f, WallHeight, 4f);
-        Vector3 wallCenter = new Vector3(0f, WallHeight / 2f, 2f);
+        // 8m deep so a player popping up over the top lip has room to land and stop on top.
+        Vector3 wall = new Vector3(8f, WallHeight, 8f);
+        Vector3 wallCenter = new Vector3(0f, WallHeight / 2f, 4f);
 
         switch (s)
         {
@@ -144,6 +145,10 @@ public static class ClimbTestSceneBuilder
     {
         GameObject go = new GameObject(name);
         go.layer = inkLayer;
+        // Fully static like the real map's surfaces, so play mode static-batches them the same
+        // way (static batching replaces the MeshFilter's mesh with an unreadable combined one,
+        // which SurfaceInkManager has to cope with).
+        GameObjectUtility.SetStaticEditorFlags(go, (StaticEditorFlags)~0);
         go.transform.SetParent(parent, false);
         go.transform.localPosition = localCenter;
         go.transform.localRotation = rot;

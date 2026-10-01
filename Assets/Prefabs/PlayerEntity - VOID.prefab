@@ -789,11 +789,23 @@ MonoBehaviour:
   inkRechargeRateSquid: 0.3
   playerMode: 0
   uiController: {fileID: 0}
+  walkableSlopeLimit: 45
   mat: {fileID: 2100000, guid: b01feec295539b446a9c84b91e4268ed, type: 2}
   groundStickForce: 1
   climbSlideCap: 1.5
   climbJumpScale: 0.2
+  climbSpeedFactor: 0.8
+  climbBoostPerJump: 0.35
+  climbBoostDecay: 0.7
+  climbPopForward: 2.5
+  climbPopAirControl: 3
+  climbPopNoSwimTime: 0.3
+  climbPopInkEdgeLift: 0.25
+  climbPopTopLift: 0.8
   wallJumpGraceDuration: 0.3
+  missedWallGrace: 3
+  climbNormalSmoothing: 15
+  climbEngageDot: 0.3
   fallSplashMinHeight: 0.5
   netLerpSpeed: 14
   spawnPoint: {x: 0, y: 3, z: 0}
@@ -1078,6 +1090,8 @@ MonoBehaviour:
   raycastMask:
     serializedVersion: 2
     m_Bits: 8
+  intentBias: 0.5
+  topProbeDrop: 0.25
   debugDraw: 1
 --- !u!1 &7805429156883299521
 GameObject:

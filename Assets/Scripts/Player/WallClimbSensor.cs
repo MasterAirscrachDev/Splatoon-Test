@@ -24,6 +24,8 @@ public class WallClimbSensor : MonoBehaviour
     // wall being climbed is always slightly closer than the one being strafed into, so the
     // player stayed pinned in the corner instead of transferring onto the new wall.
     [SerializeField] float intentBias = 0.5f;
+    // How far below the ring to probe for "the wall continues below us" (see WallContinuesBelow).
+    [SerializeField] float topProbeDrop = 0.25f;
     [SerializeField] bool debugDraw = true;
 
     PlayerController player;
@@ -41,8 +43,10 @@ public class WallClimbSensor : MonoBehaviour
             player.SetClimbContact(hit.normal, ink, uv);
         else
             // No own-ink wall, but a climbable wall *is* right there: we've reached the edge of
-            // our ink on it, not the edge of the wall itself.
-            player.ClearClimbContact(atInkEdge: sawNonOwnWall);
+            // our ink on it, not the edge of the wall itself. Or the wall we were on carries on
+            // just below us: we've climbed past its top lip. Both are definite, so they skip the
+            // grace window meant for brief misses rounding corners.
+            player.ClearClimbContact(atInkEdge: sawNonOwnWall, atWallTop: !sawNonOwnWall && WallContinuesBelow());
     }
 
     // Casts rayCount evenly-spaced horizontal rays (world-space, independent of the player's
@@ -123,6 +127,18 @@ public class WallClimbSensor : MonoBehaviour
             Debug.DrawRay(bestHit.point, bestHit.normal * 0.5f, Color.cyan);
 
         return found;
+    }
+
+    // While climbing, nothing found at body height but the wall still there a little lower down
+    // means we've just climbed past its top. (Rounding an outer corner, the wall ends sideways
+    // instead, so this lower probe misses too and the normal grace window applies.)
+    bool WallContinuesBelow()
+    {
+        if (!player.HasWallContact) return false;
+        Vector3 origin = transform.position - Vector3.up * topProbeDrop;
+        bool hit = Physics.Raycast(origin, -player.ClimbNormal, probeDistance, raycastMask);
+        if (debugDraw) Debug.DrawRay(origin, -player.ClimbNormal * probeDistance, hit ? Color.magenta : Color.gray);
+        return hit;
     }
 
     static Vector2 FallbackUV(RaycastHit hit, SurfaceInkManager inkManager)

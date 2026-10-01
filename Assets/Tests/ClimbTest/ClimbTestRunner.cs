@@ -60,8 +60,21 @@ public class ClimbTestRunner : MonoBehaviour
     readonly List<string> notes = new List<string>();
     readonly List<Result> results = new List<Result>();
     int errorLogs;
+    // Errors logged while the scene starts up (e.g. a surface failing to initialise its ink),
+    // before any scenario runs. Reported as their own failing result.
+    int startupErrors;
+    string firstStartupError;
     bool running;
     Vector2 scroll;
+
+    void Awake() => Application.logMessageReceived += OnStartupLog;
+    void OnDestroy() => Application.logMessageReceived -= OnStartupLog;
+
+    void OnStartupLog(string message, string stack, LogType type)
+    {
+        if (type != LogType.Error && type != LogType.Exception && type != LogType.Assert) return;
+        if (startupErrors++ == 0) firstStartupError = message;
+    }
 
     // ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -93,6 +106,14 @@ public class ClimbTestRunner : MonoBehaviour
     {
         running = true;
         results.Clear();
+        Application.logMessageReceived -= OnStartupLog;
+        if (startupErrors > 0)
+        {
+            string detail = $"{startupErrors} error(s) during scene startup, first: {firstStartupError}";
+            results.Add(new Result { name = "Scene startup is error-free", pass = false, detail = detail });
+            Debug.LogWarning($"[ClimbTest] FAIL Scene startup is error-free :: {detail}");
+        }
+
         Application.logMessageReceived += OnLog;
         Time.captureDeltaTime = Dt;
 
@@ -316,8 +337,8 @@ public class ClimbTestRunner : MonoBehaviour
         yield return S("InnerCorner: strafing into an inner corner transfers to the side wall", Station.InnerCorner, InnerCorner);
         yield return S("NeutralWall: an unpainted wall can't be climbed", Station.NeutralWall, CannotClimb);
         yield return S("EnemyWall: an enemy-ink wall can't be climbed", Station.EnemyWall, CannotClimb);
-        yield return S("PartialWall: reaching the top of own ink pops off; holding up doesn't re-grab", Station.PartialWall, PartialWallPopOff);
-        yield return S("PartialWall: after popping off, pressing up again re-grabs the ink below", Station.PartialWall, PartialWallRegrab);
+        yield return S("PartialWall: reaching the top of own ink pops off, then re-grabs after 0.2s", Station.PartialWall, PartialWallPopOff);
+        yield return S("PartialWall: holding up bobs at the ink edge without climbing past it", Station.PartialWall, PartialWallBob);
         yield return S("Ramp30: swims up a walkable slope without climb mode or jitter", Station.Ramp30, ShallowRampUp);
         yield return S("Ramp30: swims down a walkable slope without bouncing", Station.Ramp30, ShallowRampDown, "SpawnTop");
         yield return S("Ramp60: a steep slope is climbed", Station.Ramp60, SteepRamp);
@@ -326,7 +347,7 @@ public class ClimbTestRunner : MonoBehaviour
     IEnumerator ClimbUpAndOver()
     {
         // Stop pushing once on top, or the player swims straight off the far side of the block.
-        yield return HoldUntil(Fwd, true, 8f, "climb", f => f.pos.y > WallHeight - 0.3f && f.pos.z > 0.5f);
+        yield return HoldUntil(Fwd, true, 8f, "climb", f => f.pos.y > WallHeight - 0.3f && f.pos.z > 0.5f && f.grounded);
         yield return Hold(Still, true, 0.5f, "settle");
 
         float engage = FirstTime(frames, f => f.climbing);
@@ -344,10 +365,30 @@ public class ClimbTestRunner : MonoBehaviour
         int inkToggles = Toggles(frames, f => f.inInk);
         if (inkToggles > 2) Fail($"squid hide/show (IsInInk) toggled {inkToggles} times");
 
+        // Reaching the top should pop the squid up off the lip and let it fall back onto the top
+        // surface, not switch straight from climbing to swimming along it.
+        int lastClimb = frames.FindLastIndex(f => f.climbing);
+        if (lastClimb >= 0 && lastClimb < frames.Count - 1)
+        {
+            List<Frame> after = frames.Skip(lastClimb + 1).ToList();
+            float hop = after.Max(f => f.pos.y) - WallHeight;
+            Note($"popped {hop:F2}m above the top");
+            // Top-of-wall pop keeps half the climb's upward speed: a small hop, not a launch.
+            if (hop < 0.05f) Fail($"didn't pop up off the top of the wall (peak {hop:F2}m above the lip)");
+            if (hop > 0.6f) Fail($"popped too high off the top of the wall ({hop:F2}m above the lip)");
+            List<Frame> early = after.Where(f => f.t <= after[0].t + 0.1f).ToList();
+            float hSpeed = early.Count > 1
+                ? Vector2.Distance(new Vector2(early.Last().pos.x, early.Last().pos.z), new Vector2(early[0].pos.x, early[0].pos.z)) / (early.Last().t - early[0].t)
+                : 0f;
+            Note($"horizontal speed just after the pop {hSpeed:F1} m/s");
+            if (hSpeed > 6f) Fail($"snapped to full swim speed straight after leaving the wall ({hSpeed:F1} m/s)");
+        }
+
         List<Frame> mid = frames.Where(f => f.climbing && f.pos.y > 1f && f.pos.y < WallHeight - 1f).ToList();
         float speed = VerticalSpeed(mid);
         Note($"climb speed {speed:F1} m/s");
-        if (mid.Count > 1 && speed < 4f) Fail($"climbing is slow: {speed:F1} m/s up the wall (swimming in own ink is ~12 m/s)");
+        // Unboosted climbing is 0.8x own-ink swim speed (12 m/s), less the slow gravity slide.
+        if (mid.Count > 1 && (speed < 8f || speed > 10.5f)) Fail($"unboosted climb speed is {speed:F1} m/s (expected ~9.6)");
 
         float rot = MaxRotStep(frames, f => f.climbing && f.pos.y > 1f && f.pos.y < WallHeight - 1f);
         Note($"max squid rotation step {rot:F1}°/frame");
@@ -399,21 +440,26 @@ public class ClimbTestRunner : MonoBehaviour
 
     IEnumerator JumpBoost()
     {
-        yield return ClimbTo(2f);
+        yield return ClimbTo(1.5f);
         if (!RequireClimbing("after swimming into the wall")) yield break;
 
-        yield return Hold(Fwd, true, 0.2f, "base");
-        player.PressJump();
-        yield return Hold(Fwd, true, 0.2f, "boost");
+        yield return Hold(Fwd, true, 0.25f, "base");
+        // Spam jump: a press every 0.1s.
+        for (int i = 0; i < 5; i++)
+        {
+            player.PressJump();
+            yield return Hold(Fwd, true, 0.1f, "boost");
+        }
 
-        List<Frame> b = Phase("base"), boost = Phase("boost");
-        float baseRise  = b.Last().pos.y - b.First().pos.y;
-        float boostRise = boost.Last().pos.y - b.Last().pos.y;
-        Note($"rise over 0.2s: {baseRise:F2}m normal, {boostRise:F2}m after jump");
+        float baseSpeed  = VerticalSpeed(Phase("base"));
+        List<Frame> boost = Phase("boost");
+        float boostSpeed = VerticalSpeed(boost.Skip(boost.Count / 2).ToList()); // second half, once built up
+        Note($"climb speed {baseSpeed:F1} m/s normally, {boostSpeed:F1} m/s spamming jump");
 
         float off = FirstTime(boost, f => !f.climbing && f.pos.y < WallHeight - 0.5f);
         if (off >= 0f) Fail($"jump knocked the player off the wall at t={off:F2}");
-        if (boostRise < baseRise + 0.2f) Fail($"jump boost added little ({baseRise:F2}m → {boostRise:F2}m over 0.2s)");
+        if (boostSpeed < 11.3f) Fail($"spamming jump only reached {boostSpeed:F1} m/s (expected ~12, full swim speed)");
+        if (boostSpeed < baseSpeed + 1.5f) Fail($"jump boost had little effect ({baseSpeed:F1} â†’ {boostSpeed:F1} m/s)");
     }
 
     IEnumerator JumpEject()
@@ -465,6 +511,16 @@ public class ClimbTestRunner : MonoBehaviour
             Fail($"grabbed the wall below the ledge at t={grab:F2} (y={g.pos.y:F2})");
         }
         if (!(Last.pos.y < 0.6f && Last.pos.z < -1f)) Fail($"didn't land on the floor beyond the ledge (end pos {Last.pos:F2})");
+
+        // Swimming off the edge should carry the swim speed into the fall, not drop to a crawl.
+        int leave = frames.FindIndex(f => !f.grounded && f.pos.y < LedgeHeight);
+        if (leave > 0)
+        {
+            List<Frame> fall = frames.Skip(leave).Where(f => f.t <= frames[leave].t + 0.15f).ToList();
+            float hSpeed = fall.Count > 1 ? Mathf.Abs(fall.Last().pos.z - fall[0].pos.z) / (fall.Last().t - fall[0].t) : 0f;
+            Note($"horizontal speed leaving the ledge {hSpeed:F1} m/s");
+            if (hSpeed < 9f) Fail($"lost speed swimming off the ledge ({hSpeed:F1} m/s; swimming in own ink is ~12)");
+        }
     }
 
     IEnumerator OuterCorner()
@@ -529,29 +585,52 @@ public class ClimbTestRunner : MonoBehaviour
     {
         yield return ClimbUntilPopOff();
         if (!CheckPopOff()) yield break;
+        float popT = Last.t, popY = Last.pos.y;
 
-        // Still holding up: must fall to the floor without re-grabbing the ink below.
-        yield return HoldUntil(Fwd, true, 3f, "fall", f => f.grounded);
-        float regrab = FirstTime(Phase("fall"), f => f.climbing);
-        if (regrab >= 0f) Fail($"re-grabbed the wall at t={regrab:F2} while still holding up after popping off");
-        if (!Last.grounded) Fail($"didn't land after popping off (end pos {Last.pos:F2})");
+        // Keep holding up: pop off with momentum, fall back for the 0.2s no-swim window, then
+        // swim back into the ink on the wall.
+        yield return HoldUntil(Fwd, true, 2f, "after", f => f.climbing || f.grounded);
+        List<Frame> after = Phase("after");
 
-        int rapid = RapidToggles(frames, f => f.climbing, 0.25f);
-        if (rapid > 0) Fail($"climb state flickered {rapid} times at the ink edge");
-        int rapidInk = RapidToggles(frames, f => f.inInk, 0.25f);
-        if (rapidInk > 0) Fail($"squid hide/show flickered {rapidInk} times at the ink edge");
+        float early = FirstTime(after, f => f.climbing && f.t < popT + 0.2f - 0.001f);
+        if (early >= 0f) Fail($"re-grabbed {early - popT:F2}s after popping off, inside the 0.2s no-swim window");
+
+        float peak = after.Max(f => f.pos.y);
+        Note($"popped off at {popY:F2}, peaked at {peak:F2}");
+        // Ink-edge pop keeps a quarter of the climb's upward speed: a slight lift, then fall back.
+        if (peak < popY + 0.01f) Fail($"popping off didn't keep any upward momentum (peak {peak - popY:F2}m above the pop)");
+        if (peak > popY + 0.3f) Fail($"popped too high off the edge of the ink ({peak - popY:F2}m above the pop)");
+
+        if (!Last.climbing) Fail($"didn't swim back into the wall's ink after the no-swim window (end pos {Last.pos:F2}, grounded {Last.grounded})");
+        else Note($"re-grabbed {Last.t - popT:F2}s after popping off, at y={Last.pos.y:F2}");
     }
 
-    IEnumerator PartialWallRegrab()
+    IEnumerator PartialWallBob()
     {
-        yield return ClimbUntilPopOff();
-        if (!CheckPopOff()) yield break;
+        // Holding up at the edge of the ink: repeatedly pop off and re-grab the ink below.
+        // Each pop-off's exit splash paints a little more ink above the edge (intended), so the
+        // edge creeps upward; what must never happen is re-grabbing sooner than the no-swim
+        // window, or climbing further past the edge than one splash could have painted.
+        yield return Hold(Fwd, true, 4f, "bob");
+        if (FirstTime(frames, f => f.climbing) < 0f) { Fail("never engaged climbing on the inked lower half"); yield break; }
+        if (frames.Where(f => f.t > 1f).Any(f => f.grounded)) Fail("fell all the way to the floor instead of re-grabbing the ink below");
 
-        // Let go of up briefly, then press it again while still falling past the inked half.
-        yield return Hold(Still, true, 0.05f, "release");
-        yield return HoldUntil(Fwd, true, 1f, "regrab", f => f.climbing || f.grounded);
-        if (!Last.climbing) Fail($"pressing up again didn't re-grab the inked wall (end pos {Last.pos:F2})");
-        else Note($"re-grabbed at {Last.pos.y:F2}");
+        // Walk the climbing on/off segments: pop heights, and the off-wall gaps between them.
+        var pops = new List<float>();
+        float offSince = -1f, segTop = float.MinValue, shortestGap = float.MaxValue;
+        for (int i = 1; i < frames.Count; i++)
+        {
+            Frame a = frames[i - 1], b = frames[i];
+            if (b.climbing) segTop = Mathf.Max(segTop, b.pos.y);
+            if (a.climbing && !b.climbing) { pops.Add(segTop); segTop = float.MinValue; offSince = b.t; }
+            if (!a.climbing && b.climbing && offSince >= 0f) shortestGap = Mathf.Min(shortestGap, b.t - offSince);
+        }
+        if (shortestGap < 0.2f - 0.001f) Fail($"re-grabbed only {shortestGap:F2}s after popping off (no-swim window is 0.2s)");
+        for (int i = 1; i < pops.Count; i++)
+            if (pops[i] - pops[i - 1] > 0.5f)
+                Fail($"pop-off {i + 1} was {pops[i] - pops[i - 1]:F2}m above the previous one (more than an exit splash can paint)");
+        if (pops.Count > 0)
+            Note($"{pops.Count} pop-offs, first at {pops[0]:F2}, last at {pops[pops.Count - 1]:F2} (ink edge creeps via exit splashes)");
     }
 
     IEnumerator ShallowRampUp()
