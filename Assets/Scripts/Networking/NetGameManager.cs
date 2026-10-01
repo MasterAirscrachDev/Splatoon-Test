@@ -17,6 +17,9 @@ public class NetGameManager : MonoBehaviour
     [SerializeField] bool devMode;
     [SerializeField] bool autoLobby;
 
+    [Header("Match")]
+    [SerializeField] float matchDuration = 180f; // seconds
+
     [Header("Team Colours")]
     [SerializeField] Color alphaTeam = Color.cyan;
     [SerializeField] Color betaTeam  = Color.magenta;
@@ -26,6 +29,14 @@ public class NetGameManager : MonoBehaviour
     const string LobbyTag = "TestSplatoongame";
 
     readonly Dictionary<ulong, PlayerController> players = new Dictionary<ulong, PlayerController>();
+    public Dictionary<ulong, PlayerController>.ValueCollection Players => players.Values;
+
+    public MatchPhase Phase { get; private set; } = MatchPhase.Lobby;
+    float matchEndTime;
+    // Full duration before the match starts, counting down while playing, 0 once ended.
+    public float MatchTimeRemaining =>
+        Phase == MatchPhase.Playing ? Mathf.Max(0f, matchEndTime - Time.time) :
+        Phase == MatchPhase.Ended ? 0f : matchDuration;
     readonly ConcurrentQueue<System.Action> mainThread = new ConcurrentQueue<System.Action>();
 
     SurfaceInkManager[] surfaceManagers;
@@ -83,6 +94,10 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.Bind((ushort)NetMsg.Teleport,      OnTeleportMsg);
         SteamGlobal.Bind((ushort)NetMsg.ProjectileSpawn, OnProjectileSpawnMsg);
         SteamGlobal.Bind((ushort)NetMsg.Damage,        OnDamageMsg);
+        SteamGlobal.Bind((ushort)NetMsg.TeamAssign,    OnTeamAssignMsg);
+        SteamGlobal.Bind((ushort)NetMsg.BeaconSpawn,   OnBeaconSpawnMsg);
+        SteamGlobal.Bind((ushort)NetMsg.BeaconDestroy, OnBeaconDestroyMsg);
+        SteamGlobal.Bind((ushort)NetMsg.BeaconDamage,  OnBeaconDamageMsg);
         SurfaceInkManager.OnSplatApplied += OnLocalSplat;
     }
 
@@ -97,6 +112,10 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.UnBind((ushort)NetMsg.Teleport,      OnTeleportMsg);
         SteamGlobal.UnBind((ushort)NetMsg.ProjectileSpawn, OnProjectileSpawnMsg);
         SteamGlobal.UnBind((ushort)NetMsg.Damage,        OnDamageMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.TeamAssign,    OnTeamAssignMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.BeaconSpawn,   OnBeaconSpawnMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.BeaconDestroy, OnBeaconDestroyMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.BeaconDamage,  OnBeaconDamageMsg);
         SurfaceInkManager.OnSplatApplied -= OnLocalSplat;
     }
 
@@ -137,47 +156,77 @@ public class NetGameManager : MonoBehaviour
     }
 
     // ── Scoring ────────────────────────────────────────────────────────────
-    public void GetScores() => AccumulateScores(false);       // every inkable face
-    public void GetTopDownScores() => AccumulateScores(true); // floors and slopes only
+    public void GetScores() => LogScores(false);       // every inkable face
+    public void GetTopDownScores() => LogScores(true); // floors and slopes only
 
-    void AccumulateScores(bool topDownOnly)
+    void LogScores(bool topDownOnly)
     {
-        SurfaceInkManager[] managers = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None);
-        if (managers.Length == 0) return;
+        RequestScores(topDownOnly, total =>
+        {
+            float t = total.x + total.y + total.z;
+            if (t <= 0) return;
+            string label = topDownOnly ? "[Top-down] " : "[Full] ";
+            Debug.Log($"{label}Alpha: {total.x / t * 100:f2}%  Beta: {total.y / t * 100:f2}%  Neutral: {total.z / t * 100:f2}%");
+        });
+    }
 
-        int pending = managers.Length;
+    // Texel counts (alpha, beta, neutral) summed over every surface; the callback fires once
+    // all surfaces' GPU readbacks complete.
+    public void RequestScores(bool topDownOnly, System.Action<Vector3Int> callback)
+    {
+        if (surfaceManagers == null || surfaceManagers.Length == 0) return;
+
+        int pending = surfaceManagers.Length;
         Vector3Int total = Vector3Int.zero;
         System.Action<Vector3Int> onSurface = scores =>
         {
             total += scores;
-            pending--;
-            if (pending == 0)
-            {
-                float t = total.x + total.y + total.z;
-                if (t <= 0) return;
-                string label = topDownOnly ? "[Top-down] " : "[Full] ";
-                Debug.Log($"{label}Alpha: {total.x / t * 100:f2}%  Beta: {total.y / t * 100:f2}%  Neutral: {total.z / t * 100:f2}%");
-            }
+            if (--pending == 0) callback(total);
         };
 
-        foreach (var mgr in managers)
+        foreach (var mgr in surfaceManagers)
         {
             if (topDownOnly) mgr.CheckTopScoresAsync(onSurface);
             else             mgr.CheckScoresAsync(onSurface);
         }
     }
 
-    // ── Game start / ink reset ─────────────────────────────────────────────
+    // ── Host menu / match control ──────────────────────────────────────────
+    public bool IsHost => devMode || SteamGlobal.isHost;
+    public static event System.Action HostMenuToggled; // G, host only (see HostMenu)
+
     void OnGameStart()
     {
-        if (!SteamGlobal.isHost) return;
-        ClearAllInk();
-        if (!devMode)
-            Send(NetMsg.InkReset, new MatchEventData { phase = MatchPhase.Playing, serverTime = Time.time });
+        if (IsHost) HostMenuToggled?.Invoke();
     }
 
+    // Placeholder until there's a proper pre-match flow.
+    public void StartGame()
+    {
+        if (!IsHost) return;
+        Debug.Log("[Match] Start game isn't implemented yet");
+    }
+
+    // Host: clear the ink and restart the timer everywhere.
+    public void ResetMap()
+    {
+        if (!IsHost) return;
+        ClearAllInk();
+        BeginMatch(matchDuration);
+        if (!devMode)
+            Send(NetMsg.InkReset, new MatchEventData { phase = MatchPhase.Playing, serverTime = Time.time, duration = matchDuration });
+    }
+
+    void BeginMatch(float duration)
+    {
+        Phase = MatchPhase.Playing;
+        matchEndTime = Time.time + duration;
+    }
+
+    // Resetting the map also removes every beacon.
     void ClearAllInk()
     {
+        Beacon.RemoveAll();
         if (surfaceManagers == null) return;
         foreach (var m in surfaceManagers) m.ClearInk();
     }
@@ -234,7 +283,12 @@ public class NetGameManager : MonoBehaviour
     {
         if (d.steamId == localId) return;
         if (players.ContainsKey(d.steamId)) return;
+        SpawnRemoteEntity(d);
+        if (IsHost) BroadcastRoster(); // so the newcomer learns everyone's role
+    }
 
+    void SpawnRemoteEntity(PlayerSpawnData d)
+    {
         string name = !string.IsNullOrEmpty(d.playerName) ? d.playerName : RemotePlayerName(d.steamId);
         PlayerController pc = InstantiateEntity(d.position, PlayerMode.Network, d.team, name, d.steamId);
         players[d.steamId] = pc;
@@ -259,6 +313,7 @@ public class NetGameManager : MonoBehaviour
         pc.SetPlayerMode(mode);
         pc.SetTeam(team);
         pc.SetOwner(steamId);
+        pc.SetDisplayName(playerName);
         if (mode == PlayerMode.Network) DisableLocalOnlyComponents(go);
         return pc;
     }
@@ -314,12 +369,14 @@ public class NetGameManager : MonoBehaviour
             DestroyEntity(pc);
             players.Remove(steamId);
         }
+        Beacon.RemoveOwnedBy(steamId);
     }
 
     // Leaving or losing the lobby removes every entity, local player included (rejoining respawns it).
     void ClearAll()
     {
         foreach (var kv in players) DestroyEntity(kv.Value);
+        Beacon.RemoveAll();
         if (localPlayer != null && !players.ContainsValue(localPlayer)) DestroyEntity(localPlayer);
         players.Clear();
         localPlayer = null;
@@ -338,6 +395,12 @@ public class NetGameManager : MonoBehaviour
     // ── Main-thread drain ──────────────────────────────────────────────────
     void Update()
     {
+        if (Phase == MatchPhase.Playing && Time.time >= matchEndTime)
+        {
+            Phase = MatchPhase.Ended;
+            GetTopDownScores(); // final result to the log until there's a results screen
+        }
+
         while (mainThread.TryDequeue(out var action)) action?.Invoke();
     }
 
@@ -393,7 +456,51 @@ public class NetGameManager : MonoBehaviour
 
     void OnInkResetMsg(object data, SteamId from)
     {
-        mainThread.Enqueue(ClearAllInk);
+        float duration = data is MatchEventData m && m.phase == MatchPhase.Playing && m.duration > 0f ? m.duration : matchDuration;
+        mainThread.Enqueue(() =>
+        {
+            ClearAllInk();
+            BeginMatch(duration);
+        });
+    }
+
+    // ── Roster ─────────────────────────────────────────────────────────────
+    // Host: assign every listed player a role and broadcast the result.
+    public void SetRoster(ulong[] ids, PlayerRole[] roles)
+    {
+        if (!IsHost) return;
+        int[] r = new int[roles.Length];
+        for (int i = 0; i < roles.Length; i++) r[i] = (int)roles[i];
+        ApplyRoster(ids, r);
+        Send(NetMsg.TeamAssign, new TeamAssignData { ids = ids, roles = r });
+    }
+
+    void BroadcastRoster()
+    {
+        var ids = new List<ulong>();
+        var roles = new List<PlayerRole>();
+        foreach (var kv in players)
+            if (kv.Value != null) { ids.Add(kv.Key); roles.Add(kv.Value.Role); }
+        SetRoster(ids.ToArray(), roles.ToArray());
+    }
+
+    void ApplyRoster(ulong[] ids, int[] roles)
+    {
+        for (int i = 0; i < ids.Length && i < roles.Length; i++)
+        {
+            PlayerController pc = GetPlayer(ids[i]);
+            if (pc != null) pc.SetRole((PlayerRole)roles[i]);
+        }
+    }
+
+    void OnTeamAssignMsg(object data, SteamId from)
+    {
+        if (data is TeamAssignData d && d.ids != null && d.roles != null)
+            mainThread.Enqueue(() =>
+            {
+                if (!devMode && from != SteamGlobal.hostID) return; // only the host assigns teams
+                ApplyRoster(d.ids, d.roles);
+            });
     }
 
     // ── Combat ─────────────────────────────────────────────────────────────
@@ -460,6 +567,56 @@ public class NetGameManager : MonoBehaviour
             });
     }
 
+    // ── Beacons (sub) ──────────────────────────────────────────────────────
+    // The owner is authoritative: it spawns, damages and expires its beacons. Anyone may break
+    // one by landing on it, so BeaconDestroy is accepted from every client.
+
+    public void SendBeaconSpawn(Beacon b) => Send(NetMsg.BeaconSpawn, new BeaconData
+    {
+        ownerId = b.OwnerId, beaconId = b.Id, team = b.Team, position = b.transform.position
+    });
+
+    public void SendBeaconDestroy(ulong ownerId, int beaconId) =>
+        Send(NetMsg.BeaconDestroy, new BeaconData { ownerId = ownerId, beaconId = beaconId });
+
+    public void SendBeaconDamage(ulong ownerId, int beaconId, float amount, int fromTeam, ulong attacker) =>
+        SendTo(ownerId, NetMsg.BeaconDamage, new BeaconDamageData
+        {
+            ownerId = ownerId, beaconId = beaconId, amount = amount, fromTeam = fromTeam, attackerSteamId = attacker
+        });
+
+    void OnBeaconSpawnMsg(object data, SteamId from)
+    {
+        if (data is BeaconData d)
+            mainThread.Enqueue(() =>
+            {
+                if (d.ownerId == localId && localPlayer != null) return; // our own
+                PlayerController owner = GetPlayer(d.ownerId);
+                PlayerLoadout loadout = owner != null ? owner.GetComponent<PlayerLoadout>() : null;
+                if (loadout != null) loadout.SpawnRemoteBeacon(d);
+            });
+    }
+
+    void OnBeaconDestroyMsg(object data, SteamId from)
+    {
+        if (data is BeaconData d)
+            mainThread.Enqueue(() =>
+            {
+                Beacon b = Beacon.Find(d.ownerId, d.beaconId);
+                if (b != null) b.Remove();
+            });
+    }
+
+    void OnBeaconDamageMsg(object data, SteamId from)
+    {
+        if (data is BeaconDamageData d)
+            mainThread.Enqueue(() =>
+            {
+                Beacon b = Beacon.Find(d.ownerId, d.beaconId);
+                if (b != null && b.IsOwnedLocally) b.TakeDamage(d.amount, d.fromTeam, d.attackerSteamId);
+            });
+    }
+
     // ── Sending (and test hooks) ───────────────────────────────────────────
     // Tests: when set, outgoing messages go here instead of Steam (target 0 = everyone).
     public static System.Action<NetMsg, object, ulong> SendOverride;
@@ -490,6 +647,10 @@ public class NetGameManager : MonoBehaviour
             case NetMsg.Teleport:        OnTeleportMsg(data, sender); break;
             case NetMsg.ProjectileSpawn: OnProjectileSpawnMsg(data, sender); break;
             case NetMsg.Damage:          OnDamageMsg(data, sender); break;
+            case NetMsg.TeamAssign:      OnTeamAssignMsg(data, sender); break;
+            case NetMsg.BeaconSpawn:     OnBeaconSpawnMsg(data, sender); break;
+            case NetMsg.BeaconDestroy:   OnBeaconDestroyMsg(data, sender); break;
+            case NetMsg.BeaconDamage:    OnBeaconDamageMsg(data, sender); break;
         }
     }
 }

@@ -5,15 +5,13 @@
 #pragma kernel PaintTrailNormal
 #pragma kernel FillRegion
 
-RWTexture2D<float4> InkTexture;
+RWTexture2D<float4> InkTexture;      // per-team coverage: r = alpha team, g = beta team (0..1); b, a unused
 RWTexture2D<float4> NormalTexture;   // runtime ink normal map (RGB-encoded), written by ComputeNormals
 Texture2D<float> TopMask;   // 1 = pixel belongs to a floor/slope face, 0 = wall (used by GetTopScores)
 float NormalStrength;       // slope of the ink rim — higher = more pronounced bump
 float NoiseStrength;        // amplitude of the surface noise that breaks up flat ink tops
 float NoiseScale;           // frequency of that noise (in noise-cells per texel)
-float4 AlphaColor;
-float4 BetaColor;
-float4 NoColor;
+float SeamHeight;           // height of the ridge where two teams' ink meets
 int2 PixelCoords;      // used by Splat
 int2 BoundsMin;        // texel-space origin of the current dispatch's bounding box
 int Size;
@@ -24,7 +22,7 @@ float2 TrailCenter;    // texel-space centre of a PaintTrailNormal stamp
 float TrailRadius;     // texel radius of that stamp
 float TrailDepth;      // steepness of the fully-formed indent
 float TrailBlend;      // 0..1 — how far one stamp eases the normal toward the indent shape
-float4 FillColor;      // solid colour written by FillRegion (alpha 0 erases)
+float4 FillColor;      // coverage written by FillRegion: (1,0,0,0) alpha, (0,1,0,0) beta, 0 erases
 int4 FillRect;         // FillRegion texel rect: xy = min (inclusive), zw = max (exclusive)
 RWStructuredBuffer<int> TeamScores;
 
@@ -47,9 +45,10 @@ float valueNoise(float2 p) {
     );
 }
 
-// Painted = mostly opaque and RGB within ARGB32 quantisation of the team colour.
-bool ColorNear(float4 a, float4 b) {
-    return a.a > 0.5 && all(abs(a.rgb - b.rgb) < 0.01);
+// Owning team at a texel: the higher coverage, if at least half covered (0 = none).
+int TeamOf(float4 ink) {
+    if (max(ink.r, ink.g) < 0.5) return 0;
+    return ink.r >= ink.g ? 1 : 2;
 }
 
 // Alpha the current splat contributes at a texel (0 outside its blob and feather band).
@@ -74,56 +73,44 @@ float SplatAlpha(int2 texel) {
     return 1.0 - smoothstep(-featherHalfWidth, featherHalfWidth, dist - r);
 }
 
-float4 GetColor(int2 texel, float4 old) {
-    float alpha = SplatAlpha(texel);
-    if (alpha < 0.01) return old;
-
-    float4 color = (Team == 1) ? AlphaColor : BetaColor;
-    color.a = alpha;
-
-    // Solid interior (alpha ≈ 1) always repaints any team.
-    // Sub-1 edge pixels only extend into emptier space so they can't weaken solid ink.
-    if (color.a < 0.99 && old.a >= color.a) return old;
-    return color;
-}
-
-// Dispatched only over the splat's bounding box (BoundsMin).
+// Dispatched only over the splat's bounding box (BoundsMin). Raises the splat's team coverage
+// to its soft-edged shape and pulls the other team's down to match, so where teams meet the
+// crossing point (r == g) keeps the splat's sub-texel smoothness.
 [numthreads(8,8,1)]
 void Splat(uint3 id : SV_DispatchThreadID) {
     int2 texel = BoundsMin + int2(id.xy);
     if (texel.x < 0 || texel.y < 0 || texel.x >= Size || texel.y >= Size) return;
-    InkTexture[texel] = GetColor(texel, InkTexture[texel]);
+    float s = SplatAlpha(texel);
+    if (s < 0.01) return;
+
+    float4 ink = InkTexture[texel];
+    if (Team == 1) { ink.r = max(ink.r, s); ink.g = min(ink.g, 1.0 - s); }
+    else           { ink.g = max(ink.g, s); ink.r = min(ink.r, 1.0 - s); }
+    InkTexture[texel] = ink;
 }
 
 [numthreads(8,8,1)]
 void GetScores(uint3 id : SV_DispatchThreadID) {
-    float4 color = InkTexture[int2(id.x, id.y)];
-    if (ColorNear(color, AlphaColor)) {
-        InterlockedAdd(TeamScores[0], 1);
-    } else if (ColorNear(color, BetaColor)) {
-        InterlockedAdd(TeamScores[1], 1);
-    } else {
-        InterlockedAdd(TeamScores[2], 1);
-    }
+    int team = TeamOf(InkTexture[int2(id.x, id.y)]);
+    InterlockedAdd(TeamScores[team == 0 ? 2 : team - 1], 1); // [alpha, beta, neutral]
 }
 
 // GetScores for floor/slope texels only (TopMask); neutral is derived on the CPU.
 [numthreads(8,8,1)]
 void GetTopScores(uint3 id : SV_DispatchThreadID) {
     if (TopMask.Load(int3(id.x, id.y, 0)) < 0.5) return;
-    float4 color = InkTexture[int2(id.x, id.y)];
-    if (ColorNear(color, AlphaColor)) {
-        InterlockedAdd(TeamScores[0], 1);
-    } else if (ColorNear(color, BetaColor)) {
-        InterlockedAdd(TeamScores[1], 1);
-    }
+    int team = TeamOf(InkTexture[int2(id.x, id.y)]);
+    if (team != 0) InterlockedAdd(TeamScores[team - 1], 1);
 }
 
-// Coverage as height, perturbed by zero-centred noise so ink tops aren't flat.
+// Total coverage as height, perturbed by zero-centred noise so ink tops aren't flat, plus a
+// ridge where both teams are present (2*min peaks at the boundary, 0 under one team's ink).
 float InkHeight(int2 c) {
-    float a = InkTexture[c].a;
+    float4 ink = InkTexture[c];
+    float coverage = saturate(ink.r + ink.g);
     float n = valueNoise(float2(c.x, c.y) * NoiseScale) - 0.5;
-    return a * (1.0 + n * NoiseStrength);
+    float seam = 2.0 * min(ink.r, ink.g);
+    return coverage * (1.0 + n * NoiseStrength) + seam * SeamHeight;
 }
 
 // Tangent-space normals from the ink height field (central differences), RGB-encoded.

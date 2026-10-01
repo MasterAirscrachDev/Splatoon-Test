@@ -35,7 +35,7 @@ public class WeaponShooter : MonoBehaviour
 
     void Update()
     {
-        bool firing = input.Weapon.Attack.ReadValue<float>() != 0;
+        bool firing = !InputGate.Blocked && input.Weapon.Attack.ReadValue<float>() != 0;
         if (firing && Time.time - lastShotTime >= fireRate && player.ConsumeInk(inkCostPerShot * 0.001f))
         {
             lastShotTime = Time.time;

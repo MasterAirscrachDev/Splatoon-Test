@@ -4,19 +4,18 @@ using UnityEngine;
 // and reports it to the PlayerController.
 public class WallClimbSensor : MonoBehaviour
 {
-    [SerializeField] int rayCount = 12;
-    [SerializeField] float probeDistance = 0.75f;
-    [SerializeField] float climbMarginDeg = 5f;  // degrees past the walkable slope limit before a surface counts as a wall
-    [SerializeField] LayerMask raycastMask = ~0;
-    [SerializeField] float intentBias = 0.5f;    // prefer the wall being moved into (inner corners), in metres per unit dot
-    [SerializeField] float topProbeDrop = 0.25f; // how far below the ring to check whether the wall continues
-    [SerializeField] bool debugDraw = true;
+    [SerializeField] bool debugDraw = true; // ray colours in the scene view, see TryFindWall
+
+    const int RayCount = 12;
+    const float ProbeDistance = 0.75f;
 
     PlayerController player;
+    int inkMask; // only inkable surfaces can be climbed
 
     void Awake()
     {
         player = GetComponentInParent<PlayerController>();
+        inkMask = LayerMask.GetMask("InkSurface");
     }
 
     void Update()
@@ -39,20 +38,20 @@ public class WallClimbSensor : MonoBehaviour
         bestInk = null;
         bestUV = Vector2.zero;
 
-        float climbThreshold = Mathf.Cos((player.SlopeLimit + climbMarginDeg) * Mathf.Deg2Rad);
+        float climbThreshold = Mathf.Cos((player.SlopeLimit + 5f) * Mathf.Deg2Rad); // 5° past walkable before it's a wall
         Vector3 origin = transform.position;
         bool found = false;
         float bestScore = float.MaxValue;
         Vector3 intent = player.ClimbIntent;
 
-        for (int i = 0; i < rayCount; i++)
+        for (int i = 0; i < RayCount; i++)
         {
-            float angle = i * (360f / rayCount) * Mathf.Deg2Rad;
+            float angle = i * (360f / RayCount) * Mathf.Deg2Rad;
             Vector3 dir = new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle));
 
-            if (!Physics.Raycast(origin, dir, out RaycastHit hit, probeDistance, raycastMask, QueryTriggerInteraction.Ignore))
+            if (!Physics.Raycast(origin, dir, out RaycastHit hit, ProbeDistance, inkMask, QueryTriggerInteraction.Ignore))
             {
-                if (debugDraw) Debug.DrawRay(origin, dir * probeDistance, new Color(0.5f, 0.5f, 0.5f));
+                if (debugDraw) Debug.DrawRay(origin, dir * ProbeDistance, new Color(0.5f, 0.5f, 0.5f));
                 continue;
             }
 
@@ -79,7 +78,8 @@ public class WallClimbSensor : MonoBehaviour
 
             if (debugDraw) Debug.DrawLine(origin, hit.point, Color.green);
 
-            float score = hit.distance - intentBias * Mathf.Max(0f, Vector3.Dot(intent, -hit.normal));
+            // Prefer the wall being moved into (inner corners): 0.5m closer per unit of push.
+            float score = hit.distance - 0.5f * Mathf.Max(0f, Vector3.Dot(intent, -hit.normal));
             if (score >= bestScore) continue;
 
             found = true;
@@ -100,9 +100,9 @@ public class WallClimbSensor : MonoBehaviour
     bool WallContinuesBelow()
     {
         if (!player.HasWallContact) return false;
-        Vector3 origin = transform.position - Vector3.up * topProbeDrop;
-        bool hit = Physics.Raycast(origin, -player.ClimbNormal, probeDistance, raycastMask, QueryTriggerInteraction.Ignore);
-        if (debugDraw) Debug.DrawRay(origin, -player.ClimbNormal * probeDistance, hit ? Color.magenta : Color.gray);
+        Vector3 origin = transform.position - Vector3.up * 0.25f; // a little below the ring
+        bool hit = Physics.Raycast(origin, -player.ClimbNormal, ProbeDistance, inkMask, QueryTriggerInteraction.Ignore);
+        if (debugDraw) Debug.DrawRay(origin, -player.ClimbNormal * ProbeDistance, hit ? Color.magenta : Color.gray);
         return hit;
     }
 }

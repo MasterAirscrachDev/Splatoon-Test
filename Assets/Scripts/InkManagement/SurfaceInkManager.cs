@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.Rendering;
 
 // Owns one inkable surface: its ink texture (GPU), a CPU copy of team ownership, the dynamic
@@ -12,14 +12,19 @@ public class SurfaceInkManager : MonoBehaviour
     float inkNormalStrength = 0.5f;             // 0 disables the dynamic normal map
     const float ReferencePixelsPerUnit = 32f;   // inkNormalStrength was tuned at this density
     float inkNoiseScale;                        // derived from splatScale, see CalculateNoiseScale
+    const float InkSeamHeight = 0.7f;           // ridge where two teams' ink meets, relative to full coverage
     public float PixelsPerUnit => pixelsPerUnit;
 
     public int SurfaceId; // assigned by NetGameManager; identical on every client
     public static System.Action<SplatData> OnSplatApplied; // NetGameManager broadcasts these
+    // Locally originated splats: (team, world m² newly turned to that team). Charges specials.
+    public static System.Action<int, float> OnTurfInked;
 
     int size;
     int coveredPixelCount;    // texels inside the mesh's UV triangles (scoring denominator)
     int topCoveredPixelCount; // subset on floor/slope faces
+    bool[] coveredMask;       // texels on the mesh (null = all); turf counts only these
+    float texelArea;          // world m² per covered texel
     NetGameManager gameManager;
     ComputeShader splatCompute;
     RenderTexture splatMapRenderTexture;
@@ -31,11 +36,11 @@ public class SurfaceInkManager : MonoBehaviour
     ComputeBuffer scoreBuffer;
     ComputeBuffer topScoreBuffer;
 
-    // CPU copy of team ownership per texel (0 none, 1 alpha, 2 beta), synced by reading back
-    // each splat's area. getSurfaceTeam reads this.
+    // The ink texture stores coverage per team (r = alpha, g = beta), not colours; the surface
+    // shader colours it. teamMap is a CPU copy of ownership per texel (0 none, 1 alpha, 2 beta),
+    // synced by reading back each splat's area. getSurfaceTeam reads this.
     byte[] teamMap;
     int teamMapGeneration; // bumped by ClearInk so older readbacks are discarded
-    Color32 alphaColor32, betaColor32;
 
     void Start()
     {
@@ -61,6 +66,8 @@ public class SurfaceInkManager : MonoBehaviour
         {
             rend.material.mainTexture = splatMapRenderTexture;
             rend.material.SetTexture("_BumpMap", normalMapRenderTexture);
+            rend.material.SetColor("_AlphaColor", gameManager.AlphaTeam);
+            rend.material.SetColor("_BetaColor", gameManager.BetaTeam);
         }
     }
 
@@ -91,6 +98,7 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetFloat("NormalStrength", inkNormalStrength * worldScale);
         splatCompute.SetFloat("NoiseStrength", 1);
         splatCompute.SetFloat("NoiseScale", inkNoiseScale);
+        splatCompute.SetFloat("SeamHeight", InkSeamHeight);
         splatCompute.SetTexture(kernelComputeNormals, "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(kernelComputeNormals, "NormalTexture", normalMapRenderTexture);
     }
@@ -145,6 +153,9 @@ public class SurfaceInkManager : MonoBehaviour
         {
             // No UVs: classify the whole surface by its up axis.
             coveredPixelCount = size * size;
+            Renderer r = GetComponent<Renderer>();
+            float side = r != null ? Mathf.Max(r.bounds.size.x, r.bounds.size.y, r.bounds.size.z) : 1f;
+            texelArea = side * side / coveredPixelCount;
             bool topFacing = Vector3.Angle(transform.up, Vector3.up) <= maxFloorAngle;
             topCoveredPixelCount = topFacing ? coveredPixelCount : 0;
             CreateTopMask(topFacing ? (byte)255 : (byte)0);
@@ -157,11 +168,14 @@ public class SurfaceInkManager : MonoBehaviour
 
         bool[] covered = new bool[size * size];
         bool[] topCov  = new bool[size * size];
+        float worldArea = 0f;
 
         for (int ti = 0; ti < tris.Length; ti += 3)
         {
             int i0 = tris[ti], i1 = tris[ti + 1], i2 = tris[ti + 2];
             Vector2 a = uvs[i0], b = uvs[i1], c = uvs[i2];
+            Vector3 w0 = transform.TransformPoint(verts[i0]);
+            worldArea += Vector3.Cross(transform.TransformPoint(verts[i1]) - w0, transform.TransformPoint(verts[i2]) - w0).magnitude * 0.5f;
 
             // World face normal: vertex normals if present, else geometric.
             Vector3 wn = norms != null
@@ -200,6 +214,8 @@ public class SurfaceInkManager : MonoBehaviour
         }
         coveredPixelCount = count;
         topCoveredPixelCount = topCount;
+        coveredMask = covered;
+        texelArea = count > 0 ? worldArea / count : 0f;
         CreateTopMask(mask);
     }
 
@@ -237,8 +253,6 @@ public class SurfaceInkManager : MonoBehaviour
         kernelFillRegion       = splatCompute.FindKernel("FillRegion");
 
         teamMap = new byte[size * size];
-        alphaColor32 = gameManager.AlphaTeam;
-        betaColor32  = gameManager.BetaTeam;
 
         splatMapRenderTexture = new RenderTexture(size, size, 0, RenderTextureFormat.ARGB32);
         splatMapRenderTexture.enableRandomWrite = true;
@@ -265,11 +279,6 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetBuffer(kernelGetScores,    "TeamScores", scoreBuffer);
         splatCompute.SetBuffer(kernelGetTopScores, "TeamScores", topScoreBuffer);
 
-        Vector4 alphaTeam = new Vector4(gameManager.AlphaTeam.r, gameManager.AlphaTeam.g, gameManager.AlphaTeam.b, gameManager.AlphaTeam.a);
-        Vector4 betaTeam  = new Vector4(gameManager.BetaTeam.r,  gameManager.BetaTeam.g,  gameManager.BetaTeam.b,  gameManager.BetaTeam.a);
-        splatCompute.SetVector("AlphaColor", alphaTeam);
-        splatCompute.SetVector("BetaColor",  betaTeam);
-        splatCompute.SetVector("NoColor",    new Vector4(0, 0, 0, 0));
         splatCompute.SetInt("Size", size);
         splatCompute.SetInts("PixelCoords", new int[2] { 0, 0 });
         splatCompute.SetInt("SplashSize", 0);
@@ -296,7 +305,8 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.Dispatch(kernelSplat, groupsX, groupsY, 1);
 
         RegenerateNormalsRegion(minX, minY, groupsX, groupsY);
-        SyncTeamMapRegion(minX, minY, Mathf.Min(groupsX * 8, size - minX), Mathf.Min(groupsY * 8, size - minY));
+        SyncTeamMapRegion(minX, minY, Mathf.Min(groupsX * 8, size - minX), Mathf.Min(groupsY * 8, size - minY),
+                          broadcast ? team : 0); // our own splats charge our special
 
         if (broadcast)
             OnSplatApplied?.Invoke(new SplatData { surfaceId = SurfaceId, uv = texCoords, splashSize = splashSize, team = team });
@@ -332,10 +342,9 @@ public class SurfaceInkManager : MonoBehaviour
         int maxY = Mathf.Clamp(Mathf.CeilToInt(uvRect.yMax * size), 0, size);
         if (maxX <= minX || maxY <= minY) return;
 
-        Color color = team == 1 ? gameManager.AlphaTeam : team == 2 ? gameManager.BetaTeam : Color.clear;
-        if (team != 0) color.a = 1f;
+        Vector4 coverage = team == 1 ? new Vector4(1, 0, 0, 0) : team == 2 ? new Vector4(0, 1, 0, 0) : Vector4.zero;
         splatCompute.SetTexture(kernelFillRegion, "InkTexture", splatMapRenderTexture);
-        splatCompute.SetVector("FillColor", color);
+        splatCompute.SetVector("FillColor", coverage);
         splatCompute.SetInts("FillRect", minX, minY, maxX, maxY);
         splatCompute.SetInts("BoundsMin", minX, minY);
         splatCompute.Dispatch(kernelFillRegion, Mathf.CeilToInt((maxX - minX) / 8f), Mathf.CeilToInt((maxY - minY) / 8f), 1);
@@ -390,7 +399,7 @@ public class SurfaceInkManager : MonoBehaviour
         });
     }
 
-    // Team owning the ink at a UV (0 none, 1 alpha, 2 beta). Lags the GPU by 1–3 frames.
+    // Team owning the ink at a UV (0 none, 1 alpha, 2 beta). Lags the GPU by 1â€“3 frames.
     public int getSurfaceTeam(Vector2 texCoords)
     {
         if (teamMap == null) return 0;
@@ -423,8 +432,9 @@ public class SurfaceInkManager : MonoBehaviour
         return new Vector2(Mathf.InverseLerp(b.min.z, b.max.z, p.z), Mathf.InverseLerp(b.min.y, b.max.y, p.y));
     }
 
-    // Reads a texel box of the ink texture back and re-classifies it into teamMap.
-    void SyncTeamMapRegion(int minX, int minY, int width, int height)
+    // Reads a texel box of the ink texture back and re-classifies it into teamMap. With
+    // turfTeam set, reports the area that changed to that team (OnTurfInked).
+    void SyncTeamMapRegion(int minX, int minY, int width, int height, int turfTeam = 0)
     {
         if (width <= 0 || height <= 0) return;
         int generation = teamMapGeneration;
@@ -432,27 +442,29 @@ public class SurfaceInkManager : MonoBehaviour
         {
             if (request.hasError || teamMap == null || generation != teamMapGeneration) return;
             var pixels = request.GetData<Color32>();
+            int converted = 0;
             for (int row = 0; row < height; row++)
             {
                 int dst = (minY + row) * size + minX;
                 int src = row * width;
                 for (int col = 0; col < width; col++)
-                    teamMap[dst + col] = ClassifyTeam(pixels[src + col]);
+                {
+                    byte now = ClassifyTeam(pixels[src + col]);
+                    if (turfTeam != 0 && now == turfTeam && teamMap[dst + col] != turfTeam && (coveredMask == null || coveredMask[dst + col]))
+                        converted++;
+                    teamMap[dst + col] = now;
+                }
             }
+            if (converted > 0) OnTurfInked?.Invoke(turfTeam, converted * texelArea);
         });
     }
 
-    // CPU twin of the shader's ColorNear: alpha > 0.5 and RGB within 0.01 (2/255) of a team colour.
-    byte ClassifyTeam(Color32 c)
+    // CPU twin of the compute shader's TeamOf: the higher coverage, if at least half covered.
+    static byte ClassifyTeam(Color32 c)
     {
-        if (c.a < 128) return 0;
-        if (ColorNear(c, alphaColor32)) return 1;
-        if (ColorNear(c, betaColor32))  return 2;
-        return 0;
+        if (Mathf.Max(c.r, c.g) < 128) return 0;
+        return c.r >= c.g ? (byte)1 : (byte)2;
     }
-
-    static bool ColorNear(Color32 a, Color32 b) =>
-        Mathf.Abs(a.r - b.r) <= 2 && Mathf.Abs(a.g - b.g) <= 2 && Mathf.Abs(a.b - b.b) <= 2;
 
     void OnDestroy()
     {

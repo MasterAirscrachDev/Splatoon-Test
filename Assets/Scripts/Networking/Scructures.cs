@@ -42,8 +42,15 @@ public enum NetMsg : ushort
     Damage,          // a player took damage / died
     MatchEvent,      // match phase changes (start / end / reset)
     InkReset,        // clear all ink surfaces before a match
-    Teleport         // instant reposition (respawn) — bypasses PlayerState interpolation
+    Teleport,        // instant reposition (respawn) — bypasses PlayerState interpolation
+    TeamAssign,      // host's roster: every player's role
+    BeaconSpawn,     // a player placed a beacon (sub)
+    BeaconDestroy,   // a beacon broke, expired or was landed on
+    BeaconDamage     // a hit on someone's beacon, sent to its owner
 }
+
+// Where a player sits in the roster. Alpha/Beta match the team numbers used everywhere else.
+public enum PlayerRole { Alpha = 1, Beta = 2, Spectator = 3, NotPlaying = 4 }
 
 // ── Per-player state, broadcast by the owning client every tick ──────────
 [System.Serializable]
@@ -59,6 +66,8 @@ public class PlayerStateData
     public bool climbing;
     public bool dead;
     public uint tick;
+    public bool shielded;     // bubble shield (special) active
+    public bool specialReady; // special charged, shown on everyone's player bar
 }
 
 // ── Spawn / despawn ───────────────────────────────────────────────────────
@@ -113,6 +122,34 @@ public class DamageData
     public int fromTeam;
 }
 
+// ── Beacons (sub): ids are per owner ─────────────────────────────────────
+[System.Serializable]
+public class BeaconData
+{
+    public ulong ownerId;
+    public int beaconId;
+    public int team;
+    public NVector3 position;
+}
+
+[System.Serializable]
+public class BeaconDamageData
+{
+    public ulong ownerId;
+    public int beaconId;
+    public float amount;
+    public int fromTeam;
+    public ulong attackerSteamId;
+}
+
+// ── Roster from the host: roles[i] (a PlayerRole) for ids[i] ─────────────
+[System.Serializable]
+public class TeamAssignData
+{
+    public ulong[] ids;
+    public int[] roles;
+}
+
 // ── Match-level state ─────────────────────────────────────────────────────
 public enum MatchPhase { Lobby, Countdown, Playing, Ended }
 
@@ -121,4 +158,5 @@ public class MatchEventData
 {
     public MatchPhase phase;
     public float serverTime;
+    public float duration; // match length in seconds, when starting
 }

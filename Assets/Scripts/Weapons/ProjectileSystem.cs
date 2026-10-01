@@ -90,7 +90,19 @@ public class ProjectileSystem : MonoBehaviour
         if (other.CompareTag("Projectile")) return;
         if (hasImpacted) return;
 
-        // Enemy hitboxes take the hit; teammates (and the shooter) are passed through.
+        // Enemy beacons and hitboxes take the hit; teammates' (and the shooter) are passed through.
+        Beacon beacon = other.GetComponentInParent<Beacon>();
+        if (beacon != null)
+        {
+            if (beacon.Team != team)
+            {
+                hasImpacted = true;
+                if (authoritative) beacon.TakeDamage(damage, team, ownerId);
+                DeleteProjectile();
+            }
+            return;
+        }
+
         PlayerHitbox hitbox = other.GetComponentInParent<PlayerHitbox>();
         if (hitbox != null)
         {

@@ -33,11 +33,13 @@ public class ClimbTestRunner : MonoBehaviour
         public bool contact;        // PlayerController.HasWallContact
         public bool inInk;          // PlayerController.IsInInk (drives squid hide/show)
         public bool squid, grounded, controllerOn, dead;
+        public int team;
         public Vector3 normal;      // climb normal (world)
         public Quaternion squidRot; // squid visual rotation
         public int surfaceTeam;     // ink team directly below
         public float velY, speed;   // PlayerController's vertical velocity and current move speed
         public CollisionFlags flags;
+        public bool flying;         // Super Jump flight: moves fast along a scripted arc
         public string phase;
     }
 
@@ -226,12 +228,14 @@ public class ClimbTestRunner : MonoBehaviour
             grounded = player.IsGrounded,
             controllerOn = player.ControllerEnabled,
             dead = player.IsDead,
+            team = player.Team,
             normal = player.ClimbNormal,
             squidRot = squid != null ? squid.rotation : Quaternion.identity,
             surfaceTeam = player.SurfaceTeam,
             velY = player.VerticalVelocity,
             speed = player.CurrentSpeed,
             flags = player.LastCollisionFlags,
+            flying = player.SuperJumpState == SuperJumpPhase.Flying,
             phase = phase,
         });
     }
@@ -305,7 +309,8 @@ public class ClimbTestRunner : MonoBehaviour
             {
                 // Form changes shift the origin ~0.9m by design.
                 bool formChange = f.squid != frames[i - 1].squid;
-                if (f.dead != frames[i - 1].dead) continue; // death/respawn teleports
+                if (f.dead != frames[i - 1].dead || f.team != frames[i - 1].team) continue; // respawn teleports
+                if (f.flying || frames[i - 1].flying) continue; // Super Jump arcs cover ~1m a frame
                 float step = Vector3.Distance(f.pos, frames[i - 1].pos);
                 if (step > (formChange ? 1.5f : 0.75f))
                 {
@@ -344,6 +349,16 @@ public class ClimbTestRunner : MonoBehaviour
         yield return S("Ramp30: swims down a walkable slope without bouncing", Station.Ramp30, ShallowRampDown, "SpawnTop");
         yield return S("Ramp60: a steep slope is climbed", Station.Ramp60, SteepRamp);
         yield return S("Combat: replays are visual-only, hits route to the victim, damage kills and respawns", Station.Lobby, Combat);
+        yield return S("HostMenu: percentages toggle, team editor moves players between teams and the bench", Station.Lobby, HostMenuTeams);
+        yield return S("Map: holding opens it, lists our team with lines to markers, picking a teammate requests a Super Jump", Station.Lobby, MapTeam);
+        yield return S("SuperJump: locked charge in swim form, high arc onto the teammate, unlocks on landing (swim kept only if held)", Station.Lobby, SuperJump);
+        yield return S("SuperJump: the landing spot locks on click, only our death cancels, spawn is always a target", Station.Lobby, SuperJumpLocking);
+        yield return S("Sub: a beacon costs 70% ink, shows on our map only, and a Super Jump onto it breaks it", Station.Lobby, SubBeacon);
+        yield return S("Beacon: 35 health from enemy fire only, expires, remote hits go to the owner", Station.Lobby, BeaconHealth);
+        yield return S("Special: charges from new turf and damage dealt; bubble shield refills ink and blocks damage for 5s", Station.Lobby, SpecialShield);
+        yield return S("Loadout HUD: gauges follow ink and special charge, READY when full", Station.Lobby, LoadoutGauges);
+        yield return S("Special: half lost on death; charged state is synced and shown on the player bar", Station.Lobby, SpecialDeathAndSync);
+        yield return S("HUD: rosters, death marks, match timer and turf bar track the game", Station.Lobby, Hud);
     }
 
     IEnumerator CameraFormSwitch()
@@ -438,7 +453,7 @@ public class ClimbTestRunner : MonoBehaviour
             List<Frame> after = frames.Skip(lastClimb + 1).ToList();
             float hop = after.Max(f => f.pos.y) - WallHeight;
             Note($"popped {hop:F2}m above the top");
-            // Loose bounds so they don't encode the tuned climbPopTopLift.
+            // Loose bounds so they don't encode the tuned top-of-wall lift.
             if (hop < 0.05f) Fail($"didn't pop up off the top of the wall (peak {hop:F2}m above the lip)");
             if (hop > 1.0f) Fail($"launched off the top of the wall ({hop:F2}m above the lip)");
             List<Frame> early = after.Where(f => f.t <= after[0].t + 0.1f).ToList();
@@ -888,6 +903,634 @@ public class ClimbTestRunner : MonoBehaviour
         yield return Hold(Still, false, 0.1f, "leave");
         if (gm.GetPlayer(RemoteId) != null || GameObject.Find("PlayerEntity - TestRemote") != null)
             Fail("the remote's entity (or its root) is still in the scene after it left");
+
+        NetGameManager.SendOverride = null;
+    }
+
+    // Drives the host menu through its real buttons.
+    IEnumerator HostMenuTeams()
+    {
+        HostMenu menu = FindFirstObjectByType<HostMenu>();
+        MatchHUD hud = FindFirstObjectByType<MatchHUD>();
+        if (menu == null || hud == null) { Fail("no HostMenu/MatchHUD in the scene"); yield break; }
+        NetGameManager gm = NetGameManager.Instance;
+        const ulong RemoteId = 3003;
+        var sent = new List<(NetMsg id, object data, ulong target)>();
+        NetGameManager.SendOverride = (id, data, target) => sent.Add((id, data, target));
+
+        if (hud.ShowPercentages) Fail("coverage percentages are shown by default");
+
+        Vector3 remotePos = station.TransformPoint(new Vector3(6f, 0.05f, 6f));
+        gm.Receive(NetMsg.PlayerSpawn, new PlayerSpawnData { steamId = RemoteId, team = 2, position = remotePos, playerName = "Benchwarmer" }, RemoteId);
+        yield return Hold(Still, false, 0.1f, "menu");
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = RemoteId, position = remotePos, moveDir = Vector2.zero, team = 2 }, RemoteId);
+        yield return Hold(Still, false, 0.1f, "menu");
+        PlayerController remote = gm.GetPlayer(RemoteId);
+
+        menu.Toggle();
+        if (!menu.IsOpen || !InputGate.Blocked) Fail("menu didn't open (or didn't block gameplay input)");
+
+        menu.PercentButton.onClick.Invoke();
+        if (!hud.ShowPercentages) Fail("Toggle percentages didn't show them");
+        menu.PercentButton.onClick.Invoke();
+        if (hud.ShowPercentages) Fail("Toggle percentages didn't hide them again");
+
+        menu.TeamsButton.onClick.Invoke();
+        yield return Hold(Still, false, 0.05f, "menu");
+        HostMenu.SlotButton[][] cols = menu.Columns; // Alpha, Beta, Spectate, Not playing
+        if (!menu.TeamEditorOpen) { Fail("team editor didn't open"); NetGameManager.SendOverride = null; yield break; }
+        if (!cols[0][0].label.text.StartsWith(player.DisplayName) || cols[1][0].label.text != "Benchwarmer")
+            Fail($"editor layout wrong: alpha0 \"{cols[0][0].label.text}\", beta0 \"{cols[1][0].label.text}\"");
+
+        void Move(int fromCol, int fromSlot, int toCol, int toSlot)
+        {
+            cols[fromCol][fromSlot].button.onClick.Invoke();
+            cols[toCol][toSlot].button.onClick.Invoke();
+        }
+
+        // Enemy to Spectate: hidden, off the HUD, roster broadcast.
+        Move(1, 0, 2, 0);
+        yield return Hold(Still, false, 0.1f, "menu");
+        if (remote.Role != PlayerRole.Spectator || remote.transform.root.gameObject.activeSelf) Fail("spectator wasn't benched/hidden");
+        if (hud.BetaSlots[0].playerName.text != "") Fail("spectator still shown on the HUD");
+        bool broadcast = sent.Any(m => m.id == NetMsg.TeamAssign && m.data is TeamAssignData d
+                                       && System.Array.IndexOf(d.ids, RemoteId) is int k && k >= 0 && d.roles[k] == (int)PlayerRole.Spectator);
+        if (!broadcast) Fail("no TeamAssign broadcast for the change");
+
+        // Us to Beta: team changes, HUD follows, we respawn.
+        Move(0, 0, 1, 0);
+        yield return Hold(Still, false, 0.2f, "menu");
+        if (player.Team != 2 || hud.BetaSlots[0].playerName.text != player.DisplayName) Fail($"moving us to Beta failed (team {player.Team})");
+
+        // Us to Not playing, then back to Alpha.
+        Move(1, 0, 3, 0);
+        yield return Hold(Still, false, 0.1f, "menu");
+        if (player.transform.root.gameObject.activeSelf || player.Role != PlayerRole.NotPlaying) Fail("benching ourselves didn't hide our player");
+        Move(3, 0, 0, 0);
+        yield return Hold(Still, false, 0.3f, "menu");
+        if (!player.transform.root.gameObject.activeSelf || player.Team != 1) Fail("returning to Alpha didn't restore our player");
+
+        menu.CloseButton.onClick.Invoke();
+        if (menu.IsOpen || InputGate.Blocked) Fail("menu didn't close (or left input blocked)");
+
+        gm.Receive(NetMsg.PlayerDespawn, new PlayerSpawnData { steamId = RemoteId }, RemoteId);
+        yield return Hold(Still, false, 0.1f, "menu");
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator MapTeam()
+    {
+        MapScreen map = FindFirstObjectByType<MapScreen>();
+        if (map == null) { Fail("no MapScreen in the scene"); yield break; }
+        NetGameManager gm = NetGameManager.Instance;
+        const ulong MateId = 3003, FoeId = 3004;
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        NetGameManager.SendOverride = (id, data, target) => { };
+        Vector3 matePos = station.TransformPoint(new Vector3(8f, 0.05f, 6f));
+        Vector3 foePos = station.TransformPoint(new Vector3(-8f, 0.05f, 6f));
+        gm.Receive(NetMsg.PlayerSpawn, new PlayerSpawnData { steamId = MateId, team = player.Team, position = matePos, playerName = "Mate" }, MateId);
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = MateId, position = matePos, moveDir = Vector2.zero, team = player.Team }, MateId);
+        gm.Receive(NetMsg.PlayerSpawn, new PlayerSpawnData { steamId = FoeId, team = enemyTeam, position = foePos, playerName = "Foe" }, FoeId);
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = FoeId, position = foePos, moveDir = Vector2.zero, team = enemyTeam }, FoeId);
+        ISuperJumpTarget picked = null;
+        Action<ISuperJumpTarget> onPick = t => picked = t;
+        MapScreen.SuperJumpRequested += onPick;
+
+        map.ScriptedHold = true;
+        yield return Hold(Still, false, 0.3f, "map");
+        if (!map.IsOpen || !InputGate.Blocked) Fail("holding didn't open the map (or didn't block gameplay input)");
+        if (map.MapTexture == null || !map.MapTexture.IsCreated()) Fail("map wasn't rendered");
+
+        // Our team only, in a stable order, empty slots padded out.
+        MapScreen.Entry[] entries = map.Entries;
+        int self = Array.FindIndex(entries, e => e.playerName.text == player.DisplayName);
+        int mate = Array.FindIndex(entries, e => e.playerName.text == "Mate");
+        Note($"entries: {string.Join(", ", entries.Select(e => $"{e.playerName.text}/{e.status.text}"))}");
+        if (self < 0 || mate < 0) { Fail("our team isn't listed"); map.ScriptedHold = false; MapScreen.SuperJumpRequested -= onPick; yield break; }
+        if (entries.Any(e => e.playerName.text == "Foe")) Fail("an enemy is listed");
+        if (entries.Count(e => !e.marker.gameObject.activeSelf && !e.line.gameObject.activeSelf) != 2) Fail("empty slots should have no marker or line");
+
+        // Angled view of the map layers only; markers sit where the players appear on it.
+        Camera cam = map.MapCamera;
+        float tilt = Vector3.Angle(cam.transform.forward, Vector3.down);
+        Note($"map camera tilt {tilt:F0}° from straight down, yaw {cam.transform.eulerAngles.y:F0}°");
+        if (tilt < 5f || tilt > 45f) Fail("map view isn't a slight angle");
+        if (cam.cullingMask != LayerMask.GetMask("Map", "InkSurface")) Fail("map draws more than the map layers");
+        PlayerController mateCtrl = gm.Players.First(pc => pc != null && pc.OwnerId == MateId);
+        Vector2 markerPos = ((RectTransform)entries[mate].marker.transform).anchoredPosition;
+        Vector2 expected = map.MapPosition(mateCtrl.transform.position);
+        if (Vector2.Distance(markerPos, expected) > 1f) Fail($"teammate's marker at {markerPos}, expected {expected}");
+
+        // Each line runs from its entry to its marker.
+        foreach (int i in new[] { self, mate })
+        {
+            MapScreen.Entry e = entries[i];
+            Vector3 mid = (e.lineStart.position + e.marker.transform.position) * 0.5f;
+            float length = Vector3.Distance(e.lineStart.position, e.marker.transform.position) / e.line.lossyScale.x;
+            if (Vector3.Distance(e.line.position, mid) > 2f || Mathf.Abs(e.line.rect.width - length) > 2f)
+                Fail($"line {i} doesn't connect its entry to its marker");
+        }
+
+        // We can't jump to ourselves; picking the teammate's marker requests it and closes the map.
+        if (entries[self].button.interactable || entries[self].marker.interactable) Fail("own entry is clickable");
+        if (!entries[mate].button.interactable) Fail("teammate's entry isn't clickable");
+        entries[self].button.onClick.Invoke();
+        if (picked != null || !map.IsOpen) Fail("picking ourselves did something");
+        entries[mate].marker.onClick.Invoke();
+        yield return Hold(Still, false, 0.2f, "map");
+        if (!(picked is PlayerController pickedPlayer) || pickedPlayer.DisplayName != "Mate") Fail("picking the teammate didn't request a Super Jump to them");
+        if (!player.IsSuperJumping) Fail("picking the teammate didn't start a Super Jump");
+        if (map.IsOpen || InputGate.Blocked) Fail("map didn't close after picking (or reopened while still held)");
+        player.CancelSuperJump(); // the jump itself is covered by the SuperJump scenario
+
+        // Release and hold again: a splatted teammate can't be picked.
+        map.ScriptedHold = false;
+        yield return Hold(Still, false, 0.1f, "map");
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = MateId, position = matePos, moveDir = Vector2.zero, team = player.Team, dead = true }, MateId);
+        map.ScriptedHold = true;
+        yield return Hold(Still, false, 0.2f, "map");
+        if (!map.IsOpen) Fail("map didn't reopen after releasing");
+        if (entries[mate].button.interactable || entries[mate].status.text != "Splatted") Fail("splatted teammate is still pickable");
+        map.ScriptedHold = false;
+        yield return Hold(Still, false, 0.1f, "map");
+        if (map.IsOpen || InputGate.Blocked) Fail("releasing didn't close the map");
+
+        MapScreen.SuperJumpRequested -= onPick;
+        gm.Receive(NetMsg.PlayerDespawn, new PlayerSpawnData { steamId = MateId }, MateId);
+        gm.Receive(NetMsg.PlayerDespawn, new PlayerSpawnData { steamId = FoeId }, FoeId);
+        yield return Hold(Still, false, 0.1f, "map");
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator SuperJump()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        const ulong MateId = 3005;
+        NetGameManager.SendOverride = (id, data, target) => { };
+        Vector3 matePos = station.TransformPoint(new Vector3(9f, 0.05f, 7f));
+        gm.Receive(NetMsg.PlayerSpawn, new PlayerSpawnData { steamId = MateId, team = player.Team, position = matePos, playerName = "Mate" }, MateId);
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = MateId, position = matePos, moveDir = Vector2.zero, team = player.Team }, MateId);
+        yield return Hold(Still, false, 0.3f, "settle");
+        PlayerController mate = gm.Players.FirstOrDefault(pc => pc != null && pc.OwnerId == MateId);
+        if (mate == null) { Fail("teammate didn't spawn"); NetGameManager.SendOverride = null; yield break; }
+        float Flat(Vector3 v) => new Vector2(v.x, v.z).magnitude;
+
+        // First landing without swim held, then (after the teammate moves) with it held.
+        for (int run = 0; run < 2; run++)
+        {
+            bool holdSwim = run == 1;
+            if (!player.StartSuperJump(mate)) { Fail("couldn't start a Super Jump to a teammate"); break; }
+            if (player.StartSuperJump(mate)) Fail("a second jump started during the first");
+
+            // Charge: forced into swim form and held in place, even pushing forward with swim released.
+            string charge = "charge" + run, fly = "fly" + run;
+            yield return HoldUntil(Fwd, false, 3f, charge, f => player.SuperJumpState != SuperJumpPhase.Charging);
+            List<Frame> charging = frames.Where(f => f.phase == charge).ToList();
+            float drift = charging.Max(f => Flat(f.pos - charging[0].pos));
+            Note($"run {run}: charged {charging.Count * Dt:F2}s, drifted {drift:F3}m");
+            if (Mathf.Abs(charging.Count * Dt - player.SuperJumpChargeTime) > 0.1f) Fail($"charge took {charging.Count * Dt:F2}s, not {player.SuperJumpChargeTime:F2}s");
+            if (charging.Skip(1).Any(f => !f.squid)) Fail("not forced into swim form while charging");
+            if (drift > 0.05f) Fail("moved while charging");
+            if (player.SuperJumpState != SuperJumpPhase.Flying) { Fail("didn't launch after charging"); break; }
+
+            // Flight: a high arc, staying a squid with its nose along the path.
+            yield return HoldUntil(Still, holdSwim, 5f, fly, f => !player.IsSuperJumping);
+            List<Frame> flying = frames.Where(f => f.phase == fly).ToList();
+            float peak = flying.Max(f => f.pos.y) - charging.Last().pos.y;
+            float alignSum = 0f; int alignCount = 0;
+            for (int i = flying.Count / 8; i < flying.Count - flying.Count / 8 - 1; i++)
+            {
+                Vector3 travel = station.TransformDirection(flying[i + 1].pos - flying[i - 1].pos).normalized;
+                alignSum += Vector3.Dot(travel, flying[i].squidRot * Vector3.forward);
+                alignCount++;
+            }
+            float align = alignCount > 0 ? alignSum / alignCount : 0f;
+            Note($"run {run}: flew {flying.Count * Dt:F2}s, peak {peak:F1}m up, squid/path alignment {align:F3}");
+            if (peak < 10f) Fail($"arc only peaked {peak:F1}m up");
+            if (flying.Any(f => !f.squid)) Fail("left swim form mid-flight");
+            if (align < 0.9f) Fail("squid doesn't point along its flight path"); // eased, so it lags where a tall arc turns sharply
+
+            // Landed on the teammate and unlocked; swim form kept only if held.
+            yield return Hold(Still, holdSwim, 0.4f, "land" + run);
+            float miss = Flat(player.transform.position - mate.transform.position);
+            Note($"run {run}: landed {miss:F2}m from the teammate");
+            if (miss > 1.5f) Fail($"landed {miss:F2}m from the teammate");
+            if (player.IsSuperJumping) Fail("still Super Jumping after landing");
+            if (player.IsSquid != holdSwim) Fail(holdSwim ? "dropped out of swim form while it was held" : "stayed in swim form without swim held");
+            Vector3 before = player.transform.position;
+            yield return Hold(Fwd, holdSwim, 0.6f, "after" + run);
+            if (Flat(player.transform.position - before) < 0.3f) Fail("can't move after landing");
+
+            // Move the teammate for the second run.
+            Vector3 next = station.TransformPoint(new Vector3(-9f, 0.05f, 7f));
+            gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = MateId, position = next, moveDir = Vector2.zero, team = player.Team }, MateId);
+            yield return Hold(Still, false, 0.6f, "settle");
+        }
+
+        gm.Receive(NetMsg.PlayerDespawn, new PlayerSpawnData { steamId = MateId }, MateId);
+        yield return Hold(Still, false, 0.1f, "settle");
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator SuperJumpLocking()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        MapScreen map = FindFirstObjectByType<MapScreen>();
+        const ulong MateId = 3006;
+        NetGameManager.SendOverride = (id, data, target) => { };
+        float Flat(Vector3 v) => new Vector2(v.x, v.z).magnitude;
+        Vector3 clickedAt = station.TransformPoint(new Vector3(8f, 0.05f, 6f));
+        SpawnRemote(MateId, player.Team, clickedAt, "Mate");
+        yield return Hold(Still, false, 0.3f, "settle");
+        PlayerController mate = gm.GetPlayer(MateId);
+        if (mate == null) { Fail("teammate didn't spawn"); NetGameManager.SendOverride = null; yield break; }
+
+        // The teammate moves away and then leaves mid-charge: we still land where they were.
+        player.StartSuperJump(mate);
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = MateId, position = station.TransformPoint(new Vector3(-8f, 0.05f, 6f)), moveDir = Vector2.zero, team = player.Team }, MateId);
+        yield return Hold(Still, false, 0.5f, "charge");
+        Despawn(MateId);
+        yield return HoldUntil(Still, false, 6f, "jump", f => !player.IsSuperJumping);
+        yield return Hold(Still, false, 0.3f, "land");
+        float miss = Flat(player.transform.position - clickedAt);
+        Note($"landed {miss:F2}m from where the teammate was when picked");
+        if (miss > 1.5f) Fail($"landed {miss:F2}m from the locked spot (followed the teammate, or cancelled)");
+
+        // Dying mid-charge cancels.
+        player.StartSuperJump(new SpawnJumpTarget(player.Team, player.SpawnPosition));
+        yield return Hold(Still, false, 0.3f, "charge");
+        player.OnDeath();
+        yield return Hold(Still, false, 0.1f, "dead");
+        if (player.IsSuperJumping) Fail("still Super Jumping after dying");
+        player.Respawn();
+        yield return Hold(Still, false, 0.3f, "settle");
+
+        // The spawn entry on the map is always there; picking it jumps home.
+        player.PlaceAt(player.transform.position + station.TransformDirection(new Vector3(9f, 0f, 7f)), player.transform.eulerAngles.y);
+        frames.Clear(); // the teleport isn't a movement glitch
+        map.ScriptedHold = true;
+        yield return Hold(Still, false, 0.3f, "map");
+        if (!map.SpawnEntry.button.interactable || !map.SpawnEntry.marker.gameObject.activeInHierarchy) Fail("spawn entry isn't available");
+        map.SpawnEntry.button.onClick.Invoke();
+        map.ScriptedHold = false;
+        if (!player.IsSuperJumping) Fail("picking the spawn didn't start a Super Jump");
+        else
+        {
+            yield return HoldUntil(Still, false, 6f, "jump", f => !player.IsSuperJumping);
+            yield return Hold(Still, false, 0.3f, "land");
+            float home = Flat(player.transform.position - player.SpawnPosition);
+            Note($"landed {home:F2}m from the spawn");
+            if (home > 1.5f) Fail($"landed {home:F2}m from the spawn");
+        }
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator SpecialDeathAndSync()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        MatchHUD hud = FindFirstObjectByType<MatchHUD>();
+        if (loadout == null || hud == null) { Fail("no PlayerLoadout or MatchHUD"); yield break; }
+        NetGameManager.SendOverride = (id, data, target) => { };
+        const ulong FoeId = 3014;
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        MatchHUD.PlayerSlot[] own = player.Team == 1 ? hud.AlphaSlots : hud.BetaSlots;
+        MatchHUD.PlayerSlot[] enemy = player.Team == 1 ? hud.BetaSlots : hud.AlphaSlots;
+
+        // Ours: in the network state and on our slot when charged.
+        loadout.SetSpecialPoints(1000f);
+        yield return Hold(Still, false, 0.1f, "sync");
+        if (!player.GetNetState(0, 0).specialReady) Fail("charged special isn't in the network state");
+        if (!own[0].specialMark.gameObject.activeSelf) Fail("our slot doesn't show the charged special");
+
+        // Splatted: half of it is lost.
+        player.OnDeath();
+        yield return Hold(Still, false, 0.1f, "dead");
+        Note($"special {loadout.SpecialPoints:F0}p after dying at 1000p");
+        if (Mathf.Abs(loadout.SpecialPoints - 500f) > 0.01f) Fail("dying didn't halve the special");
+        if (own[0].specialMark.gameObject.activeSelf) Fail("slot still shows a special after losing it");
+        player.Respawn();
+        yield return Hold(Still, false, 0.2f, "settle");
+
+        // Theirs: from their state updates.
+        Vector3 foePos = station.TransformPoint(new Vector3(-9f, 0.05f, 8f));
+        SpawnRemote(FoeId, enemyTeam, foePos, "Foe");
+        yield return Hold(Still, false, 0.1f, "sync");
+        if (enemy[0].specialMark.gameObject.activeSelf) Fail("enemy slot shows a special before they have one");
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = FoeId, position = foePos, moveDir = Vector2.zero, team = enemyTeam, specialReady = true }, FoeId);
+        yield return Hold(Still, false, 0.1f, "sync");
+        if (!enemy[0].specialMark.gameObject.activeSelf) Fail("enemy's charged special isn't shown");
+
+        loadout.SetSpecialPoints(0f);
+        Despawn(FoeId);
+        yield return Hold(Still, false, 0.1f, "sync");
+        NetGameManager.SendOverride = null;
+    }
+
+    // ── Subs and specials ───────────────────────────────────────────────────
+
+    readonly List<(NetMsg id, object data, ulong to)> sent = new List<(NetMsg, object, ulong)>();
+
+    void CaptureSends()
+    {
+        sent.Clear();
+        NetGameManager.SendOverride = (id, data, to) => sent.Add((id, data, to));
+    }
+
+    // Spawns on the next frame (messages are handled on the main-thread queue).
+    void SpawnRemote(ulong id, int team, Vector3 pos, string name)
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        gm.Receive(NetMsg.PlayerSpawn, new PlayerSpawnData { steamId = id, team = team, position = pos, playerName = name }, id);
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = id, position = pos, moveDir = Vector2.zero, team = team }, id);
+    }
+
+    void Despawn(ulong id) => NetGameManager.Instance.Receive(NetMsg.PlayerDespawn, new PlayerSpawnData { steamId = id }, id);
+
+    void Shoot(Vector3 above, int team, ulong ownerId) =>
+        ProjectilePool.Get(projectilePrefab, above, Quaternion.LookRotation(Vector3.down))
+                      .Setup(Vector3.down * 10f, 10, team, true, authoritative: true, ownerId: ownerId);
+
+    IEnumerator SubBeacon()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        MapScreen map = FindFirstObjectByType<MapScreen>();
+        if (loadout == null || map == null) { Fail("player has no PlayerLoadout (or no MapScreen)"); yield break; }
+        CaptureSends();
+        Beacon.RemoveAll();
+        const ulong FoeId = 3011;
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+
+        // Costs the sub's share of ink; with less than that, nothing happens.
+        player.RefillInk();
+        yield return Hold(Still, false, 0.2f, "stand");
+        if (!loadout.UseSub()) { Fail("couldn't place a beacon with a full tank"); NetGameManager.SendOverride = null; yield break; }
+        Beacon beacon = Beacon.All.First(b => b.OwnerId == player.OwnerId);
+        Vector3 beaconPos = beacon.transform.position;
+        float ahead = Vector3.Dot(beaconPos - player.transform.position, player.transform.forward);
+        Note($"ink after placing {player.InkLevel:F2}, beacon {ahead:F1}m ahead");
+        if (Mathf.Abs(player.InkLevel - 0.3f) > 0.01f) Fail($"ink went to {player.InkLevel:F2}, not 0.30");
+        if (ahead < 0.5f) Fail("beacon isn't in front of the player");
+        if (!sent.Any(m => m.id == NetMsg.BeaconSpawn)) Fail("beacon wasn't broadcast");
+        if (loadout.UseSub() || Beacon.All.Count != 1) Fail("placed a beacon with only 30% ink");
+
+        // An enemy beacon arrives from its owner; only ours shows on our map.
+        SpawnRemote(FoeId, enemyTeam, station.TransformPoint(new Vector3(-9f, 0.05f, 8f)), "Foe");
+        yield return Hold(Still, false, 0.1f, "stand");
+        gm.Receive(NetMsg.BeaconSpawn, new BeaconData { ownerId = FoeId, beaconId = 1, team = enemyTeam, position = station.TransformPoint(new Vector3(-8f, 0f, 8f)) }, FoeId);
+        yield return Hold(Still, false, 0.1f, "stand");
+        if (Beacon.Find(FoeId, 1) == null) Fail("enemy beacon wasn't created from its message");
+
+        // Walk away, open the map and pick our beacon.
+        player.PlaceAt(player.transform.position + station.TransformDirection(new Vector3(9f, 0f, -7f)), player.transform.eulerAngles.y);
+        frames.Clear(); // the teleport isn't a movement glitch
+        map.ScriptedHold = true;
+        yield return Hold(Still, false, 0.3f, "map");
+        if (map.ShownBeacons.Count != 1 || map.ShownBeacons[0] != beacon) Fail($"map shows {map.ShownBeacons.Count} beacon(s), expected just ours");
+        else if (!map.BeaconMarkers[0].gameObject.activeSelf) Fail("our beacon has no marker");
+        else map.BeaconMarkers[0].onClick.Invoke();
+        map.ScriptedHold = false;
+        if (!player.IsSuperJumping) { Fail("picking the beacon didn't start a Super Jump"); }
+        else
+        {
+            yield return HoldUntil(Still, false, 6f, "jump", f => !player.IsSuperJumping);
+            yield return Hold(Still, false, 0.3f, "land");
+            float miss = new Vector2(player.transform.position.x - beaconPos.x, player.transform.position.z - beaconPos.z).magnitude;
+            Note($"landed {miss:F2}m from the beacon");
+            if (miss > 1.5f) Fail($"landed {miss:F2}m from the beacon");
+            if (beacon != null) Fail("landing on the beacon didn't break it");
+            if (!sent.Any(m => m.id == NetMsg.BeaconDestroy)) Fail("the break wasn't broadcast");
+        }
+
+        Despawn(FoeId);
+        yield return Hold(Still, false, 0.1f, "stand");
+        if (Beacon.Find(FoeId, 1) != null) Fail("enemy beacon outlived its owner leaving");
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator BeaconHealth()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        if (loadout == null) { Fail("player has no PlayerLoadout"); yield break; }
+        CaptureSends();
+        Beacon.RemoveAll();
+        const ulong FoeId = 3012;
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+
+        player.RefillInk();
+        loadout.UseSub();
+        Beacon beacon = Beacon.All.FirstOrDefault(b => b.OwnerId == player.OwnerId);
+        if (beacon == null) { Fail("couldn't place a beacon"); NetGameManager.SendOverride = null; yield break; }
+
+        // An enemy shot takes a chunk; friendly fire doesn't; the next enemy hit breaks it.
+        Shoot(beacon.transform.position + Vector3.up * 3f, enemyTeam, 4242);
+        yield return Hold(Still, false, 0.6f, "shot");
+        float afterShot = beacon != null ? beacon.Health : 0f;
+        Note($"health after an enemy shot {afterShot:F0}/35");
+        if (beacon == null || afterShot <= 0f || afterShot >= 35f) Fail("an enemy shot didn't damage it (or broke it outright)");
+        Shoot(beacon.transform.position + Vector3.up * 3f, player.Team, player.OwnerId);
+        yield return Hold(Still, false, 0.6f, "shot");
+        if (beacon == null || beacon.Health != afterShot) Fail("our own shot damaged it");
+        sent.Clear();
+        if (beacon != null) beacon.TakeDamage(afterShot, enemyTeam, 4242);
+        yield return null;
+        if (beacon != null) Fail("didn't break at 0 health");
+        if (!sent.Any(m => m.id == NetMsg.BeaconDestroy)) Fail("breaking wasn't broadcast");
+
+        // Lifetime: one left alone expires.
+        player.RefillInk();
+        loadout.UseSub();
+        Beacon timed = Beacon.All.FirstOrDefault(b => b.OwnerId == player.OwnerId);
+        if (timed != null) timed.ExpireIn(0.3f);
+        yield return Hold(Still, false, 0.6f, "expire");
+        if (timed != null) Fail("didn't expire");
+
+        // Someone else's: our hit goes to its owner (who decides), and charges our special.
+        SpawnRemote(FoeId, enemyTeam, station.TransformPoint(new Vector3(-9f, 0.05f, 8f)), "Foe");
+        yield return Hold(Still, false, 0.1f, "remote");
+        gm.Receive(NetMsg.BeaconSpawn, new BeaconData { ownerId = FoeId, beaconId = 4, team = enemyTeam, position = station.TransformPoint(new Vector3(6f, 0f, 6f)) }, FoeId);
+        yield return Hold(Still, false, 0.1f, "remote");
+        Beacon theirs = Beacon.Find(FoeId, 4);
+        if (theirs == null) { Fail("their beacon wasn't created"); }
+        else
+        {
+            sent.Clear();
+            float points = loadout.SpecialPoints;
+            Shoot(theirs.transform.position + Vector3.up * 3f, player.Team, player.OwnerId);
+            yield return Hold(Still, false, 0.6f, "remote");
+            var hit = sent.FirstOrDefault(m => m.id == NetMsg.BeaconDamage);
+            Note($"special +{loadout.SpecialPoints - points:F0}p for the hit");
+            if (hit.data == null || hit.to != FoeId) Fail("hit on their beacon wasn't sent to its owner");
+            if (theirs == null || theirs.Health != 35f) Fail("our copy applied the damage itself");
+            if (loadout.SpecialPoints - points < 1f) Fail("hitting their beacon didn't charge the special");
+            gm.Receive(NetMsg.BeaconDestroy, new BeaconData { ownerId = FoeId, beaconId = 4 }, FoeId);
+            yield return Hold(Still, false, 0.1f, "remote");
+            if (Beacon.Find(FoeId, 4) != null) Fail("their break message didn't remove it");
+        }
+
+        Despawn(FoeId);
+        yield return Hold(Still, false, 0.1f, "remote");
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator SpecialShield()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        if (loadout == null) { Fail("player has no PlayerLoadout"); yield break; }
+        CaptureSends();
+        const ulong FoeId = 3013;
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        loadout.SetSpecialPoints(0f);
+
+        // Turf: inking clean floor charges it; inking the same spots again barely does.
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        yield return Hold(Still, false, 0.3f, "turf");
+        Vector3[] spots = Enumerable.Range(0, 6).Select(i => station.TransformPoint(new Vector3(-9f + i * 3.5f, 3f, -8f))).ToArray();
+        foreach (Vector3 spot in spots) Shoot(spot, player.Team, player.OwnerId);
+        yield return Hold(Still, false, 1.2f, "turf");
+        float fresh = loadout.SpecialPoints;
+        foreach (Vector3 spot in spots) Shoot(spot, player.Team, player.OwnerId);
+        yield return Hold(Still, false, 1.2f, "turf");
+        float repaint = loadout.SpecialPoints - fresh;
+        Note($"special +{fresh:F0}p for new turf, +{repaint:F0}p repainting it");
+        if (fresh < 1f) Fail("inking neutral turf didn't charge the special");
+        if (repaint > fresh * 0.35f) Fail("repainting our own turf charged nearly as much as new turf");
+
+        // Damage dealt: our hits on an enemy count, other people's don't.
+        SpawnRemote(FoeId, enemyTeam, station.TransformPoint(new Vector3(-9f, 0.05f, 8f)), "Foe");
+        yield return Hold(Still, false, 0.1f, "damage");
+        PlayerController foe = gm.GetPlayer(FoeId);
+        if (foe == null) { Fail("enemy didn't spawn"); NetGameManager.SendOverride = null; yield break; }
+        float before = loadout.SpecialPoints;
+        foe.Hitbox.TakeDamage(30f, player.Team, player.OwnerId);
+        float ours = loadout.SpecialPoints - before;
+        foe.Hitbox.TakeDamage(30f, player.Team, 99999);
+        float theirs = loadout.SpecialPoints - before - ours;
+        Note($"special +{ours:F0}p for our 30 damage, +{theirs:F0}p for someone else's");
+        if (Mathf.Abs(ours - 30f) > 0.01f || theirs != 0f) Fail("damage dealt didn't charge 1p per damage (ours only)");
+
+        // Full: ready. Using it refills ink, raises the shield (replicated) and spends the charge.
+        loadout.SetSpecialPoints(1000f);
+        if (!loadout.SpecialReady) Fail("not ready at 1000p");
+        yield return Hold(Still, false, 0.1f, "special");
+        player.ConsumeInk(0.5f);
+        if (!loadout.UseSpecial()) { Fail("couldn't use a ready special"); Despawn(FoeId); NetGameManager.SendOverride = null; yield break; }
+        float usedAt = Time.time;
+        yield return Hold(Still, false, 0.2f, "shield");
+        if (player.InkLevel < 0.99f) Fail($"ink is {player.InkLevel:F2} after the special, not full");
+        if (!loadout.ShieldActive || !player.GetNetState(0, 0).shielded) Fail("shield isn't up (or isn't in the network state)");
+        if (!loadout.ShieldVisible) Fail("bubble isn't showing");
+        if (loadout.SpecialPoints != 0f || loadout.UseSpecial()) Fail("charge wasn't spent");
+
+        // Shielded: hits do nothing, and nothing charges meanwhile.
+        float hp = player.Hitbox.Health;
+        gm.Receive(NetMsg.Damage, new DamageData { targetSteamId = player.OwnerId, attackerSteamId = FoeId, amount = 50f, fromTeam = enemyTeam }, FoeId);
+        yield return Hold(Still, false, 0.1f, "shield");
+        if (player.Hitbox.Health < hp) Fail("took damage through the shield");
+        loadout.AddSpecialPoints(100f);
+        if (loadout.SpecialPoints > 0f) Fail("charged while the special was running");
+
+        // It lasts 5s, then damage applies again.
+        yield return HoldUntil(Still, false, 6f, "shield", f => !loadout.ShieldActive);
+        float lasted = Time.time - usedAt;
+        Note($"shield lasted {lasted:F2}s");
+        if (Mathf.Abs(lasted - 5f) > 0.1f) Fail($"shield lasted {lasted:F2}s, not 5s");
+        hp = player.Hitbox.Health;
+        gm.Receive(NetMsg.Damage, new DamageData { targetSteamId = player.OwnerId, attackerSteamId = FoeId, amount = 20f, fromTeam = enemyTeam }, FoeId);
+        yield return Hold(Still, false, 0.1f, "after");
+        if (player.Hitbox.Health >= hp) Fail("no damage after the shield ended");
+
+        // A shielded enemy: the shooter's side sends nothing and gains nothing.
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = FoeId, position = foe.transform.position, moveDir = Vector2.zero, team = enemyTeam, shielded = true }, FoeId);
+        yield return Hold(Still, false, 0.1f, "after");
+        sent.Clear();
+        before = loadout.SpecialPoints;
+        foe.Hitbox.TakeDamage(30f, player.Team, player.OwnerId);
+        if (sent.Any(m => m.id == NetMsg.Damage) || loadout.SpecialPoints != before) Fail("hit a shielded enemy");
+
+        player.Hitbox.ResetHealth();
+        Despawn(FoeId);
+        yield return Hold(Still, false, 0.1f, "after");
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator LoadoutGauges()
+    {
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        LoadoutHUD gauges = FindFirstObjectByType<LoadoutHUD>();
+        if (loadout == null || gauges == null) { Fail("no PlayerLoadout or LoadoutHUD"); yield break; }
+
+        player.RefillInk();
+        loadout.SetSpecialPoints(500f);
+        yield return Hold(Still, false, 1f, "gauges");
+        Note($"sub gauge {gauges.SubFill:F2}, special gauge {gauges.SpecialFill:F2}");
+        if (Mathf.Abs(gauges.SubFill - player.InkLevel) > 0.03f) Fail("sub gauge doesn't follow the ink");
+        if (Mathf.Abs(gauges.SpecialFill - 0.5f) > 0.03f) Fail("special gauge doesn't follow the charge");
+        if (gauges.ReadyShown) Fail("READY shown at half charge");
+        loadout.SetSpecialPoints(1000f);
+        yield return Hold(Still, false, 0.2f, "gauges");
+        if (!gauges.ReadyShown) Fail("READY not shown when full");
+        loadout.SetSpecialPoints(0f);
+    }
+
+    // Runs last: starting the match clears all ink.
+    IEnumerator Hud()
+    {
+        MatchHUD hud = FindFirstObjectByType<MatchHUD>();
+        if (hud == null) { Fail("no MatchHUD in the scene"); yield break; }
+        NetGameManager gm = NetGameManager.Instance;
+        const ulong RemoteId = 2002;
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        NetGameManager.SendOverride = (id, data, target) => { };
+        MatchHUD.PlayerSlot[] own   = player.Team == 1 ? hud.AlphaSlots : hud.BetaSlots;
+        MatchHUD.PlayerSlot[] enemy = player.Team == 1 ? hud.BetaSlots : hud.AlphaSlots;
+        yield return Hold(Still, false, 0.1f, "roster");
+
+        // Rosters: us in our team's first slot (highlighted), the enemy side empty.
+        if (own[0].playerName.text != player.DisplayName || !own[0].localMark.enabled)
+            Fail($"local player not shown in our first slot (\"{own[0].playerName.text}\", highlighted {own[0].localMark.enabled})");
+        if (enemy.Any(s => s.playerName.text != "")) Fail("enemy slots aren't empty before anyone joins");
+
+        // An enemy joins, dies, then leaves.
+        Vector3 remotePos = station.TransformPoint(new Vector3(6f, 0.05f, 6f));
+        gm.Receive(NetMsg.PlayerSpawn, new PlayerSpawnData { steamId = RemoteId, team = enemyTeam, position = remotePos, playerName = "Rival" }, RemoteId);
+        yield return Hold(Still, false, 0.1f, "roster");
+        if (enemy[0].playerName.text != "Rival" || enemy[0].initial.text != "R" || enemy[0].localMark.enabled)
+            Fail($"joined enemy not shown correctly (\"{enemy[0].playerName.text}\"/\"{enemy[0].initial.text}\")");
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = RemoteId, position = remotePos, moveDir = Vector2.zero, team = enemyTeam, dead = true }, RemoteId);
+        yield return Hold(Still, false, 0.1f, "roster");
+        if (!enemy[0].deadMark.activeSelf) Fail("dead enemy isn't marked");
+        gm.Receive(NetMsg.PlayerDespawn, new PlayerSpawnData { steamId = RemoteId }, RemoteId);
+        yield return Hold(Still, false, 0.1f, "roster");
+        if (enemy[0].playerName.text != "") Fail("enemy slot not cleared after they left");
+
+        // Timer: full duration before the match, counting down after it starts.
+        string before = hud.TimerText;
+        gm.ResetMap();
+        yield return Hold(Still, false, 1.2f, "timer");
+        string after = hud.TimerText;
+        Note($"timer {before} -> {after} after 1.2s");
+        if (gm.Phase != MatchPhase.Playing) Fail("match didn't start");
+        if (after == before) Fail($"timer isn't counting down ({before} -> {after})");
+
+        // Turf bar: everything neutral after the reset, then our share grows as we paint.
+        yield return Hold(Still, false, 1.2f, "turf");
+        float ourShare() => player.Team == 1 ? hud.AlphaShare : hud.BetaShare;
+        if (ourShare() > 0.0005f) Fail($"coverage not reset by the match start ({ourShare():P1})");
+        for (int i = 0; i < 12; i++)
+        {
+            Vector3 p = station.TransformPoint(new Vector3(-9f + (i % 6) * 3.5f, 3f, -4f - (i / 6) * 3.5f));
+            ProjectilePool.Get(projectilePrefab, p, Quaternion.LookRotation(Vector3.down))
+                          .Setup(Vector3.down * 8f, 30, player.Team, true, authoritative: true, ownerId: player.OwnerId);
+        }
+        yield return Hold(Still, false, 2.5f, "turf");
+        Note($"our coverage {ourShare():P2}, bar fill {(player.Team == 1 ? hud.ShownAlphaFill : 0f):F4}");
+        if (ourShare() <= 0f) Fail("turf bar didn't pick up the painted floor");
+        if (player.Team == 1 && hud.ShownAlphaFill <= 0f) Fail("alpha bar didn't move");
 
         NetGameManager.SendOverride = null;
     }

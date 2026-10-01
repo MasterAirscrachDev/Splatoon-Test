@@ -100,6 +100,24 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Sub"",
+                    ""type"": ""Button"",
+                    ""id"": ""8bec251d-f8f4-4904-9fc6-69d89bbdad71"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Special"",
+                    ""type"": ""Button"",
+                    ""id"": ""0eae36bd-c568-4bc5-b822-3a1bec5b1b48"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -122,6 +140,50 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""groups"": """",
                     ""action"": ""Attack"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""28e53ce1-d472-470b-9983-8f35e087f946"",
+                    ""path"": ""<Keyboard>/e"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Sub"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""4dcf7fcf-fa3d-4e28-b4bf-6a6301d5e1ee"",
+                    ""path"": ""<Gamepad>/rightShoulder"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Sub"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""6a852746-2494-45f5-9d92-05071737d1ec"",
+                    ""path"": ""<Keyboard>/q"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Special"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""7c2e0fa3-3090-45bb-b1cc-5cf91ab7ffce"",
+                    ""path"": ""<Gamepad>/rightStickPress"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Special"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 }
@@ -335,6 +397,15 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Map"",
+                    ""type"": ""Button"",
+                    ""id"": ""284fc56f-823e-4719-8933-250d000f0cae"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -346,6 +417,28 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""groups"": """",
                     ""action"": ""GameStart"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""9fb8a74f-6507-46e7-b88a-19eca34c09f2"",
+                    ""path"": ""<Keyboard>/tab"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Map"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""52be3e52-269e-4cb8-aed4-ed9bc0153d72"",
+                    ""path"": ""<Gamepad>/select"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Map"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 }
@@ -379,6 +472,8 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         // Weapon
         m_Weapon = asset.FindActionMap("Weapon", throwIfNotFound: true);
         m_Weapon_Attack = m_Weapon.FindAction("Attack", throwIfNotFound: true);
+        m_Weapon_Sub = m_Weapon.FindAction("Sub", throwIfNotFound: true);
+        m_Weapon_Special = m_Weapon.FindAction("Special", throwIfNotFound: true);
         // Movement
         m_Movement = asset.FindActionMap("Movement", throwIfNotFound: true);
         m_Movement_Squidmode = m_Movement.FindAction("Squidmode", throwIfNotFound: true);
@@ -389,6 +484,7 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         // GameControl
         m_GameControl = asset.FindActionMap("GameControl", throwIfNotFound: true);
         m_GameControl_GameStart = m_GameControl.FindAction("GameStart", throwIfNotFound: true);
+        m_GameControl_Map = m_GameControl.FindAction("Map", throwIfNotFound: true);
     }
 
     ~@ControlLayer()
@@ -472,6 +568,8 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
     private readonly InputActionMap m_Weapon;
     private List<IWeaponActions> m_WeaponActionsCallbackInterfaces = new List<IWeaponActions>();
     private readonly InputAction m_Weapon_Attack;
+    private readonly InputAction m_Weapon_Sub;
+    private readonly InputAction m_Weapon_Special;
     /// <summary>
     /// Provides access to input actions defined in input action map "Weapon".
     /// </summary>
@@ -487,6 +585,14 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "Weapon/Attack".
         /// </summary>
         public InputAction @Attack => m_Wrapper.m_Weapon_Attack;
+        /// <summary>
+        /// Provides access to the underlying input action "Weapon/Sub".
+        /// </summary>
+        public InputAction @Sub => m_Wrapper.m_Weapon_Sub;
+        /// <summary>
+        /// Provides access to the underlying input action "Weapon/Special".
+        /// </summary>
+        public InputAction @Special => m_Wrapper.m_Weapon_Special;
         /// <summary>
         /// Provides access to the underlying input action map instance.
         /// </summary>
@@ -516,6 +622,12 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
             @Attack.started += instance.OnAttack;
             @Attack.performed += instance.OnAttack;
             @Attack.canceled += instance.OnAttack;
+            @Sub.started += instance.OnSub;
+            @Sub.performed += instance.OnSub;
+            @Sub.canceled += instance.OnSub;
+            @Special.started += instance.OnSpecial;
+            @Special.performed += instance.OnSpecial;
+            @Special.canceled += instance.OnSpecial;
         }
 
         /// <summary>
@@ -530,6 +642,12 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
             @Attack.started -= instance.OnAttack;
             @Attack.performed -= instance.OnAttack;
             @Attack.canceled -= instance.OnAttack;
+            @Sub.started -= instance.OnSub;
+            @Sub.performed -= instance.OnSub;
+            @Sub.canceled -= instance.OnSub;
+            @Special.started -= instance.OnSpecial;
+            @Special.performed -= instance.OnSpecial;
+            @Special.canceled -= instance.OnSpecial;
         }
 
         /// <summary>
@@ -708,6 +826,7 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
     private readonly InputActionMap m_GameControl;
     private List<IGameControlActions> m_GameControlActionsCallbackInterfaces = new List<IGameControlActions>();
     private readonly InputAction m_GameControl_GameStart;
+    private readonly InputAction m_GameControl_Map;
     /// <summary>
     /// Provides access to input actions defined in input action map "GameControl".
     /// </summary>
@@ -723,6 +842,10 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "GameControl/GameStart".
         /// </summary>
         public InputAction @GameStart => m_Wrapper.m_GameControl_GameStart;
+        /// <summary>
+        /// Provides access to the underlying input action "GameControl/Map".
+        /// </summary>
+        public InputAction @Map => m_Wrapper.m_GameControl_Map;
         /// <summary>
         /// Provides access to the underlying input action map instance.
         /// </summary>
@@ -752,6 +875,9 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
             @GameStart.started += instance.OnGameStart;
             @GameStart.performed += instance.OnGameStart;
             @GameStart.canceled += instance.OnGameStart;
+            @Map.started += instance.OnMap;
+            @Map.performed += instance.OnMap;
+            @Map.canceled += instance.OnMap;
         }
 
         /// <summary>
@@ -766,6 +892,9 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
             @GameStart.started -= instance.OnGameStart;
             @GameStart.performed -= instance.OnGameStart;
             @GameStart.canceled -= instance.OnGameStart;
+            @Map.started -= instance.OnMap;
+            @Map.performed -= instance.OnMap;
+            @Map.canceled -= instance.OnMap;
         }
 
         /// <summary>
@@ -826,6 +955,20 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnAttack(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Sub" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnSub(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Special" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnSpecial(InputAction.CallbackContext context);
     }
     /// <summary>
     /// Interface to implement callback methods for all input action callbacks associated with input actions defined by "Movement" which allows adding and removing callbacks.
@@ -884,5 +1027,12 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnGameStart(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Map" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnMap(InputAction.CallbackContext context);
     }
 }
