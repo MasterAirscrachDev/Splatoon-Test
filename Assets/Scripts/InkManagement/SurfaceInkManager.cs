@@ -40,19 +40,29 @@ public class SurfaceInkManager : MonoBehaviour
     RenderTexture normalMapRenderTexture; // dynamic ink normal map, regenerated when splats change
     Texture2D topMaskTexture; // R8: 1 where a pixel maps to a floor/slope face, 0 for walls
 
-    const int KernelSplat = 0;
-    const int KernelGetScores = 1;
-    const int KernelGetTeamAtPixel = 2;
-    const int KernelGetTopScores = 3;
-    const int KernelComputeNormals = 4;
-    const int KernelPaintTrailNormal = 5;
+    // Resolved by name in InitializeSplatCompute, so kernel order in SplatCompute.compute
+    // doesn't matter.
+    int KernelSplat;
+    int KernelGetScores;
+    int KernelGetTopScores;
+    int KernelComputeNormals;
+    int KernelPaintTrailNormal;
+    int KernelFillRegion;
 
     ComputeBuffer scoreBuffer;
     ComputeBuffer topScoreBuffer;
-    ComputeBuffer pixelTeamBuffer;
 
-    int cachedSurfaceTeam = 0;
-    bool teamReadbackPending = false;
+    // CPU copy of InkTexture's team ownership, one byte per texel (0 none, 1 alpha, 2 beta),
+    // kept in sync by reading back just each splat's area after it lands (SyncTeamMapRegion).
+    // getSurfaceTeam is a plain lookup into this. It replaced a single GPU readback slot
+    // per surface that every caller shared (ground check, 12 wall rays, remote players), so
+    // each caller got whichever result came back last, for whatever texel someone else asked
+    // about. That caused wrong-team reads on surfaces with both floors and walls.
+    byte[] teamMap;
+    // Bumped by ClearInk so a readback issued before a clear can't land afterwards and
+    // restore stale ink.
+    int teamMapGeneration;
+    Color32 alphaColor32, betaColor32;
 
     void Start()
     {
@@ -246,6 +256,17 @@ public class SurfaceInkManager : MonoBehaviour
 
     void InitializeSplatCompute()
     {
+        KernelSplat            = splatCompute.FindKernel("Splat");
+        KernelGetScores        = splatCompute.FindKernel("GetScores");
+        KernelGetTopScores     = splatCompute.FindKernel("GetTopScores");
+        KernelComputeNormals   = splatCompute.FindKernel("ComputeNormals");
+        KernelPaintTrailNormal = splatCompute.FindKernel("PaintTrailNormal");
+        KernelFillRegion       = splatCompute.FindKernel("FillRegion");
+
+        teamMap = new byte[size * size];
+        alphaColor32 = gameManager.AlphaTeam;
+        betaColor32  = gameManager.BetaTeam;
+
         splatMapRenderTexture = new RenderTexture(size, size, 0, RenderTextureFormat.ARGB32);
         splatMapRenderTexture.enableRandomWrite = true;
         splatMapRenderTexture.filterMode = FilterMode.Bilinear;
@@ -258,11 +279,9 @@ public class SurfaceInkManager : MonoBehaviour
 
         scoreBuffer = new ComputeBuffer(3, sizeof(int));
         topScoreBuffer = new ComputeBuffer(3, sizeof(int));
-        pixelTeamBuffer = new ComputeBuffer(1, sizeof(int));
 
         splatCompute.SetTexture(KernelSplat,          "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(KernelGetScores,       "InkTexture", splatMapRenderTexture);
-        splatCompute.SetTexture(KernelGetTeamAtPixel,  "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(KernelGetTopScores,    "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(KernelGetTopScores,    "TopMask",    topMaskTexture);
         splatCompute.SetTexture(KernelComputeNormals,  "InkTexture",    splatMapRenderTexture);
@@ -270,11 +289,7 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetTexture(KernelPaintTrailNormal, "NormalTexture", normalMapRenderTexture);
 
         splatCompute.SetBuffer(KernelSplat,           "TeamScores",  scoreBuffer);
-        splatCompute.SetBuffer(KernelSplat,           "PixelTeam",   pixelTeamBuffer);
         splatCompute.SetBuffer(KernelGetScores,        "TeamScores",  scoreBuffer);
-        splatCompute.SetBuffer(KernelGetScores,        "PixelTeam",   pixelTeamBuffer);
-        splatCompute.SetBuffer(KernelGetTeamAtPixel,   "TeamScores",  scoreBuffer);
-        splatCompute.SetBuffer(KernelGetTeamAtPixel,   "PixelTeam",   pixelTeamBuffer);
         splatCompute.SetBuffer(KernelGetTopScores,     "TeamScores",  topScoreBuffer);
 
         Vector4 alphaTeam = new Vector4(gameManager.AlphaTeam.r, gameManager.AlphaTeam.g, gameManager.AlphaTeam.b, gameManager.AlphaTeam.a);
@@ -284,7 +299,6 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetVector("NoColor",    new Vector4(0, 0, 0, 0));
         splatCompute.SetInt("Size", size);
         splatCompute.SetInts("PixelCoords",     new int[2] { 0, 0 });
-        splatCompute.SetInts("TeamQueryCoords", new int[2] { 0, 0 });
         splatCompute.SetInt("SplashSize", 0);
         splatCompute.SetInt("Team", 1);
         splatCompute.SetFloat("NormalStrength", inkNormalStrength);
@@ -316,6 +330,8 @@ public class SurfaceInkManager : MonoBehaviour
         // bounded, and it leaves trail indents anywhere else on the surface untouched.
         RegenerateNormalsRegion(minX, minY, groupsX, groupsY);
 
+        SyncTeamMapRegion(minX, minY, Mathf.Min(groupsX * 8, size - minX), Mathf.Min(groupsY * 8, size - minY));
+
         if (broadcast)
             OnSplatApplied?.Invoke(new SplatData { surfaceId = SurfaceId, uv = texCoords, splashSize = splashSize, team = team });
     }
@@ -344,6 +360,30 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.Dispatch(KernelPaintTrailNormal, groupsX, groupsY, 1);
     }
 
+    // Paints a UV-space rectangle solidly with one team's ink (team 0 erases it): no splat
+    // shape, no feathering, no network broadcast. For setting up exact, known ink states
+    // (test scenes, tools); not used in normal gameplay.
+    public void FillRegion(Rect uvRect, int team)
+    {
+        if (splatMapRenderTexture == null) return; // Start hasn't run yet
+        int minX = Mathf.Clamp(Mathf.FloorToInt(uvRect.xMin * size), 0, size);
+        int minY = Mathf.Clamp(Mathf.FloorToInt(uvRect.yMin * size), 0, size);
+        int maxX = Mathf.Clamp(Mathf.CeilToInt(uvRect.xMax * size), 0, size);
+        int maxY = Mathf.Clamp(Mathf.CeilToInt(uvRect.yMax * size), 0, size);
+        if (maxX <= minX || maxY <= minY) return;
+
+        Color color = team == 1 ? gameManager.AlphaTeam : team == 2 ? gameManager.BetaTeam : Color.clear;
+        if (team != 0) color.a = 1f;
+        splatCompute.SetTexture(KernelFillRegion, "InkTexture", splatMapRenderTexture);
+        splatCompute.SetVector("FillColor", color);
+        splatCompute.SetInts("FillRect", minX, minY, maxX, maxY);
+        splatCompute.SetInts("BoundsMin", minX, minY);
+        splatCompute.Dispatch(KernelFillRegion, Mathf.CeilToInt((maxX - minX) / 8f), Mathf.CeilToInt((maxY - minY) / 8f), 1);
+
+        RegenerateNormalsFull(); // one-off setup call, so a full rebuild is fine
+        SyncTeamMapRegion(minX, minY, maxX - minX, maxY - minY);
+    }
+
     public void ClearInk()
     {
         RenderTexture prev = RenderTexture.active;
@@ -351,6 +391,11 @@ public class SurfaceInkManager : MonoBehaviour
         GL.Clear(false, true, Color.clear);
         RenderTexture.active = prev;
         RegenerateNormalsFull(); // full rebuild — also wipes any trail indents, matching a full ink reset
+
+        // The cleared state is known, so update the CPU copy directly instead of reading it
+        // back. Bumping the generation drops any splat readbacks still in flight.
+        teamMapGeneration++;
+        if (teamMap != null) System.Array.Clear(teamMap, 0, teamMap.Length);
     }
 
     public void CheckScoresAsync(System.Action<Vector3Int> callback)
@@ -390,34 +435,58 @@ public class SurfaceInkManager : MonoBehaviour
         });
     }
 
+    // Team owning the ink at a UV: 0 none, 1 alpha, 2 beta. Synchronous and exact for any UV,
+    // so any number of callers per frame is free. Lags the GPU by the readback latency
+    // (typically 1–3 frames after a splat lands).
     public int getSurfaceTeam(Vector2 texCoords)
     {
-        if (!teamReadbackPending)
-        {
-            int x = (int)(texCoords.x * size);
-            int y = (int)(texCoords.y * size);
-            splatCompute.SetTexture(KernelGetTeamAtPixel, "InkTexture", splatMapRenderTexture);
-            splatCompute.SetBuffer(KernelGetTeamAtPixel, "PixelTeam", pixelTeamBuffer);
-            splatCompute.SetInts("TeamQueryCoords", new int[2] { x, y });
-            splatCompute.Dispatch(KernelGetTeamAtPixel, 1, 1, 1);
-
-            teamReadbackPending = true;
-            AsyncGPUReadback.Request(pixelTeamBuffer, request =>
-            {
-                if (!request.hasError)
-                    cachedSurfaceTeam = request.GetData<int>()[0];
-                teamReadbackPending = false;
-            });
-        }
-        return cachedSurfaceTeam;
+        if (teamMap == null) return 0;
+        if (texCoords.x < 0f || texCoords.y < 0f || texCoords.x > 1f || texCoords.y > 1f) return 0;
+        int x = Mathf.Min((int)(texCoords.x * size), size - 1);
+        int y = Mathf.Min((int)(texCoords.y * size), size - 1);
+        return teamMap[y * size + x];
     }
+
+    // Reads one texel-space box of InkTexture back to the CPU and re-classifies it into
+    // teamMap. Splat calls this with its own dispatch bounds, so only what changed is copied.
+    void SyncTeamMapRegion(int minX, int minY, int width, int height)
+    {
+        if (width <= 0 || height <= 0) return;
+        int generation = teamMapGeneration;
+        AsyncGPUReadback.Request(splatMapRenderTexture, 0, minX, width, minY, height, 0, 1, TextureFormat.RGBA32, request =>
+        {
+            if (request.hasError || teamMap == null || generation != teamMapGeneration) return;
+            var pixels = request.GetData<Color32>();
+            for (int row = 0; row < height; row++)
+            {
+                int dst = (minY + row) * size + minX;
+                int src = row * width;
+                for (int col = 0; col < width; col++)
+                    teamMap[dst + col] = ClassifyTeam(pixels[src + col]);
+            }
+        });
+    }
+
+    // CPU twin of the compute shader's ColorNear: painted only when alpha > 0.5, and RGB
+    // within 0.01 of a team colour (≤ 2 steps out of 255 once quantised to 8 bits).
+    byte ClassifyTeam(Color32 c)
+    {
+        if (c.a < 128) return 0;
+        if (ColorNear(c, alphaColor32)) return 1;
+        if (ColorNear(c, betaColor32))  return 2;
+        return 0;
+    }
+
+    static bool ColorNear(Color32 a, Color32 b) =>
+        Mathf.Abs(a.r - b.r) <= 2 && Mathf.Abs(a.g - b.g) <= 2 && Mathf.Abs(a.b - b.b) <= 2;
 
     void OnDestroy()
     {
+        teamMap = null; // makes any readback still in flight a no-op
         scoreBuffer?.Release();
         topScoreBuffer?.Release();
-        pixelTeamBuffer?.Release();
         if (topMaskTexture != null) Destroy(topMaskTexture);
+        if (splatMapRenderTexture != null) splatMapRenderTexture.Release();
         if (normalMapRenderTexture != null) normalMapRenderTexture.Release();
     }
 }

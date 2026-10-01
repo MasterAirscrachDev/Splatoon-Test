@@ -1,9 +1,9 @@
 #pragma kernel Splat
 #pragma kernel GetScores
-#pragma kernel GetTeamAtPixel
 #pragma kernel GetTopScores
 #pragma kernel ComputeNormals
 #pragma kernel PaintTrailNormal
+#pragma kernel FillRegion
 
 RWTexture2D<float4> InkTexture;
 RWTexture2D<float4> NormalTexture;   // runtime ink normal map (RGB-encoded), written by ComputeNormals
@@ -16,7 +16,6 @@ float4 BetaColor;
 float4 NoColor;
 int2 PixelCoords;      // used by Splat
 int2 BoundsMin;        // texel-space origin of the current dispatch's bounding box
-int2 TeamQueryCoords;  // used by GetTeamAtPixel (separate to avoid clobbering)
 int Size;
 int Team;
 int SplashSize;
@@ -25,8 +24,9 @@ float2 TrailCenter;    // texel-space centre of a PaintTrailNormal stamp
 float TrailRadius;     // texel radius of that stamp
 float TrailDepth;      // steepness of the fully-formed indent
 float TrailBlend;      // 0..1 — how far one stamp eases the normal toward the indent shape
+float4 FillColor;      // solid colour written by FillRegion (alpha 0 erases)
+int4 FillRect;         // FillRegion texel rect: xy = min (inclusive), zw = max (exclusive)
 RWStructuredBuffer<int> TeamScores;
-RWStructuredBuffer<int> PixelTeam;
 
 // High-quality, precision-robust hash (Dave Hoskins). The previous frac(dot(p,p+k))
 // hash had strong diagonal correlation and broke down at large coordinates, producing
@@ -207,15 +207,12 @@ void PaintTrailNormal(uint3 id : SV_DispatchThreadID) {
     NormalTexture[texel] = float4(blended * 0.5 + 0.5, 1.0);
 }
 
-// Single-thread kernel: reads one pixel and writes team id (0/1/2) to PixelTeam[0]
-[numthreads(1,1,1)]
-void GetTeamAtPixel(uint3 id : SV_DispatchThreadID) {
-    float4 color = InkTexture[TeamQueryCoords];
-    if (ColorNear(color, AlphaColor)) {
-        PixelTeam[0] = 1;
-    } else if (ColorNear(color, BetaColor)) {
-        PixelTeam[0] = 2;
-    } else {
-        PixelTeam[0] = 0;
-    }
+// Writes FillColor solidly over a texel rectangle — no splat shape or feathering. Used to set
+// up exact, known ink states (test scenes, tools) rather than during gameplay.
+[numthreads(8,8,1)]
+void FillRegion(uint3 id : SV_DispatchThreadID) {
+    int2 texel = BoundsMin + int2(id.xy);
+    if (any(texel < FillRect.xy) || any(texel >= FillRect.zw)) return;
+    if (texel.x >= Size || texel.y >= Size) return;
+    InkTexture[texel] = FillColor;
 }

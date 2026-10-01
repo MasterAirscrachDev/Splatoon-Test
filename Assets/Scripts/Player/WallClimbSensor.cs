@@ -13,11 +13,17 @@ public class WallClimbSensor : MonoBehaviour
 {
     [SerializeField] int rayCount = 12;
     [SerializeField] float probeDistance = 0.75f; // short — only counts walls immediately adjacent
-    // Extra margin above the CharacterController's own slopeLimit before a surface counts as
-    // climbable, so this sensor can't disagree with what the controller itself treats as a
-    // walkable floor/slope.
+    // Extra margin above the player's walkable slope limit (PlayerController.SlopeLimit — a
+    // fixed value, not the controller's live slopeLimit, which is raised to 90° while climbing)
+    // before a surface counts as climbable, so this sensor can't disagree with what the
+    // controller treats as a walkable floor/slope.
     [SerializeField] float climbMarginDeg = 5f;
     [SerializeField] LayerMask raycastMask = ~0;
+    // How strongly a wall the player is moving into is preferred over a merely closer one,
+    // in metres of distance per unit of (intent · -normal). Without it, at an inner corner the
+    // wall being climbed is always slightly closer than the one being strafed into, so the
+    // player stayed pinned in the corner instead of transferring onto the new wall.
+    [SerializeField] float intentBias = 0.5f;
     [SerializeField] bool debugDraw = true;
 
     PlayerController player;
@@ -31,20 +37,24 @@ public class WallClimbSensor : MonoBehaviour
     {
         if (player == null) return;
 
-        if (TryFindWall(out RaycastHit hit, out SurfaceInkManager ink, out Vector2 uv))
+        if (TryFindWall(out RaycastHit hit, out SurfaceInkManager ink, out Vector2 uv, out bool sawNonOwnWall))
             player.SetClimbContact(hit.normal, ink, uv);
         else
-            player.ClearClimbContact();
+            // No own-ink wall, but a climbable wall *is* right there: we've reached the edge of
+            // our ink on it, not the edge of the wall itself.
+            player.ClearClimbContact(atInkEdge: sawNonOwnWall);
     }
 
     // Casts rayCount evenly-spaced horizontal rays (world-space, independent of the player's
-    // facing) outward from this transform, keeping the closest hit that's steep enough to
+    // facing) outward from this transform, keeping the best hit (closest, biased toward the
+    // direction the player is moving — see intentBias) that's steep enough to
     // count as a wall (not a floor/ceiling/shallow slope) AND belongs to the player's own
     // team's ink. A wall of any other team, or unpainted, is not a valid climb target at all
     // — filtered out here at acquisition rather than downstream, so isClimbing being true
     // always means "there is a climbable wall of my own ink right here."
-    bool TryFindWall(out RaycastHit bestHit, out SurfaceInkManager bestInk, out Vector2 bestUV)
+    bool TryFindWall(out RaycastHit bestHit, out SurfaceInkManager bestInk, out Vector2 bestUV, out bool sawNonOwnWall)
     {
+        sawNonOwnWall = false;
         bestHit = default;
         bestInk = null;
         bestUV = Vector2.zero;
@@ -52,7 +62,8 @@ public class WallClimbSensor : MonoBehaviour
         float climbThreshold = Mathf.Cos((player.SlopeLimit + climbMarginDeg) * Mathf.Deg2Rad);
         Vector3 origin = transform.position;
         bool found = false;
-        float bestDist = float.MaxValue;
+        float bestScore = float.MaxValue;
+        Vector3 intent = player.ClimbIntent;
 
         for (int i = 0; i < rayCount; i++)
         {
@@ -87,16 +98,19 @@ public class WallClimbSensor : MonoBehaviour
             {
                 // Red: a climbable wall, but not our own ink
                 if (debugDraw) Debug.DrawLine(origin, hit.point, Color.red);
+                sawNonOwnWall = true;
                 continue;
             }
 
             // Green: a valid climb candidate this ray
             if (debugDraw) Debug.DrawLine(origin, hit.point, Color.green);
 
-            if (hit.distance >= bestDist) continue; // valid, but not the closest one so far
+            // Closest wall wins, biased toward the one the player is moving into.
+            float score = hit.distance - intentBias * Mathf.Max(0f, Vector3.Dot(intent, -hit.normal));
+            if (score >= bestScore) continue; // valid, but not the best one so far
 
             found = true;
-            bestDist = hit.distance;
+            bestScore = score;
             bestHit = hit;
             bestInk = ink;
             bestUV = uv;
