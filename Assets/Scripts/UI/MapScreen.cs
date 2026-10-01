@@ -1,11 +1,14 @@
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 // Hold Tab: live view of the level from a raised, rotated angle, with your team and your spawn
 // listed on the left and a line from each entry to its marker, plus your team's beacons. Clicking
-// a teammate, the spawn (entry or marker) or a beacon Super Jumps there.
+// a teammate, the spawn (entry or marker) or a beacon Super Jumps there. Specials can also open it
+// to pick a spot (BeginTargeting): a reticle sized to the area follows the pointer.
 public class MapScreen : MonoBehaviour
 {
     [System.Serializable]
@@ -30,6 +33,11 @@ public class MapScreen : MonoBehaviour
     [SerializeField] Entry[] entries = new Entry[4];
     [SerializeField] Entry spawnEntry;            // always available
     [SerializeField] Button beaconMarkerTemplate; // cloned per beacon; its first child is tinted
+
+    [Header("Targeting")]
+    [SerializeField] ClickRelay targetCatcher;    // invisible, over the map and its markers
+    [SerializeField] RectTransform reticle;
+    [SerializeField] TMP_Text hint;
 
     [Header("Map render")]
     [SerializeField] string[] mapLayers = { "Map", "InkSurface" };
@@ -60,6 +68,12 @@ public class MapScreen : MonoBehaviour
 
     public bool IsOpen => open;
     public bool ScriptedHold { get; set; } // tests: acts as holding the map button
+    public bool IsTargeting => onTargetPicked != null;
+
+    System.Action<Vector3> onTargetPicked;
+    System.Action onTargetCancelled;
+    float targetRadius;
+    string normalHint;
 
     void Awake()
     {
@@ -73,6 +87,8 @@ public class MapScreen : MonoBehaviour
         }
         spawnEntry.button.onClick.AddListener(RequestSpawnJump);
         spawnEntry.marker.onClick.AddListener(RequestSpawnJump);
+        targetCatcher.Clicked += OnMapClicked;
+        normalHint = hint.text;
         screen.SetActive(false);
     }
 
@@ -85,6 +101,7 @@ public class MapScreen : MonoBehaviour
 
     void Update()
     {
+        if (IsTargeting) { UpdateTargeting(); return; }
         bool held = ScriptedHold || input.GameControl.Map.IsPressed();
         if (!held) waitForRelease = false;
         if (held && !open && !waitForRelease) TryOpen();
@@ -107,6 +124,7 @@ public class MapScreen : MonoBehaviour
 
     public void SetOpen(bool value)
     {
+        if (!value && IsTargeting) { CancelTargeting(); return; }
         open = value;
         screen.SetActive(value);
         InputGate.Blocked = value;
@@ -138,11 +156,87 @@ public class MapScreen : MonoBehaviour
 
     void TryJump(ISuperJumpTarget target)
     {
+        if (IsTargeting) return;
         PlayerController local = NetGameManager.LocalPlayer;
         if (local == null || !local.StartSuperJump(target)) return;
         SuperJumpRequested?.Invoke(target);
         SetOpen(false);
         waitForRelease = true; // don't reopen while the button is still held
+    }
+
+    // ── Targeting (specials) ───────────────────────────────────────────────
+
+    // Opens the map to pick a spot on the level: picked gets the world point, cancelled is
+    // called if it closes without one (Esc or right-click). False if the map can't open now.
+    public bool BeginTargeting(float radius, System.Action<Vector3> picked, System.Action cancelled)
+    {
+        if (open || InputGate.Blocked || IsTargeting) return false;
+        onTargetPicked = picked;
+        onTargetCancelled = cancelled;
+        targetRadius = radius;
+        SetOpen(true);
+        targetCatcher.gameObject.SetActive(true);
+        reticle.gameObject.SetActive(true);
+        hint.text = "Click where to strike   ·   Esc or right-click to cancel";
+        return true;
+    }
+
+    public void CancelTargeting() => EndTargeting(false, Vector3.zero);
+
+    // Tests: as if the map were clicked at this map position (MapPosition's space).
+    public bool PickTargetAt(Vector2 mapLocal)
+    {
+        if (!IsTargeting || !TryWorldFromMap(mapLocal, out Vector3 world)) return false;
+        EndTargeting(true, world);
+        return true;
+    }
+
+    void OnMapClicked(PointerEventData e)
+    {
+        if (!IsTargeting || e.button != PointerEventData.InputButton.Left) return;
+        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(markerArea, e.position, e.pressEventCamera, out Vector2 local))
+            PickTargetAt(local);
+    }
+
+    void EndTargeting(bool picked, Vector3 world)
+    {
+        System.Action<Vector3> onPicked = onTargetPicked;
+        System.Action onCancelled = onTargetCancelled;
+        onTargetPicked = null;
+        onTargetCancelled = null;
+        targetCatcher.gameObject.SetActive(false);
+        reticle.gameObject.SetActive(false);
+        hint.text = normalHint;
+        SetOpen(false);
+        if (picked) onPicked?.Invoke(world); else onCancelled?.Invoke();
+    }
+
+    // The reticle follows the pointer, as big as the area would look there.
+    void UpdateTargeting()
+    {
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame || Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
+        {
+            CancelTargeting();
+            return;
+        }
+        if (Time.unscaledTime >= nextRender) RenderMap();
+        RefreshTeam();
+        if (Mouse.current != null && RectTransformUtility.ScreenPointToLocalPointInRectangle(markerArea, Mouse.current.position.ReadValue(), null, out Vector2 local))
+            reticle.anchoredPosition = local;
+        float pixelsPerMetre = markerArea.rect.height / (2f * mapCamera.orthographicSize);
+        float across = targetRadius * 2f * pixelsPerMetre;
+        reticle.sizeDelta = new Vector2(across, across * Mathf.Sin(viewPitch * Mathf.Deg2Rad)); // a flat circle, seen from the map's angle
+    }
+
+    // The level surface under a map position, if any.
+    public bool TryWorldFromMap(Vector2 mapLocal, out Vector3 world)
+    {
+        EnsureMapCamera();
+        Rect r = markerArea.rect;
+        Ray ray = mapCamera.ViewportPointToRay(new Vector3(mapLocal.x / r.width + 0.5f, mapLocal.y / r.height + 0.5f, 0f));
+        bool hit = Physics.Raycast(ray, out RaycastHit h, mapCamera.farClipPlane, LayerMask.GetMask(mapLayers), QueryTriggerInteraction.Ignore);
+        world = hit ? h.point : Vector3.zero;
+        return hit;
     }
 
     // ── Map rendering ──────────────────────────────────────────────────────

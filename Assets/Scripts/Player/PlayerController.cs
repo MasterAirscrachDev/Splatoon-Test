@@ -57,6 +57,9 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         (controller == null || !controller.enabled || controller.isGrounded || velocityY <= 0f);
     bool InWallJumpGrace => Time.time < wallJumpGraceUntil;
 
+    // Extra locally simulated player for tests (NetGameManager.SpawnTestPlayer); set before Start.
+    public bool IsTestPlayer { get; set; }
+
     // Test harness / debug hooks. ScriptedInput replaces hardware input entirely.
     public ScriptedPlayerInput ScriptedInput { get; set; }
     public void PressJump() => Jump();
@@ -147,12 +150,21 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
             input.Enable();
             input.Movement.Jump.performed += ctx => { if (ScriptedInput == null && !InputGate.Blocked) Jump(); };
             input.Movement.Debug.performed += ctx => TestCheckScores();
-            if (lockCursor){ Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false; }
             cameraBaseLocalPos = playerCamera.localPosition;
-            if (uiController == null) uiController = FindFirstObjectByType<UIController>();
             if (mat != null) { mat = InstanceMaterial(mat); ownsMat = true; } // fade our own copy, not the shared asset
-            localSteamId = SteamGlobal.steamID.Value;
-            SteamGlobal.OnNetTick += NetTickBroadcast;
+            if (IsTestPlayer)
+            {
+                // Driven by tests alongside the real local player: no view, cursor, HUD or network of its own.
+                foreach (Camera cam in playerCamera.GetComponentsInChildren<Camera>(true)) cam.enabled = false;
+                foreach (AudioListener al in playerCamera.GetComponentsInChildren<AudioListener>(true)) al.enabled = false;
+            }
+            else
+            {
+                if (lockCursor) { Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false; }
+                if (uiController == null) uiController = FindFirstObjectByType<UIController>();
+                localSteamId = SteamGlobal.steamID.Value;
+                SteamGlobal.OnNetTick += NetTickBroadcast;
+            }
         }
         else
         {
@@ -216,7 +228,8 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
             UpdateMouseLook();
             UpdateMovement();
             UpdateCameraFormOffset();
-            float distance = Vector3.Distance(Camera.main.transform.position, transform.position);
+            Camera view = Camera.main;
+            float distance = view != null ? Vector3.Distance(view.transform.position, transform.position) : float.MaxValue;
             mat.color = distance < 2
                 ? new Color(1, 1, 1, Mathf.Clamp(distance / 2, 0, 1))
                 : new Color(1, 1, 1, 1);

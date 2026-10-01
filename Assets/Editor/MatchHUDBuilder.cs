@@ -313,6 +313,10 @@ public static class MatchHUDBuilder
         // Names stand in for icons; key hints sit on the gauges' outer lower corners.
         TextMeshProUGUI specialIcon = Text("Icon", specialFrame, "BUBBLE", 17, Color.white, TextAlignmentOptions.Center, true);
         Place(specialIcon.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(2.4f, 88), new Vector2(170, 24));
+        specialIcon.textWrappingMode = TextWrappingModes.NoWrap; // the special's name changes with the loadout
+        specialIcon.enableAutoSizing = true;
+        specialIcon.fontSizeMin = 10;
+        specialIcon.fontSizeMax = 17;
         TextMeshProUGUI specialKey = Text("Key", specialFrame, "[Q]", 17, Color.white, TextAlignmentOptions.Center, true);
         Place(specialKey.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(-61.2f, 19.2f), new Vector2(33.25f, 24));
 
@@ -338,6 +342,7 @@ public static class MatchHUDBuilder
         so.FindProperty("specialFrame").objectReferenceValue = specialFrame;
         so.FindProperty("specialReady").objectReferenceValue = ready.gameObject;
         so.FindProperty("subLabel").objectReferenceValue = subIcon;
+        so.FindProperty("specialLabel").objectReferenceValue = specialIcon;
         so.ApplyModifiedPropertiesWithoutUndo();
     }
 
@@ -475,6 +480,17 @@ public static class MatchHUDBuilder
         spawn.status.text = "Super Jump";
         spawn.facing.gameObject.SetActive(false);
 
+        // Targeting (specials): a click catcher over the map and its markers, and a reticle.
+        RectTransform targeting = Rect("Targeting", screen, centre, centre, mapPos, mapSize);
+        RectTransform catcher = Rect("Catcher", targeting, Vector2.zero, centre, Vector2.zero, Vector2.zero);
+        Stretch(catcher);
+        Img(catcher.gameObject, null, new Color(0f, 0f, 0f, 0f), sliced: false).raycastTarget = true;
+        ClickRelay relay = catcher.gameObject.AddComponent<ClickRelay>();
+        catcher.gameObject.SetActive(false);
+        RectTransform reticle = Rect("Reticle", targeting, centre, centre, Vector2.zero, new Vector2(80, 60));
+        Img(reticle.gameObject, ring, new Color(1f, 0.35f, 0.3f, 0.95f), sliced: false);
+        reticle.gameObject.SetActive(false);
+
         MapScreen map = mapRoot.gameObject.AddComponent<MapScreen>();
         SerializedObject so = new SerializedObject(map);
         so.FindProperty("screen").objectReferenceValue = screen.gameObject;
@@ -482,6 +498,9 @@ public static class MatchHUDBuilder
         so.FindProperty("markerArea").objectReferenceValue = markers;
         so.FindProperty("lineLayer").objectReferenceValue = lines;
         so.FindProperty("beaconMarkerTemplate").objectReferenceValue = beaconTemplate;
+        so.FindProperty("targetCatcher").objectReferenceValue = relay;
+        so.FindProperty("reticle").objectReferenceValue = reticle;
+        so.FindProperty("hint").objectReferenceValue = hint;
         SerializedProperty array = so.FindProperty("entries");
         array.arraySize = entries.Length;
         for (int i = 0; i < entries.Length; i++) AssignMapEntry(array.GetArrayElementAtIndex(i), entries[i]);

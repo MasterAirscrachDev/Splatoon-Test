@@ -809,6 +809,7 @@ MonoBehaviour:
   sprinklerInkCost: 0.6
   throwSpeed: 11
   throwLift: 4
+  inkStrikePrefab: {fileID: 2160948365701607404, guid: 08b0142f80215a64796af04ac1ab99a2, type: 3}
   specialCost: 1000
   shieldDuration: 5
   shieldVisual: {fileID: 4643227859557890364}

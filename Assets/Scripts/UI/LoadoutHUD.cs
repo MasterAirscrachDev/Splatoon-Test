@@ -13,6 +13,7 @@ public class LoadoutHUD : MonoBehaviour
     [SerializeField] RectTransform specialFrame;  // pulses when the special is ready
     [SerializeField] GameObject specialReady;     // "READY" label
     [SerializeField] TMP_Text subLabel;           // dimmed with the gauge without enough ink
+    [SerializeField] TMP_Text specialLabel;
     [SerializeField] float fillSmoothing = 10f;
     [SerializeField] float lowInkDim = 0.45f;     // sub gauge brightness without enough ink
 
@@ -26,6 +27,7 @@ public class LoadoutHUD : MonoBehaviour
     public float SpecialFill => shownSpecial;
     public bool ReadyShown => specialReady.activeSelf;
     public string SubName => subLabel.text;
+    public string SpecialName => specialLabel != null ? specialLabel.text : "";
 
     void Awake()
     {
@@ -60,7 +62,8 @@ public class LoadoutHUD : MonoBehaviour
         float h = ((RectTransform)subFill.transform).rect.height;
         subCostMark.anchoredPosition = new Vector2(0f, (loadout.SubInkCost - 0.5f) * h);
         subLabel.alpha = canSub ? 1f : 0.5f;
-        if (subLabel.text != loadout.SubName) subLabel.text = loadout.SubName; // stands in for the sub's icon
+        if (subLabel.text != loadout.SubName) subLabel.text = loadout.SubName; // stand in for the sub and special icons
+        if (specialLabel != null && specialLabel.text != loadout.SpecialName) specialLabel.text = loadout.SpecialName;
 
         // Special: charge, or the time left while it's running.
         float target = loadout.ShieldActive ? loadout.ShieldRemaining / loadout.ShieldDuration : loadout.SpecialCharge;

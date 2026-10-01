@@ -3,14 +3,14 @@ using UnityEngine;
 using UnityEngine.UI;
 
 // Match announcements and the results screen, driven by NetGameManager's phase:
-// 3-2-1 / GO! / ONE MINUTE LEFT! / TIME'S UP!, then an overhead view with a big turf bar that
+// 3-2-1 / GO! / TIME'S UP!, then an overhead view with a big turf bar that
 // fills both sides to a suspense point, pauses, snaps to the real split, and names the winner.
 // Spectators (and benched players) watch from the same overhead view throughout.
 public class MatchFlowHUD : MonoBehaviour
 {
     [Header("Announcements")]
     [SerializeField] TMP_Text banner, bannerSub;
-    [SerializeField] float goTime = 1.2f, finalStretchBannerTime = 2.5f;
+    [SerializeField] float goTime = 1.2f;
     [SerializeField] TMP_Text spectatingLabel;
 
     [Header("Results")]
@@ -33,7 +33,7 @@ public class MatchFlowHUD : MonoBehaviour
 
     Camera overhead;
     string shownBanner = "";
-    float bannerSince, finalStretchSince = -1f;
+    float bannerSince;
     float shownAlpha, shownBeta;
     bool revealed;
 
@@ -44,9 +44,6 @@ public class MatchFlowHUD : MonoBehaviour
     public bool ResultsRevealed => revealed;
     public bool SpectatingShown => spectatingLabel.gameObject.activeSelf;
 
-    void OnEnable()  => NetGameManager.FinalStretchStarted += OnFinalStretch;
-    void OnDisable() => NetGameManager.FinalStretchStarted -= OnFinalStretch;
-    void OnFinalStretch() => finalStretchSince = Time.time;
 
     void OnDestroy()
     {
@@ -69,12 +66,7 @@ public class MatchFlowHUD : MonoBehaviour
                 text = n > 0 ? n.ToString() : "";
                 break;
             case MatchPhase.Playing:
-                if (t < goTime) text = "GO!";
-                else if (gm.InFinalStretch && finalStretchSince >= 0f && Time.time - finalStretchSince < finalStretchBannerTime)
-                {
-                    text = "ONE MINUTE LEFT!";
-                    sub = "Who's winning?";
-                }
+                if (t < goTime) text = "GO!"; // the final minute is announced by music (FinalStretchStarted)
                 break;
             case MatchPhase.TimesUp:
                 text = "TIME'S UP!";

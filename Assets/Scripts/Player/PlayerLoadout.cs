@@ -5,8 +5,9 @@ using UnityEngine;
 // remembered); weapons are prefabs, equipped under the weapon mount (remote copies follow the
 // owner's choice from their state updates). Subs cost a fixed share of the ink tank: a beacon is placed in front of the player,
 // a sprinkler is thrown. The special (bubble shield) charges from turf inked and damage dealt,
-// refills the tank and makes the player immune to damage for a few seconds. Lives on remote
-// copies too, for their visuals and subs.
+// refills the tank and makes the player immune to damage for a few seconds; or the Inkstrike,
+// called in on a spot picked from the map. Specials charge from turf inked and damage dealt, and
+// refill the tank. Lives on remote copies too, for their visuals, subs and strikes.
 public class PlayerLoadout : MonoBehaviour
 {
     [Header("Main weapons")]
@@ -24,6 +25,9 @@ public class PlayerLoadout : MonoBehaviour
     [SerializeField] float sprinklerInkCost = 0.6f;
     [SerializeField] float throwSpeed = 11f;       // along the aim, plus an upward lob
     [SerializeField] float throwLift = 4f;
+
+    [Header("Special: Inkstrike")]
+    [SerializeField] InkStrike inkStrikePrefab;
 
     [Header("Special: bubble shield")]
     [SerializeField] float specialCost = 1000f;    // points to charge
@@ -45,6 +49,10 @@ public class PlayerLoadout : MonoBehaviour
     public Sprinkler SprinklerPrefab => sprinklerPrefab;
     public SubType Sub => sub;
     public string SubName => sub == SubType.Beacon ? "BEACON" : "SPRINKLER";
+    public SpecialType Special => special;
+    public string SpecialName => special == SpecialType.BubbleShield ? "BUBBLE" : "INKSTRIKE";
+    public InkStrike InkStrikePrefab => inkStrikePrefab;
+    public bool Targeting { get; private set; } // picking an Inkstrike spot on the map
     public float SubInkCost => InkCost(sub);
     public float InkCost(SubType type) => type == SubType.Beacon ? beaconInkCost : sprinklerInkCost;
     public bool CanUseSub => player.InkLevel >= SubInkCost;
@@ -78,14 +86,16 @@ public class PlayerLoadout : MonoBehaviour
         }
     }
 
-    const string WeaponPref = "loadout.weapon", SubPref = "loadout.sub";
+    const string WeaponPref = "loadout.weapon", SubPref = "loadout.sub", SpecialPref = "loadout.special";
+    SpecialType special = SpecialType.BubbleShield;
 
     void Start()
     {
-        if (!player.IsLocalPlayer) { Equip(player.WeaponIndex); return; }
+        if (!player.IsLocalPlayer || player.IsTestPlayer) { Equip(player.WeaponIndex); return; } // test players: no input, saved loadout or charge
         Local = this;
         SetMainWeapon(PlayerPrefs.GetInt(WeaponPref, 0));
         SetSub((SubType)PlayerPrefs.GetInt(SubPref, (int)SubType.Beacon));
+        SetSpecial((SpecialType)PlayerPrefs.GetInt(SpecialPref, (int)SpecialType.BubbleShield));
         input = new ControlLayer();
         input.Weapon.Enable();
         input.Weapon.Sub.performed += _ => { if (!InputGate.Blocked) UseSub(); };
@@ -121,7 +131,7 @@ public class PlayerLoadout : MonoBehaviour
         weaponIndex = Mathf.Clamp(index, 0, weapons.Length - 1);
         Equip(weaponIndex);
         player.WeaponIndex = weaponIndex; // sent with our state
-        if (player.IsLocalPlayer) PlayerPrefs.SetInt(WeaponPref, weaponIndex);
+        if (player.IsLocalPlayer && !player.IsTestPlayer) PlayerPrefs.SetInt(WeaponPref, weaponIndex);
     }
 
     // Swaps the weapon in our hands for a fresh instance of the chosen prefab.
@@ -140,10 +150,16 @@ public class PlayerLoadout : MonoBehaviour
         equippedIndex = index;
     }
 
+    public void SetSpecial(SpecialType type)
+    {
+        special = System.Enum.IsDefined(typeof(SpecialType), type) ? type : SpecialType.BubbleShield;
+        if (player.IsLocalPlayer && !player.IsTestPlayer) PlayerPrefs.SetInt(SpecialPref, (int)special);
+    }
+
     public void SetSub(SubType type)
     {
         sub = System.Enum.IsDefined(typeof(SubType), type) ? type : SubType.Beacon;
-        if (player.IsLocalPlayer) PlayerPrefs.SetInt(SubPref, (int)sub);
+        if (player.IsLocalPlayer && !player.IsTestPlayer) PlayerPrefs.SetInt(SubPref, (int)sub);
     }
 
     // ── Sub ────────────────────────────────────────────────────────────────
@@ -225,11 +241,38 @@ public class PlayerLoadout : MonoBehaviour
     public bool UseSpecial()
     {
         if (!player.IsLocalPlayer || player.IsDead || player.Team == 0 || !SpecialReady || InputGate.MatchLocked) return false;
+        if (special == SpecialType.InkStrike) return BeginInkStrike();
         specialPoints = 0f;
         player.RefillInk();
         shieldUntil = Time.time + shieldDuration;
         player.Shielded = true;
         return true;
+    }
+
+    // Opens the map to pick the spot; the charge is only spent once one is picked.
+    bool BeginInkStrike()
+    {
+        MapScreen map = FindFirstObjectByType<MapScreen>();
+        if (map == null || inkStrikePrefab == null || Targeting) return false;
+        Targeting = map.BeginTargeting(inkStrikePrefab.Radius, LaunchInkStrike, () => Targeting = false);
+        return Targeting;
+    }
+
+    // The spot picked on the map (tests may call this directly).
+    public void LaunchInkStrike(Vector3 target)
+    {
+        Targeting = false;
+        if (!SpecialReady || player.IsDead || InputGate.MatchLocked) return; // splatted, or the match moved on, while picking
+        specialPoints = 0f;
+        player.RefillInk();
+        Instantiate(inkStrikePrefab).Begin(player.OwnerId, player.Team, target, ownedLocally: true);
+        NetGameManager.Instance?.SendInkStrike(player.OwnerId, player.Team, target);
+    }
+
+    // Other players' strikes, from their InkStrike message: marker and blast only.
+    public void SpawnRemoteInkStrike(InkStrikeData d)
+    {
+        if (inkStrikePrefab != null) Instantiate(inkStrikePrefab).Begin(d.ownerId, d.team, d.position, ownedLocally: false);
     }
 
     // No charge while the special is running.

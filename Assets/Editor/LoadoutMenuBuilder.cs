@@ -44,9 +44,7 @@ public static class LoadoutMenuBuilder
         float[] x = { -(ColumnWidth + 40), 0, ColumnWidth + 40 };
         Button[] weapons = Column(panel, "MAIN WEAPON", x[0], new[] { "Airspray SE", "Inkshot" }, out TextMeshProUGUI weaponInfo);
         Button[] subs = Column(panel, "SUB", x[1], new[] { "Beacon", "Ink Sprinkler" }, out TextMeshProUGUI subInfo);
-        Button[] special = Column(panel, "SPECIAL", x[2], new[] { "Bubble Shield" }, out TextMeshProUGUI specialInfo);
-        special[0].interactable = false; // the only one, for now
-        specialInfo.text = "5s immune to damage, refills ink. Charges from turf inked and damage dealt.";
+        Button[] specials = Column(panel, "SPECIAL", x[2], new[] { "Bubble Shield", "InkStrike" }, out TextMeshProUGUI specialInfo);
 
         Button close = MenuButton("Close", panel, "Close", new Vector2(0, -470), new Vector2(180, 46), out _);
         TextMeshProUGUI hint = Text("Hint", panel, "L / Esc to close", 16, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
@@ -57,6 +55,8 @@ public static class LoadoutMenuBuilder
         so.FindProperty("screen").objectReferenceValue = screen.gameObject;
         Assign(so.FindProperty("weaponButtons"), weapons);
         Assign(so.FindProperty("subButtons"), subs);
+        Assign(so.FindProperty("specialButtons"), specials);
+        so.FindProperty("specialInfo").objectReferenceValue = specialInfo;
         so.FindProperty("weaponInfo").objectReferenceValue = weaponInfo;
         so.FindProperty("subInfo").objectReferenceValue = subInfo;
         so.FindProperty("closeButton").objectReferenceValue = close;

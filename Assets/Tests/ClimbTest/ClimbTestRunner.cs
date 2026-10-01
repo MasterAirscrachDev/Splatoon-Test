@@ -7,9 +7,11 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using static ClimbTestLayout;
 
-// Runs scripted movement scenarios in ClimbTest.unity and logs "[ClimbTest] PASS/FAIL" plus a
-// summary (also shown on screen). Fixed 1/60 s steps make runs repeatable.
-// Manual use: F1–F9 teleport to stations 1–9, F12 reruns everything.
+// Runs scripted scenarios in ClimbTest.unity and logs "[ClimbTest] PASS/FAIL" plus a summary (also
+// shown on screen). Fixed 1/75 s steps make runs repeatable. Station scenarios run side by side on
+// several players (one per station at a time, see RunParallel); the Lobby ones, which share match,
+// HUD and network state, run one at a time on the real local player. Watched from overhead.
+// Manual use: F1–F9 teleport to stations 1–9, F11 toggles overhead/player view, F12 reruns everything.
 public class ClimbTestRunner : MonoBehaviour
 {
     [SerializeField] bool runOnStart = true;
@@ -22,7 +24,8 @@ public class ClimbTestRunner : MonoBehaviour
     [Tooltip("Write a per-frame CSV of each scenario to <project>/Logs/ClimbTest/.")]
     [SerializeField] bool writeTraces = true;
 
-    const float Dt = 1f / 60f;
+    const float Dt = 1f / 75f;
+    const int Lanes = 4; // players running station scenarios at once (the local player and test players)
     static readonly Vector2 Fwd = Vector2.up, Back = Vector2.down, Still = Vector2.zero;
 
     struct Frame
@@ -53,20 +56,40 @@ public class ClimbTestRunner : MonoBehaviour
 
     struct Result { public string name; public bool pass; public string detail; }
 
-    PlayerController player;
-    Transform station;
-    readonly List<Frame> frames = new List<Frame>();
-    readonly List<string> failures = new List<string>();
-    readonly List<string> notes = new List<string>();
+    // One player working through scenarios. The members below resolve to the lane being stepped,
+    // so scenarios read as single-player code whichever lane runs them.
+    class Lane
+    {
+        public PlayerController player;
+        public Transform station;
+        public readonly List<Frame> frames = new List<Frame>();
+        public readonly List<string> failures = new List<string>();
+        public readonly List<string> notes = new List<string>();
+        public int errorLogs;
+    }
+
+    readonly List<Lane> lanes = new List<Lane>();
+    readonly HashSet<Lane> activeLanes = new HashSet<Lane>();
+    Lane mainLane = new Lane(), lane;
+    PlayerController player { get => lane.player; set => lane.player = value; }
+    Transform station { get => lane.station; set => lane.station = value; }
+    List<Frame> frames => lane.frames;
+    List<string> failures => lane.failures;
+    List<string> notes => lane.notes;
+    int errorLogs { get => lane.errorLogs; set => lane.errorLogs = value; }
     readonly List<Result> results = new List<Result>();
-    int errorLogs;
+    Camera overhead;
     // Errors logged during scene startup, reported as their own failing result.
     int startupErrors;
     string firstStartupError;
     bool running;
     Vector2 scroll;
 
-    void Awake() => Application.logMessageReceived += OnStartupLog;
+    void Awake()
+    {
+        lane = mainLane;
+        Application.logMessageReceived += OnStartupLog;
+    }
     void OnDestroy() => Application.logMessageReceived -= OnStartupLog;
 
     void OnStartupLog(string message, string stack, LogType type)
@@ -79,9 +102,36 @@ public class ClimbTestRunner : MonoBehaviour
 
     IEnumerator Start()
     {
+        lane = mainLane;
+        lanes.Add(mainLane);
         while ((player = NetGameManager.LocalPlayer) == null) yield return null;
-        for (int i = 0; i < 10; i++) yield return null; // let TestInkFill and its readbacks land
+
+        // Extra players for the station scenarios, parked (inactive) between runs.
+        Transform lobby = GameObject.Find(Name(Station.Lobby)).transform;
+        for (int i = 1; i < Lanes; i++)
+        {
+            PlayerController extra = NetGameManager.Instance.SpawnTestPlayer(lobby.TransformPoint(new Vector3(-10f + 2f * i, 1f, 10f)), player.Team, 9000UL + (ulong)i);
+            if (extra != null) lanes.Add(new Lane { player = extra });
+        }
+        for (int i = 0; i < 10; i++) yield return null; // let TestInkFill and its readbacks land (and the extras start)
+        foreach (Lane l in lanes) if (l != mainLane) l.player.transform.root.gameObject.SetActive(false);
+        SetOverhead(true);
         if (runOnStart) yield return RunAll();
+    }
+
+    // The whole test level from above (instead of the local player's camera).
+    void SetOverhead(bool on)
+    {
+        if (overhead == null)
+        {
+            overhead = new GameObject("TestOverheadCamera").AddComponent<Camera>();
+            overhead.tag = "MainCamera";
+            overhead.depth = 10;
+            overhead.cullingMask = ~LayerMask.GetMask("UI");
+            LevelView.Frame(overhead, LayerMask.GetMask("InkSurface"), 60f, 0f, (float)Screen.width / Screen.height, 1.05f);
+        }
+        overhead.enabled = on;
+        foreach (Camera cam in mainLane.player.CameraRig.GetComponentsInChildren<Camera>(true)) cam.enabled = !on;
     }
 
     void Update()
@@ -89,6 +139,7 @@ public class ClimbTestRunner : MonoBehaviour
         Keyboard kb = Keyboard.current;
         if (kb == null || running || player == null) return;
         if (kb.f12Key.wasPressedThisFrame) { StartCoroutine(RunAll()); return; }
+        if (kb.f11Key.wasPressedThisFrame) { SetOverhead(!overhead.enabled); return; }
         for (int i = 1; i <= 9; i++)
             if (kb[(Key)((int)Key.F1 + i - 1)].wasPressedThisFrame)
                 Teleport((Station)i, "Spawn");
@@ -116,11 +167,11 @@ public class ClimbTestRunner : MonoBehaviour
         Application.logMessageReceived += OnLog;
         Time.captureDeltaTime = Dt;
 
-        foreach (Scenario s in Scenarios())
-        {
-            if (!string.IsNullOrEmpty(filter) && s.name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
+        var chosen = Scenarios().Where(s => string.IsNullOrEmpty(filter) || s.name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+        yield return RunParallel(chosen.Where(s => s.station != Station.Lobby).ToList());
+        lane = mainLane;
+        foreach (Scenario s in chosen.Where(s => s.station == Station.Lobby))
             yield return RunScenario(s);
-        }
 
         Time.captureDeltaTime = 0f;
         player.ScriptedInput = null;
@@ -138,9 +189,53 @@ public class ClimbTestRunner : MonoBehaviour
 #endif
     }
 
+    // Station scenarios across all lanes: each idle lane takes the next scenario whose station is
+    // free, and every lane advances one step per frame (with `lane` set to it while it does).
+    IEnumerator RunParallel(List<Scenario> queue)
+    {
+        foreach (Lane l in lanes) l.player.transform.root.gameObject.SetActive(true);
+        var busy = new Dictionary<Lane, (Scenario s, Stack<IEnumerator> steps)>();
+        while (queue.Count > 0 || busy.Count > 0)
+        {
+            foreach (Lane l in lanes)
+            {
+                if (busy.ContainsKey(l)) continue;
+                int next = queue.FindIndex(q => busy.Values.All(b => b.s.station != q.station));
+                if (next < 0) break;
+                Scenario s = queue[next];
+                queue.RemoveAt(next);
+                var steps = new Stack<IEnumerator>();
+                steps.Push(RunScenario(s));
+                busy[l] = (s, steps);
+            }
+            foreach (Lane l in busy.Keys.ToList())
+            {
+                lane = l;
+                if (!Step(busy[l].steps)) busy.Remove(l);
+            }
+            lane = mainLane;
+            yield return null;
+        }
+        foreach (Lane l in lanes) if (l != mainLane) l.player.transform.root.gameObject.SetActive(false); // park
+    }
+
+    // Runs a (nested) coroutine up to its next frame wait. False once it has finished.
+    static bool Step(Stack<IEnumerator> steps)
+    {
+        while (steps.Count > 0)
+        {
+            IEnumerator top = steps.Peek();
+            if (!top.MoveNext()) { steps.Pop(); continue; }
+            if (top.Current is IEnumerator nested) { steps.Push(nested); continue; }
+            return true;
+        }
+        return false;
+    }
+
     IEnumerator RunScenario(Scenario s)
     {
         frames.Clear(); failures.Clear(); notes.Clear(); errorLogs = 0;
+        activeLanes.Add(lane);
         player.ScriptedInput = new ScriptedPlayerInput();
         Teleport(s.station, s.spawn ?? "Spawn");
         for (int i = 0; i < 15; i++) yield return null; // settle on the floor, standing
@@ -150,6 +245,7 @@ public class ClimbTestRunner : MonoBehaviour
 
         CheckInvariants();
         if (errorLogs > 0) Fail($"{errorLogs} error/exception log(s) during the scenario");
+        activeLanes.Remove(lane);
         WriteTrace(results.Count, s.name);
 
         bool pass = failures.Count == 0;
@@ -179,7 +275,8 @@ public class ClimbTestRunner : MonoBehaviour
 
     void OnLog(string message, string stack, LogType type)
     {
-        if (type == LogType.Error || type == LogType.Exception || type == LogType.Assert) errorLogs++;
+        if (type == LogType.Error || type == LogType.Exception || type == LogType.Assert)
+            foreach (Lane l in activeLanes) l.errorLogs++; // can't tell which lane logged it
     }
 
     // ── Scenario helpers ────────────────────────────────────────────────────
@@ -360,13 +457,14 @@ public class ClimbTestRunner : MonoBehaviour
         yield return S("Special: half lost on death; charged state is synced and shown on the player bar", Station.Lobby, SpecialDeathAndSync);
         yield return S("Lobby: swimming is fastest in our ink, slower on bare ground, slowest in enemy ink", Station.Lobby, SwimSpeeds);
         yield return S("LobbyMenu: hidden in dev mode, lists lobbies as rows, a failed join reports and refreshes", Station.Lobby, LobbyMenuList);
-        yield return S("Match: countdown locks and resets everyone, final minute hides the bar, results fill to a suspense point then the real split", Station.Lobby, MatchFlow);
+        yield return S("Match: countdown locks and resets everyone, final minute hides the bar (no banner), results fill to a suspense point then the real split", Station.Lobby, MatchFlow);
         yield return S("Match: a mid-match joiner spectates the rest of the round, then gets their team back", Station.Lobby, LateJoin);
         yield return S("Spectating: no player of our own means the overhead view", Station.Lobby, SpectatorView);
         yield return S("Weapon: holding fire also drops 12-18 ink at our feet every 0.4s", Station.Lobby, FeetInk);
         yield return S("Weapons: Inkshot fires slower, further and tighter than Airspray SE", Station.Lobby, WeaponVariety);
         yield return S("Weapons: prefabs swapped in our hands, synced to remote copies; jumping doesn't carry into shots", Station.Lobby, WeaponPrefabs);
         yield return S("LoadoutMenu: picks the weapon and sub, applies and remembers them, can't open mid-match", Station.Lobby, LoadoutMenuPicks);
+        yield return S("InkStrike: aimed on the map (cancel keeps the charge), marked, then inks the whole column; lethal core, non-fatal edge", Station.Lobby, InkStrikeSpecial);
         yield return S("Sprinkler: thrown, sticks, sprays both ways and winds down; one at a time; 30 HP; remote copies follow the owner", Station.Lobby, SprinklerSub);
         yield return S("HUD: rosters, death marks, match timer and turf bar track the game", Station.Lobby, Hud);
     }
@@ -1208,6 +1306,7 @@ public class ClimbTestRunner : MonoBehaviour
         MatchHUD.PlayerSlot[] enemy = player.Team == 1 ? hud.BetaSlots : hud.AlphaSlots;
 
         // Ours: in the network state and on our slot when charged.
+        loadout.SetSpecial(SpecialType.BubbleShield);
         loadout.SetSpecialPoints(1000f);
         yield return Hold(Still, false, 0.1f, "sync");
         if (!player.GetNetState(0, 0).specialReady) Fail("charged special isn't in the network state");
@@ -1395,6 +1494,7 @@ public class ClimbTestRunner : MonoBehaviour
         CaptureSends();
         const ulong FoeId = 3013;
         int enemyTeam = player.Team == 1 ? 2 : 1;
+        loadout.SetSpecial(SpecialType.BubbleShield);
         loadout.SetSpecialPoints(0f);
 
         // Turf: inking clean floor charges it; inking the same spots again barely does.
@@ -1580,10 +1680,15 @@ public class ClimbTestRunner : MonoBehaviour
         if (Flat(player.transform.position - before) < 0.3f) Fail("can't move once playing");
         floor.FillRegion(new Rect(0, 0, 1, 0.6f), player.Team); // our win
 
-        // Final stretch: announcement, then the coverage bar fades out.
+        // Final stretch: no banner (music will announce it), and the coverage bar fades out.
+        bool stretchEvent = false;
+        Action onStretch = () => stretchEvent = true;
+        NetGameManager.FinalStretchStarted += onStretch;
         yield return HoldUntil(Still, false, 3f, "play", f => gm.InFinalStretch);
         yield return Hold(Still, false, 0.1f, "final");
-        if (flow.BannerText != "ONE MINUTE LEFT!") Fail("no final stretch announcement");
+        NetGameManager.FinalStretchStarted -= onStretch;
+        if (!stretchEvent) Fail("FinalStretchStarted wasn't raised (the music hook)");
+        if (flow.BannerText != "") Fail($"final stretch shows a banner (\"{flow.BannerText}\")");
         yield return Hold(Still, false, 1.1f, "final");
         Note($"turf bar alpha {hud.TurfBarAlpha:F2} 1.2s into the final stretch");
         if (hud.TurfBarAlpha > 0.05f) Fail("coverage bar didn't fade out for the final stretch");
@@ -1833,7 +1938,9 @@ public class ClimbTestRunner : MonoBehaviour
         if (!menu.IsOpen || !InputGate.Blocked) Fail("didn't open (or didn't block gameplay input)");
         menu.WeaponButtons[1].onClick.Invoke();
         menu.SubButtons[1].onClick.Invoke();
+        menu.SpecialButtons[1].onClick.Invoke();
         yield return null;
+        if (loadout.Special != SpecialType.InkStrike || PlayerPrefs.GetInt("loadout.special", -1) != (int)SpecialType.InkStrike) Fail("picking InkStrike didn't select (and remember) it");
         if (loadout.WeaponIndex != 1 || loadout.CurrentWeapon == null || loadout.CurrentWeapon.DisplayName != "Inkshot") Fail("picking Inkshot didn't equip it");
         if (loadout.Sub != SubType.Sprinkler || Mathf.Abs(loadout.SubInkCost - 0.6f) > 0.001f) Fail("picking the sprinkler didn't select it");
         if (PlayerPrefs.GetInt("loadout.weapon", -1) != 1 || PlayerPrefs.GetInt("loadout.sub", -1) != (int)SubType.Sprinkler) Fail("choices weren't remembered");
@@ -1855,8 +1962,122 @@ public class ClimbTestRunner : MonoBehaviour
         gm.SetMatchTimings(3f, 180f, 60f, 2.5f, 15f);
         yield return Hold(Still, false, 0.1f, "match");
 
+        if (gauges != null && gauges.SpecialName != "INKSTRIKE") Fail("special gauge doesn't show InkStrike");
+
         loadout.SetMainWeapon(0);
         loadout.SetSub(SubType.Beacon);
+        loadout.SetSpecial(SpecialType.BubbleShield);
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator InkStrikeSpecial()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        MapScreen map = FindFirstObjectByType<MapScreen>();
+        if (loadout == null || map == null || loadout.InkStrikePrefab == null) { Fail("missing PlayerLoadout, MapScreen or the InkStrike prefab"); yield break; }
+        CaptureSends();
+        const ulong FoeIn = 3050, FoeOut = 3051, MateIn = 3052, FoeEdge = 3053, FoeHigh = 3054;
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        Vector3 target = station.TransformPoint(new Vector3(6f, 0f, 6f));
+        float radius = loadout.InkStrikePrefab.Radius;
+        SpawnRemote(FoeIn, enemyTeam, target + new Vector3(1f, 0.05f, 1f), "FoeIn");
+        SpawnRemote(FoeOut, enemyTeam, target + new Vector3(radius + 3f, 0.05f, 0f), "FoeOut");
+        SpawnRemote(MateIn, player.Team, target + new Vector3(-1f, 0.05f, 0f), "MateIn");
+        SpawnRemote(FoeEdge, enemyTeam, target + new Vector3(0f, 0.05f, -radius * 0.92f), "FoeEdge");
+        SpawnRemote(FoeHigh, enemyTeam, target + new Vector3(0.5f, loadout.InkStrikePrefab.Height * 0.6f, 0f), "FoeHigh"); // up the column
+        loadout.SetSpecial(SpecialType.InkStrike);
+        loadout.SetSpecialPoints(1000f);
+        yield return Hold(Still, false, 0.3f, "ready");
+        player.ConsumeInk(0.5f);
+
+        // Using it opens the map to aim; cancelling keeps the charge.
+        if (!loadout.UseSpecial() || !map.IsOpen || !map.IsTargeting) Fail("using it didn't open the map to aim");
+        map.CancelTargeting();
+        yield return null;
+        if (map.IsOpen || loadout.Targeting || loadout.SpecialPoints < 1000f) Fail("cancelling didn't close the map (or spent the charge)");
+
+        // Pick the spot on the map: it's marked, then strikes after the delay.
+        loadout.UseSpecial();
+        yield return null;
+        if (!map.PickTargetAt(map.MapPosition(target, false))) Fail("couldn't pick the spot on the map");
+        yield return null;
+        InkStrike strike = FindFirstObjectByType<InkStrike>();
+        if (strike == null) { Fail("no strike after picking"); loadout.SetSpecial(SpecialType.BubbleShield); NetGameManager.SendOverride = null; yield break; }
+        float aimError = new Vector2(strike.Target.x - target.x, strike.Target.z - target.z).magnitude;
+        Note($"strike {aimError:F2}m from the spot picked on the map");
+        if (aimError > 0.5f) Fail("the strike isn't where the map was clicked");
+        if (loadout.SpecialPoints != 0f || player.InkLevel < 0.99f) Fail("didn't spend the charge and refill ink");
+        if (!sent.Any(m => m.id == NetMsg.InkStrike && m.data is InkStrikeData d && Vector3.Distance(d.position, strike.Target) < 0.01f)) Fail("strike wasn't broadcast");
+        if (strike.Struck) Fail("struck without the warning delay");
+        sent.Clear();
+        float markedAt = Time.time;
+        yield return HoldUntil(Still, false, 3f, "strike", f => strike == null || strike.Struck);
+        Note($"struck {Time.time - markedAt:F2}s after being marked");
+        if (Mathf.Abs(Time.time - markedAt - loadout.InkStrikePrefab.Delay) > 0.1f) Fail("didn't strike after its delay");
+        yield return Hold(Still, false, 0.5f, "after");
+
+        // Inside is our ink; enemies inside got lethal damage, nobody else did.
+        int inked = 0, probes = 0;
+        for (int i = 0; i < 24; i++)
+        {
+            Vector3 probe = target + Quaternion.Euler(0f, i * 15f, 0f) * Vector3.forward * radius * (0.2f + 0.6f * (i % 3) / 2f) + Vector3.up;
+            if (!Physics.Raycast(probe, Vector3.down, out RaycastHit hit, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) continue;
+            SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
+            if (ink == null) continue;
+            probes++;
+            if (ink.getSurfaceTeam(ink.UVFromHit(hit)) == player.Team) inked++;
+        }
+        DamageData Hit(ulong id) => sent.Where(m => m.id == NetMsg.Damage && m.to == id).Select(m => m.data as DamageData).FirstOrDefault();
+        Note($"{inked}/{probes} points inside are our ink; damage to FoeIn {Hit(FoeIn)?.amount ?? 0f:0}, FoeHigh {Hit(FoeHigh)?.amount ?? 0f:0}, FoeEdge {Hit(FoeEdge)?.amount ?? 0f:0}, FoeOut {Hit(FoeOut)?.amount ?? 0f:0}, MateIn {Hit(MateIn)?.amount ?? 0f:0}");
+        if (probes == 0 || inked < probes * 0.9f) Fail("the area isn't covered in our ink");
+        if (Hit(FoeIn) == null || Hit(FoeIn).amount < 100f) Fail("the enemy in the core wasn't splatted");
+        if (Hit(FoeHigh) == null || Hit(FoeHigh).amount < 100f) Fail("the enemy up the column wasn't splatted");
+        if (Hit(FoeEdge) == null || Hit(FoeEdge).amount <= 0f || Hit(FoeEdge).amount >= 100f) Fail("the enemy at the edge should be hit, but not fatally");
+        if (Hit(FoeOut) != null || Hit(MateIn) != null) Fail("hit someone outside the area (or a teammate)");
+
+        // The whole column: next to a bare wall, it inks the wall all the way up.
+        Transform wallStation = GameObject.Find(Name(Station.NeutralWall)).transform;
+        SurfaceInkManager wall = wallStation.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Wall");
+        Bounds wb = wall.GetComponent<Renderer>().bounds;
+        Vector3 nearWall = new Vector3(wb.center.x, wb.min.y, wb.min.z - 2f);
+        if (Physics.Raycast(nearWall + Vector3.up, Vector3.down, out RaycastHit ground, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) nearWall = ground.point;
+        loadout.SetSpecialPoints(1000f);
+        loadout.LaunchInkStrike(nearWall);
+        yield return Hold(Still, false, loadout.InkStrikePrefab.Delay + 0.6f, "column");
+        int wallInked = 0, wallProbes = 0;
+        for (float h = 1f; h < wb.size.y; h += 2f)
+        for (int side = -1; side <= 1; side++)
+        {
+            Vector3 from = new Vector3(wb.center.x + side * 2f, nearWall.y + h, wb.min.z - 1f);
+            if (!Physics.Raycast(from, Vector3.forward, out RaycastHit hit, 2f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore) || hit.collider.GetComponent<SurfaceInkManager>() != wall) continue;
+            wallProbes++;
+            if (wall.getSurfaceTeam(wall.UVFromHit(hit)) == player.Team) wallInked++;
+        }
+        Note($"{wallInked}/{wallProbes} points up the wall ({wb.size.y:0}m tall) are our ink");
+        if (wallProbes == 0 || wallInked < wallProbes) Fail("didn't ink the wall all the way up the column");
+        foreach (SurfaceInkManager ink in wallStation.GetComponentsInChildren<SurfaceInkManager>()) // back as the scene set it up
+        {
+            ink.FillRegion(new Rect(0, 0, 1, 1), 0);
+            TestInkFill fill = ink.GetComponent<TestInkFill>();
+            if (fill != null) foreach (TestInkFill.Region r in fill.regions) ink.FillRegion(r.uv, r.team);
+        }
+
+        // Theirs: marker and blast only, nothing sent from here.
+        sent.Clear();
+        gm.Receive(NetMsg.InkStrike, new InkStrikeData { ownerId = FoeOut, team = enemyTeam, position = station.TransformPoint(new Vector3(-6f, 0f, 6f)) }, FoeOut);
+        yield return Hold(Still, false, 0.1f, "remote");
+        InkStrike theirs = FindObjectsByType<InkStrike>(FindObjectsSortMode.None).FirstOrDefault(k => !k.IsOwnedLocally);
+        if (theirs == null) Fail("their strike wasn't shown");
+        yield return Hold(Still, false, 1.2f, "remote");
+        if (sent.Any(m => m.id == NetMsg.Damage || m.id == NetMsg.Splat)) Fail("their strike was painted/damaged from here");
+
+        foreach (ulong id in new[] { FoeIn, FoeOut, MateIn, FoeEdge, FoeHigh }) Despawn(id);
+        loadout.SetSpecial(SpecialType.BubbleShield);
+        yield return Hold(Still, false, 0.6f, "cleanup");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
         NetGameManager.SendOverride = null;
     }
 

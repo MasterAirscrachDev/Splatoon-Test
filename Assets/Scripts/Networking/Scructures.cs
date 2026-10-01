@@ -46,7 +46,8 @@ public enum NetMsg : ushort
     TeamAssign,      // host's roster: every player's role
     SubSpawn,        // a player placed/threw a sub (beacon, sprinkler), or it landed
     SubDestroy,      // a sub broke, expired, or (beacon) was landed on
-    SubDamage        // a hit on someone's sub, sent to its owner
+    SubDamage,       // a hit on someone's sub, sent to its owner
+    InkStrike        // a player called in an Inkstrike (special)
 }
 
 // Where a player sits in the roster. Alpha/Beta match the team numbers used everywhere else.
@@ -147,6 +148,17 @@ public class SubDamageData
     public float amount;
     public int fromTeam;
     public ulong attackerSteamId;
+}
+
+// ── Specials ──────────────────────────────────────────────────────────────
+public enum SpecialType { BubbleShield, InkStrike }
+
+[System.Serializable]
+public class InkStrikeData
+{
+    public ulong ownerId;
+    public int team;
+    public NVector3 position; // the target, on the ground
 }
 
 // ── Roster from the host: roles[i] (a PlayerRole) for ids[i] ─────────────

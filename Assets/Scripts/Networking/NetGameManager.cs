@@ -112,6 +112,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.Bind((ushort)NetMsg.SubSpawn,      OnSubSpawnMsg);
         SteamGlobal.Bind((ushort)NetMsg.SubDestroy,    OnSubDestroyMsg);
         SteamGlobal.Bind((ushort)NetMsg.SubDamage,     OnSubDamageMsg);
+        SteamGlobal.Bind((ushort)NetMsg.InkStrike,     OnInkStrikeMsg);
         SurfaceInkManager.OnSplatApplied += OnLocalSplat;
     }
 
@@ -131,6 +132,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.UnBind((ushort)NetMsg.SubSpawn,      OnSubSpawnMsg);
         SteamGlobal.UnBind((ushort)NetMsg.SubDestroy,    OnSubDestroyMsg);
         SteamGlobal.UnBind((ushort)NetMsg.SubDamage,     OnSubDamageMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.InkStrike,     OnInkStrikeMsg);
         SurfaceInkManager.OnSplatApplied -= OnLocalSplat;
     }
 
@@ -478,6 +480,16 @@ public class NetGameManager : MonoBehaviour
         return pc;
     }
 
+    // Tests, dev mode only: another locally simulated player, not part of the roster or network
+    // (see PlayerController.IsTestPlayer). Its root can be deactivated to park it.
+    public PlayerController SpawnTestPlayer(Vector3 pos, int team, ulong id)
+    {
+        if (!devMode) return null;
+        PlayerController pc = InstantiateEntity(pos, PlayerMode.Client, team, $"Tester{id % 100}", id);
+        pc.IsTestPlayer = true;
+        return pc;
+    }
+
     static void DisableLocalOnlyComponents(GameObject go)
     {
         foreach (var cam in go.GetComponentsInChildren<Camera>(true))          cam.enabled = false;
@@ -780,6 +792,24 @@ public class NetGameManager : MonoBehaviour
             });
     }
 
+    // ── Specials ───────────────────────────────────────────────────────────
+    // The caller's client paints and deals the damage; everyone else just shows the strike.
+
+    public void SendInkStrike(ulong ownerId, int team, Vector3 target) =>
+        Send(NetMsg.InkStrike, new InkStrikeData { ownerId = ownerId, team = team, position = target });
+
+    void OnInkStrikeMsg(object data, SteamId from)
+    {
+        if (data is InkStrikeData d)
+            mainThread.Enqueue(() =>
+            {
+                if (d.ownerId == localId && localPlayer != null) return; // our own
+                PlayerController owner = GetPlayer(d.ownerId);
+                PlayerLoadout loadout = owner != null ? owner.GetComponent<PlayerLoadout>() : null;
+                if (loadout != null) loadout.SpawnRemoteInkStrike(d);
+            });
+    }
+
     // ── Sending (and test hooks) ───────────────────────────────────────────
     // Tests: when set, outgoing messages go here instead of Steam (target 0 = everyone).
     public static System.Action<NetMsg, object, ulong> SendOverride;
@@ -815,6 +845,7 @@ public class NetGameManager : MonoBehaviour
             case NetMsg.SubSpawn:        OnSubSpawnMsg(data, sender); break;
             case NetMsg.SubDestroy:      OnSubDestroyMsg(data, sender); break;
             case NetMsg.SubDamage:       OnSubDamageMsg(data, sender); break;
+            case NetMsg.InkStrike:       OnInkStrikeMsg(data, sender); break;
         }
     }
 }

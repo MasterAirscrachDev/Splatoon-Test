@@ -9,6 +9,7 @@ public static class LoadoutBuilder
 {
     const string BeaconPath = "Assets/Prefabs/Beacon.prefab";
     const string SprinklerPath = "Assets/Prefabs/Sprinkler.prefab";
+    const string InkStrikePath = "Assets/Prefabs/InkStrike.prefab";
     const string ProjectilePath = "Assets/Prefabs/Projectile.prefab";
     const string AirsprayPath = "Assets/Prefabs/Weapons/AirspraySE.prefab";
     const string InkshotPath = "Assets/Prefabs/Weapons/Inkshot.prefab";
@@ -25,9 +26,97 @@ public static class LoadoutBuilder
         Sprinkler sprinkler = AssetDatabase.LoadAssetAtPath<Sprinkler>(SprinklerPath);
         if (sprinkler == null) sprinkler = BuildSprinkler();
         Material bubble = EnsureMaterial(BubbleMatPath, "Ink/Bubble", null);
-        AddToPlayer(beacon, sprinkler, bubble);
+        InkStrike strike = AssetDatabase.LoadAssetAtPath<InkStrike>(InkStrikePath);
+        if (strike == null) strike = BuildInkStrike(bubble);
+        AddToPlayer(beacon, sprinkler, strike, bubble);
         AssetDatabase.SaveAssets();
         Debug.Log($"[Loadout] Loadout assets ready; updated {PlayerPath}");
+    }
+
+    // A see-through column marking the area, and the ink tornado: a swirl filling the column plus a
+    // spray off the ground, both drawn like the projectile splashes (ink spheres, vertex colour).
+    // InkStrike fits their shapes to its radius and height when it starts.
+    static InkStrike BuildInkStrike(Material shell)
+    {
+        var root = new GameObject("InkStrike");
+        Renderer marker = Part(PrimitiveType.Cylinder, "Marker", root.transform, Vector3.zero, Vector3.one, shell);
+        marker.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        var projectile = AssetDatabase.LoadAssetAtPath<ProjectileSystem>(ProjectilePath);
+        var splash = new SerializedObject(projectile).FindProperty("splashParticlesPrefab").objectReferenceValue as GameObject;
+        ParticleSystemRenderer look = splash.GetComponentInChildren<ParticleSystemRenderer>(true);
+
+        ParticleSystem tornado = InkParticleSystem("Tornado", root.transform, look);
+        var main = tornado.main;
+        main.duration = 1.4f;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.3f);
+        main.startSpeed = 0f;
+        main.startSize = new ParticleSystem.MinMaxCurve(0.35f, 0.9f);
+        main.maxParticles = 4000;
+        var emission = tornado.emission;
+        emission.rateOverTime = 900f;
+        var shape = tornado.shape;
+        shape.shapeType = ParticleSystemShapeType.ConeVolume; // angle 0: a cylinder, filled
+        shape.angle = 0f;
+        shape.rotation = new Vector3(-90f, 0f, 0f);           // along +Y
+        var swirl = tornado.velocityOverLifetime;
+        swirl.enabled = true;
+        swirl.space = ParticleSystemSimulationSpace.Local;
+        swirl.x = swirl.z = 0f;
+        swirl.y = 3f;        // rising
+        swirl.orbitalY = 4f; // spinning about the column
+        swirl.radial = -1.5f; // and drawn in
+        var grow = tornado.sizeOverLifetime;
+        grow.enabled = true;
+        grow.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 0f), new Keyframe(0.2f, 1f), new Keyframe(1f, 0f)));
+
+        ParticleSystem burst = InkParticleSystem("Burst", root.transform, look);
+        main = burst.main;
+        main.duration = 0.3f;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.6f, 1.1f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(6f, 13f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.4f, 1f);
+        main.gravityModifier = 1.5f;
+        main.maxParticles = 600;
+        emission = burst.emission;
+        emission.rateOverTime = 0f;
+        emission.SetBursts(new[] { new ParticleSystem.Burst(0f, 220) });
+        shape = burst.shape;
+        shape.shapeType = ParticleSystemShapeType.Cone;        // up off a disc, spreading a little
+        shape.angle = 25f;
+        shape.rotation = new Vector3(-90f, 0f, 0f);
+        grow = burst.sizeOverLifetime;
+        grow.enabled = true;
+        grow.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 1f), new Keyframe(1f, 0.2f)));
+
+        InkStrike strike = root.AddComponent<InkStrike>();
+        var so = new SerializedObject(strike);
+        so.FindProperty("marker").objectReferenceValue = marker.transform;
+        so.FindProperty("tornado").objectReferenceValue = tornado;
+        so.FindProperty("burst").objectReferenceValue = burst;
+        so.ApplyModifiedPropertiesWithoutUndo();
+
+        GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, InkStrikePath);
+        Object.DestroyImmediate(root);
+        return saved.GetComponent<InkStrike>();
+    }
+
+    static ParticleSystem InkParticleSystem(string name, Transform parent, ParticleSystemRenderer look)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        ParticleSystem ps = go.AddComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        var main = ps.main;
+        main.loop = false;
+        main.playOnAwake = false;
+        main.simulationSpace = ParticleSystemSimulationSpace.Local;
+        var r = go.GetComponent<ParticleSystemRenderer>();
+        r.renderMode = look.renderMode;
+        r.mesh = look.mesh;
+        r.sharedMaterial = look.sharedMaterial;
+        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        return ps;
     }
 
     // Airspray SE: the player's original gun, moved into its own prefab with its tuned stats.
@@ -192,7 +281,7 @@ public static class LoadoutBuilder
 
     // Adds PlayerLoadout (subs, weapon prefabs, mount) and the bubble shield to the player prefab.
     // The gun that used to be built into the player becomes the Airspray SE prefab.
-    static void AddToPlayer(Beacon beaconPrefab, Sprinkler sprinklerPrefab, Material bubbleMat)
+    static void AddToPlayer(Beacon beaconPrefab, Sprinkler sprinklerPrefab, InkStrike inkStrikePrefab, Material bubbleMat)
     {
         GameObject contents = PrefabUtility.LoadPrefabContents(PlayerPath);
         try
@@ -215,6 +304,7 @@ public static class LoadoutBuilder
             var so = new SerializedObject(loadout);
             so.FindProperty("beaconPrefab").objectReferenceValue = beaconPrefab;
             so.FindProperty("sprinklerPrefab").objectReferenceValue = sprinklerPrefab;
+            so.FindProperty("inkStrikePrefab").objectReferenceValue = inkStrikePrefab;
             Weapon[] weapons = { airspray, inkshot };
             SerializedProperty list = so.FindProperty("weapons");
             list.arraySize = weapons.Length;

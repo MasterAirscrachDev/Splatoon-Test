@@ -3,14 +3,15 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
-// Placeholder (until the hub): pick a main weapon and sub between matches. L / Start toggles it;
+// Placeholder (until the hub): pick a main weapon, sub and special between matches. L / Start toggles it;
 // it closes itself when a match starts. Choices apply at once and are remembered (PlayerLoadout).
 public class LoadoutMenu : MonoBehaviour
 {
     [SerializeField] GameObject screen;
     [SerializeField] Button[] weaponButtons; // in PlayerLoadout.Weapons order
     [SerializeField] Button[] subButtons;    // in SubType order
-    [SerializeField] TMP_Text weaponInfo, subInfo;
+    [SerializeField] Button[] specialButtons; // in SpecialType order
+    [SerializeField] TMP_Text weaponInfo, subInfo, specialInfo;
     [SerializeField] Button closeButton;
     [SerializeField] Color normalColour = new Color(0.2f, 0.2f, 0.26f, 1f);
     [SerializeField] Color selectedColour = new Color(1f, 0.82f, 0.25f, 1f);
@@ -21,6 +22,7 @@ public class LoadoutMenu : MonoBehaviour
     public bool IsOpen => open;
     public Button[] WeaponButtons => weaponButtons;
     public Button[] SubButtons => subButtons;
+    public Button[] SpecialButtons => specialButtons;
 
     void Awake()
     {
@@ -36,6 +38,11 @@ public class LoadoutMenu : MonoBehaviour
         {
             SubType type = (SubType)i;
             subButtons[i].onClick.AddListener(() => { if (PlayerLoadout.Local != null) PlayerLoadout.Local.SetSub(type); Refresh(); });
+        }
+        for (int i = 0; i < specialButtons.Length; i++)
+        {
+            SpecialType type = (SpecialType)i;
+            specialButtons[i].onClick.AddListener(() => { if (PlayerLoadout.Local != null) PlayerLoadout.Local.SetSpecial(type); Refresh(); });
         }
         closeButton.onClick.AddListener(() => SetOpen(false));
         screen.SetActive(false);
@@ -79,9 +86,11 @@ public class LoadoutMenu : MonoBehaviour
             Select(weaponButtons[i], i == loadout.WeaponIndex);
         }
         for (int i = 0; i < subButtons.Length; i++) Select(subButtons[i], (SubType)i == loadout.Sub);
+        for (int i = 0; i < specialButtons.Length; i++) Select(specialButtons[i], (SpecialType)i == loadout.Special);
 
         weaponInfo.text = loadout.CurrentWeapon != null ? loadout.CurrentWeapon.Description : "";
         subInfo.text = $"{SubDescription(loadout)}\nCosts {loadout.SubInkCost * 100f:0}% ink.";
+        specialInfo.text = SpecialDescription(loadout);
     }
 
     // From the sub prefabs, so it follows their tuning.
@@ -98,6 +107,16 @@ public class LoadoutMenu : MonoBehaviour
             return $"Thrown. Sticks where it lands and spins, spraying ink both ways, winding down over {s.Lifetime:0}s. {s.MaxHealth:0} HP.";
         }
         return "";
+    }
+
+    static string SpecialDescription(PlayerLoadout loadout)
+    {
+        if (loadout.Special == SpecialType.InkStrike && loadout.InkStrikePrefab != null)
+        {
+            InkStrike s = loadout.InkStrikePrefab;
+            return $"Pick a spot on the map: {s.Delay:0.#}s later a column of ink {s.Radius * 2f:0}m wide covers it and splats everyone inside. Refills ink.";
+        }
+        return $"{loadout.ShieldDuration:0}s immune to damage. Refills ink.";
     }
 
     void Select(Button b, bool selected)
