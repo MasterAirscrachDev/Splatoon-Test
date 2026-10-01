@@ -18,6 +18,8 @@ public class PlayerController : MonoBehaviour
     [SerializeField] float swimSpeed = 10.0f;
     [SerializeField] bool lockCursor = true, gyro;
     [SerializeField] float viewmodelSwitchSpeed = 12f;
+    [SerializeField] float cameraFormSmoothTime = 0.12f; // how long the camera takes to settle after a form switch moves the player
+    Vector3 cameraBaseLocalPos, cameraFormOffset, cameraFormOffsetVelocity;
     [SerializeField] Vector3 velocity;
     [SerializeField] GameObject ViewmodelPlayer, ViewmodelSquid, SquidTrail, InkTankScaler;
     [SerializeField] GameObject InkExitSplashPrefab;
@@ -43,7 +45,15 @@ public class PlayerController : MonoBehaviour
     // (isClimbing) also covered falling past an own-ink wall, e.g. after popping off the top
     // of the ink or wall-jumping, which re-hid the squid mid-air. effectivelyClimbing is also
     // the networked climbing flag on remote copies.
-    public bool IsInInk => swimMode && (surfaceTeam == team || effectivelyClimbing);
+    public bool IsInInk => swimMode && (OnOwnSurfaceInk || effectivelyClimbing);
+    // Own-team ink below that we're actually on. The ink ray reaches ~0.25m below the capsule,
+    // so while rising just above ink (hopping over a wall's top lip, jumping out of ink) it
+    // would count as being in it and briefly hide the squid mid-air. Local players must not be
+    // moving upward. (Not "grounded": CharacterController.isGrounded flickers every other frame
+    // swimming uphill, which flickered the squid.) Remote copies (controller disabled) rely on
+    // the ray alone.
+    bool OnOwnSurfaceInk => surfaceTeam == team &&
+        (controller == null || !controller.enabled || controller.isGrounded || velocityY <= 0f);
     // Steepest slope that counts as floor rather than wall. Deliberately NOT the controller's
     // live slopeLimit: that's raised to 90° while climbing, and WallClimbSensor classifies
     // walls against this value — reading the live one made every wall look "too shallow" the
@@ -63,6 +73,7 @@ public class PlayerController : MonoBehaviour
     public bool ControllerEnabled => controller != null && controller.enabled;
     public Vector3 BodyCenter => transform.position + (controller != null ? controller.center : Vector3.zero);
     public Transform SquidVisual => ViewmodelSquid != null ? ViewmodelSquid.transform : null;
+    public Transform CameraRig => playerCamera;
     public int SurfaceTeam => surfaceTeam;            // team of the ink directly below (0 if none)
     public float VerticalVelocity => velocityY;
     public float CurrentSpeed => realSpeed;
@@ -147,6 +158,7 @@ public class PlayerController : MonoBehaviour
             input.Movement.Jump.performed += ctx => { if (ScriptedInput == null) Jump(); };
             input.Movement.Debug.performed += ctx => TestCheckScores();
             if (lockCursor){ Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false; }
+            cameraBaseLocalPos = playerCamera.localPosition;
             if (uiController == null) uiController = FindFirstObjectByType<UIController>();
             // Fade a per-player copy, never the shared asset — writing mat.color directly
             // edited Player.mat itself, fading every player using it (remotes included) and
@@ -212,6 +224,7 @@ public class PlayerController : MonoBehaviour
         if(playerMode == PlayerMode.Client) {
             UpdateMouseLook();
             UpdateMovement();
+            UpdateCameraFormOffset();
             float distance = Vector3.Distance(Camera.main.transform.position, transform.position);
             mat.color = distance < 2
                 ? new Color(1, 1, 1, Mathf.Clamp(distance / 2, 0, 1))
@@ -242,6 +255,15 @@ public class PlayerController : MonoBehaviour
         Quaternion targetRot = Quaternion.Euler(0f, netTargetYaw, 0f);
         transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * netLerpSpeed);
         if (playerCamera != null) playerCamera.localEulerAngles = Vector3.right * netCamPitch;
+    }
+
+    // Eases out the offset that cancels form-switch nudges (see UpdateMovement), so the camera
+    // rig glides to its new height over cameraFormSmoothTime instead of snapping.
+    void UpdateCameraFormOffset()
+    {
+        if (playerCamera == null) return;
+        cameraFormOffset = Vector3.SmoothDamp(cameraFormOffset, Vector3.zero, ref cameraFormOffsetVelocity, cameraFormSmoothTime);
+        playerCamera.localPosition = cameraBaseLocalPos + cameraFormOffset;
     }
 
     void UpdateMouseLook()
@@ -288,6 +310,7 @@ public class PlayerController : MonoBehaviour
             // origin once, by exactly half the height delta, so the capsule's bottom stays on
             // the ground across the transition without moving the origin (or viewmodels, which
             // sit at a fixed local offset from it) every frame.
+            Vector3 beforeNudge = transform.position;
             transform.position += Vector3.up * ((controller.height - prevHeight) / 2f);
 
             // Radius grows a lot too (0.1 -> 0.5). If that happens while still flush against a
@@ -303,6 +326,11 @@ public class PlayerController : MonoBehaviour
             // would start from the old position and silently undo both nudges above (entering
             // swim form then dropped the squid ~0.9m through the air instead of re-seating it).
             Physics.SyncTransforms();
+
+            // The camera rig is a child of this transform, so it would snap by the same amount.
+            // Cancel the nudge out of the rig's position and let UpdateCameraFormOffset ease it
+            // back, so the camera glides to its new height instead of jumping.
+            cameraFormOffset -= transform.InverseTransformVector(transform.position - beforeNudge);
         }
         bool enteredSwimModeThisFrame = swimMode && controller.height != prevHeight;
 
@@ -440,7 +468,7 @@ public class PlayerController : MonoBehaviour
         // Actually climbing (not just sensor contact): a wall-jump or ink-edge pop-off counts as
         // leaving the ink immediately, even if the wall stays in sensor range.
         bool onWallInk = effectivelyClimbing;
-        bool inOwnInkNow = swimMode && team != 0 && (surfaceTeam == team || onWallInk);
+        bool inOwnInkNow = swimMode && team != 0 && (OnOwnSurfaceInk || onWallInk);
         Vector3 inkNormal = onWallInk ? climbNormal : groundNormal;
 
         // Deliberately NOT "any transition into ink" (prevInOwnInk-based) — that fired every
@@ -556,6 +584,7 @@ public class PlayerController : MonoBehaviour
         prevInOwnInk = false;
         wasGroundedPrev = false;
         lastGroundedY = feetPos.y;
+        cameraFormOffset = cameraFormOffsetVelocity = Vector3.zero; // a teleport should snap the camera
     }
 
     // Applied to a remote (Network mode) copy on receipt of a Teleport message.

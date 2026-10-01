@@ -75,6 +75,7 @@ public class PlayerSpawnData
     public int team;
     public NVector3 position;
     public bool isHostPlayer;
+    public string playerName; // sender's Steam persona name, so remotes can label the entity
 }
 
 // ── Splat replay. surfaceId is a deterministic index shared across clients

@@ -326,6 +326,7 @@ public class ClimbTestRunner : MonoBehaviour
         Scenario S(string name, Station st, Func<IEnumerator> body, string spawn = null) =>
             new Scenario { name = name, station = st, body = body, spawn = spawn };
 
+        yield return S("Lobby: switching form glides the camera instead of snapping", Station.Lobby, CameraFormSwitch);
         yield return S("FlatWall: climb up and over the top", Station.FlatWall, ClimbUpAndOver);
         yield return S("FlatWall: no input on the wall slides slowly without letting go", Station.FlatWall, HoldStillOnWall);
         yield return S("FlatWall: climb down to the floor and swim away", Station.FlatWall, ClimbDownAndAway);
@@ -342,6 +343,34 @@ public class ClimbTestRunner : MonoBehaviour
         yield return S("Ramp30: swims up a walkable slope without climb mode or jitter", Station.Ramp30, ShallowRampUp);
         yield return S("Ramp30: swims down a walkable slope without bouncing", Station.Ramp30, ShallowRampDown, "SpawnTop");
         yield return S("Ramp60: a steep slope is climbed", Station.Ramp60, SteepRamp);
+    }
+
+    IEnumerator CameraFormSwitch()
+    {
+        // Each form switch moves the player's origin ~0.9m; the camera rig must ease across
+        // that instead of jumping with it. Track the rig's world height frame by frame.
+        Transform rig = player.CameraRig;
+        if (rig == null) { Fail("player has no camera rig"); yield break; }
+        var heights = new List<float> { rig.position.y };
+        var phases = new[] { (true, "to squid"), (false, "to kid"), (true, "to squid again") };
+        foreach (var (swim, label) in phases)
+        {
+            player.ScriptedInput.swim = swim;
+            float maxStep = 0f, start = rig.position.y;
+            for (int i = 0; i < 30; i++) // 0.5s
+            {
+                yield return null;
+                Record(label);
+                heights.Add(rig.position.y);
+                maxStep = Mathf.Max(maxStep, Mathf.Abs(heights[heights.Count - 1] - heights[heights.Count - 2]));
+            }
+            float moved = Mathf.Abs(rig.position.y - start);
+            Note($"{label}: camera moved {moved:F2}m, largest single-frame step {maxStep:F3}m");
+            if (moved < 0.5f) Fail($"{label}: camera didn't follow the form change (moved {moved:F2}m)");
+            if (maxStep > 0.2f) Fail($"{label}: camera snapped {maxStep:F2}m in one frame");
+            float settle = Mathf.Abs(heights[heights.Count - 1] - heights[heights.Count - 2]);
+            if (settle > 0.005f) Fail($"{label}: camera still moving after 0.5s ({settle:F3}m/frame)");
+        }
     }
 
     IEnumerator ClimbUpAndOver()
@@ -373,9 +402,10 @@ public class ClimbTestRunner : MonoBehaviour
             List<Frame> after = frames.Skip(lastClimb + 1).ToList();
             float hop = after.Max(f => f.pos.y) - WallHeight;
             Note($"popped {hop:F2}m above the top");
-            // Top-of-wall pop keeps half the climb's upward speed: a small hop, not a launch.
+            // Top-of-wall pop keeps a fraction (climbPopTopLift) of the climb's upward speed:
+            // a hop, not a launch. Bounds are loose so they don't encode the tuned value.
             if (hop < 0.05f) Fail($"didn't pop up off the top of the wall (peak {hop:F2}m above the lip)");
-            if (hop > 0.6f) Fail($"popped too high off the top of the wall ({hop:F2}m above the lip)");
+            if (hop > 1.0f) Fail($"launched off the top of the wall ({hop:F2}m above the lip)");
             List<Frame> early = after.Where(f => f.t <= after[0].t + 0.1f).ToList();
             float hSpeed = early.Count > 1
                 ? Vector2.Distance(new Vector2(early.Last().pos.x, early.Last().pos.z), new Vector2(early[0].pos.x, early[0].pos.z)) / (early.Last().t - early[0].t)

@@ -15,6 +15,8 @@ Shader "Ink/InkVolume"
         _Gloss      ("Gloss",                  Range(0,1))  = 0.95
         _SpecTint   ("Specular Tint",          Color)       = (1,1,1,1)
         _ReflStr    ("Reflection Strength",    Range(0,2))  = 1.0
+        // Keep equal to the ink surface material's Smoothness so body colour matches surface ink.
+        _BodySmoothness ("Body Smoothness (match ink surface)", Range(0,1)) = 0.4
 
         [Header(Fluid Noise)]
         _NoiseFreq  ("Noise Frequency",        Range(0,12)) = 4
@@ -35,16 +37,26 @@ Shader "Ink/InkVolume"
 
         Pass
         {
+            // ForwardBase so the built-in pipeline actually supplies the main directional light
+            // (_LightColor0 / _WorldSpaceLightPos0) and ambient SH to this pass; without a
+            // LightMode tag neither is guaranteed to be set.
+            Tags { "LightMode"="ForwardBase" }
+
             CGPROGRAM
             #pragma vertex   vert
             #pragma fragment frag
+            // Same target as InkSurface.shader: below 3.0, UNITY_BRDF_PBS quietly selects the
+            // cheapest BRDF variant, which shades differently from the surface ink's.
+            #pragma target 3.0
             #include "UnityCG.cginc"
             #include "UnityLightingCommon.cginc"
+            #include "UnityStandardUtils.cginc"
+            #include "UnityPBSLighting.cginc"
 
             float4 _Color;
             float4 _Direction;
             float  _Density, _Opacity;
-            float  _Gloss, _ReflStr;
+            float  _Gloss, _ReflStr, _BodySmoothness;
             float4 _SpecTint;
             float  _NoiseFreq, _ShapeAmp, _NoiseAmp, _ColorVar, _FlowSpeed, _Seed;
 
@@ -154,29 +166,39 @@ Shader "Ink/InkVolume"
                 // ── Body color ────────────────────────────────────────────────
                 float  colorShift = (n0 - 0.5) * _ColorVar;
                 float3 inkRGB     = saturate(tint.rgb + colorShift);
-                float3 bodyColor  = inkRGB * absorption * lerp(1.0, 0.65, absorption * 0.4);
 
-                float  NdotL  = saturate(dot(Np, L));
-                float3 ambient = UNITY_LIGHTMODEL_AMBIENT.rgb * inkRGB * absorption;
-                float3 color   = bodyColor * NdotL * _LightColor0.rgb + ambient;
+                // Body lighting uses the same Standard BRDF as the ink surfaces (InkSurface.shader
+                // is a Standard surface shader, metallic 0, smoothness _BodySmoothness), so a blob
+                // of ink reads as the same colour as the ink it lands in. The old custom model
+                // (extra darkening from absorption, flat ambient, fixed 0.08 reflectance, no broad
+                // specular sheen) measured at ~68% of the surface ink's brightness under identical
+                // lighting. Absorption now only drives alpha.
+                half3 specColor; half oneMinusReflectivity;
+                half3 diffColor = DiffuseAndSpecularFromMetallic(inkRGB, 0, specColor, oneMinusReflectivity);
 
-                // ── Fresnel (Schlick) ─────────────────────────────────────────
-                // F0 = 0.08 gives a richer, more saturated reflectance than water's 0.02
-                float F  = 0.08 + 0.92 * pow(1.0 - NdotV, 5.0);
+                UnityLight mainLight;
+                mainLight.color = _LightColor0.rgb;
+                mainLight.dir   = L;
+                mainLight.ndotl = saturate(dot(Np, L)); // legacy field; the BRDF computes its own
 
-                // ── Blinn-Phong specular (tight, bright) ──────────────────────
+                // ── Environment reflection (Unity reflection probe / skybox) ──
+                // SH ambient like the surface, but a sharp (_Gloss) probe reflection rather than
+                // the surface's rough one. That crisp reflection is what makes it read as liquid.
+                UnityIndirect indirect;
+                indirect.diffuse = ShadeSH9(float4(Np, 1.0));
+                Unity_GlossyEnvironmentData envData = UnityGlossyEnvironmentSetup(_Gloss, V, Np, specColor);
+                indirect.specular = Unity_GlossyEnvironment(UNITY_PASS_TEXCUBE(unity_SpecCube0), unity_SpecCube0_HDR, envData) * _ReflStr;
+
+                float3 color = UNITY_BRDF_PBS(diffColor, specColor, oneMinusReflectivity, _BodySmoothness, Np, V, mainLight, indirect).rgb;
+
+                // ── Blinn-Phong specular (tight, bright liquid highlight) ─────
+                // Schlick Fresnel from the same dielectric F0 the BRDF uses.
+                float F0 = specColor.r;
+                float F  = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
                 float3 H     = normalize(L + V);
                 float  NHdot = saturate(dot(Np, H));
                 float  spec  = pow(NHdot, max(1.0, _Gloss * 1024.0));
                 color += spec * _LightColor0.rgb * _SpecTint.rgb * (F * 4.0 + 0.3);
-
-                // ── Environment reflection (Unity reflection probe / skybox) ──
-                // This is the key ingredient that makes it read as a liquid.
-                float3 reflDir  = reflect(-V, Np);
-                float  roughLOD = (1.0 - _Gloss) * 6.0;
-                half4  envSamp  = UNITY_SAMPLE_TEXCUBE_LOD(unity_SpecCube0, reflDir, roughLOD);
-                float3 envColor = DecodeHDR(envSamp, unity_SpecCube0_HDR);
-                color += envColor * F * _ReflStr;
 
                 // ── Alpha ─────────────────────────────────────────────────────
                 // tint.a folds in the particle's own alpha-over-lifetime fade, if any.

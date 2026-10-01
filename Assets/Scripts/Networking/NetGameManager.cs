@@ -61,7 +61,7 @@ public class NetGameManager : MonoBehaviour
 
         if (devMode)
         {
-            localPlayer = InstantiateEntity(Vector3.zero, PlayerMode.Client, 1);
+            localPlayer = InstantiateEntity(Vector3.zero, PlayerMode.Client, 1, LocalPlayerName());
             LocalPlayer = localPlayer;
             players[localId] = localPlayer;
         }
@@ -221,13 +221,14 @@ public class NetGameManager : MonoBehaviour
                 if (members[i].Item2 == localId) { team = (i % 2 == 0) ? 1 : 2; break; }
 
         Vector3 pos = PickSpawnPoint(team);
-        localPlayer = InstantiateEntity(pos, PlayerMode.Client, team);
+        localPlayer = InstantiateEntity(pos, PlayerMode.Client, team, LocalPlayerName());
         LocalPlayer = localPlayer;
         players[localId] = localPlayer;
 
         SteamGlobal.SendAllData((ushort)NetMsg.PlayerSpawn, new PlayerSpawnData
         {
-            steamId = localId, team = team, position = pos, isHostPlayer = SteamGlobal.isHost
+            steamId = localId, team = team, position = pos, isHostPlayer = SteamGlobal.isHost,
+            playerName = LocalPlayerName()
         });
     }
 
@@ -236,7 +237,8 @@ public class NetGameManager : MonoBehaviour
         if (d.steamId == localId) return;
         if (players.ContainsKey(d.steamId)) return;
 
-        PlayerController pc = InstantiateEntity(d.position, PlayerMode.Network, d.team);
+        string name = !string.IsNullOrEmpty(d.playerName) ? d.playerName : RemotePlayerName(d.steamId);
+        PlayerController pc = InstantiateEntity(d.position, PlayerMode.Network, d.team, name);
         players[d.steamId] = pc;
 
         if (localPlayer != null)
@@ -245,13 +247,17 @@ public class NetGameManager : MonoBehaviour
                 steamId      = localId,
                 team         = localPlayer.Team,
                 position     = localPlayer.transform.position,
-                isHostPlayer = SteamGlobal.isHost
+                isHostPlayer = SteamGlobal.isHost,
+                playerName   = LocalPlayerName()
             }, (SteamId)d.steamId);
     }
 
-    PlayerController InstantiateEntity(Vector3 pos, PlayerMode mode, int team)
+    PlayerController InstantiateEntity(Vector3 pos, PlayerMode mode, int team, string playerName)
     {
         GameObject go = Instantiate(playerEntityPrefab, pos, Quaternion.identity);
+        // The prefab's name carries a "VOID" placeholder for the player's name
+        // ("PlayerEntity - VOID"); fill it in (this also drops Unity's "(Clone)" suffix).
+        go.name = playerEntityPrefab.name.Replace("VOID", playerName);
         PlayerController pc = go.transform.GetChild(0).GetComponent<PlayerController>();
         pc.SetPlayerMode(mode);
         pc.SetTeam(team);
@@ -271,6 +277,24 @@ public class NetGameManager : MonoBehaviour
         // local trigger contacts can hit a different surface and would broadcast an incorrect splat.
         // Swim ink for remote players arrives via the local player's own OnSplatApplied broadcasts.
         foreach (var ie  in go.GetComponentsInChildren<InkEmitter>(true))      ie.enabled  = false;
+    }
+
+    // Display names. Steam may be unavailable (dev mode / no Steam client), so fall back cleanly.
+    static string LocalPlayerName()
+    {
+        try { if (SteamClient.IsValid) return SteamClient.Name; } catch { }
+        return "LocalPlayer";
+    }
+
+    static string RemotePlayerName(ulong steamId)
+    {
+        // Lobby members' names are known to Steam once they're in the lobby with us.
+        var members = SteamGlobal.GetLobbyPlayerInfo();
+        if (members != null)
+            foreach (var m in members)
+                if (m.Item2 == steamId && !string.IsNullOrEmpty(m.Item1)) return m.Item1;
+        try { if (SteamClient.IsValid) return new Friend(steamId).Name; } catch { }
+        return steamId.ToString();
     }
 
     static string HierarchyPath(Transform t)
