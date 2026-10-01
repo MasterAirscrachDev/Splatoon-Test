@@ -91,26 +91,26 @@ public class TeleportData
     public float bodyYaw;
 }
 
-// ── Visual-only projectile spawn for remote clients ───────────────────────
+// ── One volley of shots, replayed as visual-only projectiles on remotes ──
 [System.Serializable]
 public class ProjectileSpawnData
 {
     public ulong shooterSteamId;
-    public NVector3 origin;
-    public NVector3 velocity;
     public int team;
-    public int splashSize;
-    public float seed;
+    public NVector3 origin;
+    public float[] velocities; // xyz per shot
+    public int[] splashSizes;  // per shot
+    public bool[] visible;     // per shot
 }
 
-// ── Damage / death ────────────────────────────────────────────────────────
+// ── Hit on another player, sent by the shooter to the victim's client ────
 [System.Serializable]
 public class DamageData
 {
     public ulong targetSteamId;
+    public ulong attackerSteamId;
     public float amount;
     public int fromTeam;
-    public bool lethal;
 }
 
 // ── Match-level state ─────────────────────────────────────────────────────

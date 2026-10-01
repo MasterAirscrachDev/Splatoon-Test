@@ -59,7 +59,7 @@ public class NetGameManager : MonoBehaviour
 
         if (devMode)
         {
-            localPlayer = InstantiateEntity(Vector3.zero, PlayerMode.Client, 1, LocalPlayerName());
+            localPlayer = InstantiateEntity(Vector3.zero, PlayerMode.Client, 1, LocalPlayerName(), localId);
             LocalPlayer = localPlayer;
             players[localId] = localPlayer;
         }
@@ -81,6 +81,8 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.Bind((ushort)NetMsg.Splat,         OnSplatMsg);
         SteamGlobal.Bind((ushort)NetMsg.InkReset,      OnInkResetMsg);
         SteamGlobal.Bind((ushort)NetMsg.Teleport,      OnTeleportMsg);
+        SteamGlobal.Bind((ushort)NetMsg.ProjectileSpawn, OnProjectileSpawnMsg);
+        SteamGlobal.Bind((ushort)NetMsg.Damage,        OnDamageMsg);
         SurfaceInkManager.OnSplatApplied += OnLocalSplat;
     }
 
@@ -93,6 +95,8 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.UnBind((ushort)NetMsg.Splat,         OnSplatMsg);
         SteamGlobal.UnBind((ushort)NetMsg.InkReset,      OnInkResetMsg);
         SteamGlobal.UnBind((ushort)NetMsg.Teleport,      OnTeleportMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.ProjectileSpawn, OnProjectileSpawnMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.Damage,        OnDamageMsg);
         SurfaceInkManager.OnSplatApplied -= OnLocalSplat;
     }
 
@@ -169,8 +173,7 @@ public class NetGameManager : MonoBehaviour
         if (!SteamGlobal.isHost) return;
         ClearAllInk();
         if (!devMode)
-            SteamGlobal.SendAllData((ushort)NetMsg.InkReset,
-                new MatchEventData { phase = MatchPhase.Playing, serverTime = Time.time });
+            Send(NetMsg.InkReset, new MatchEventData { phase = MatchPhase.Playing, serverTime = Time.time });
     }
 
     void ClearAllInk()
@@ -216,11 +219,11 @@ public class NetGameManager : MonoBehaviour
                 if (members[i].Item2 == localId) { team = (i % 2 == 0) ? 1 : 2; break; }
 
         Vector3 pos = PickSpawnPoint(team);
-        localPlayer = InstantiateEntity(pos, PlayerMode.Client, team, LocalPlayerName());
+        localPlayer = InstantiateEntity(pos, PlayerMode.Client, team, LocalPlayerName(), localId);
         LocalPlayer = localPlayer;
         players[localId] = localPlayer;
 
-        SteamGlobal.SendAllData((ushort)NetMsg.PlayerSpawn, new PlayerSpawnData
+        Send(NetMsg.PlayerSpawn, new PlayerSpawnData
         {
             steamId = localId, team = team, position = pos, isHostPlayer = SteamGlobal.isHost,
             playerName = LocalPlayerName()
@@ -233,21 +236,21 @@ public class NetGameManager : MonoBehaviour
         if (players.ContainsKey(d.steamId)) return;
 
         string name = !string.IsNullOrEmpty(d.playerName) ? d.playerName : RemotePlayerName(d.steamId);
-        PlayerController pc = InstantiateEntity(d.position, PlayerMode.Network, d.team, name);
+        PlayerController pc = InstantiateEntity(d.position, PlayerMode.Network, d.team, name, d.steamId);
         players[d.steamId] = pc;
 
         if (localPlayer != null)
-            SteamGlobal.SendDirectData((ushort)NetMsg.PlayerSpawn, new PlayerSpawnData
+            SendTo(d.steamId, NetMsg.PlayerSpawn, new PlayerSpawnData
             {
                 steamId      = localId,
                 team         = localPlayer.Team,
                 position     = localPlayer.transform.position,
                 isHostPlayer = SteamGlobal.isHost,
                 playerName   = LocalPlayerName()
-            }, (SteamId)d.steamId);
+            });
     }
 
-    PlayerController InstantiateEntity(Vector3 pos, PlayerMode mode, int team, string playerName)
+    PlayerController InstantiateEntity(Vector3 pos, PlayerMode mode, int team, string playerName, ulong steamId)
     {
         GameObject go = Instantiate(playerEntityPrefab, pos, Quaternion.identity);
         // "VOID" in the prefab name is a placeholder for the player's name.
@@ -255,6 +258,7 @@ public class NetGameManager : MonoBehaviour
         PlayerController pc = go.transform.GetChild(0).GetComponent<PlayerController>();
         pc.SetPlayerMode(mode);
         pc.SetTeam(team);
+        pc.SetOwner(steamId);
         if (mode == PlayerMode.Network) DisableLocalOnlyComponents(go);
         return pc;
     }
@@ -373,7 +377,7 @@ public class NetGameManager : MonoBehaviour
     void OnLocalSplat(SplatData data)
     {
         if (localPlayer == null) return;
-        SteamGlobal.SendAllData((ushort)NetMsg.Splat, data);
+        Send(NetMsg.Splat, data);
     }
 
     void OnSplatMsg(object data, SteamId from)
@@ -390,5 +394,102 @@ public class NetGameManager : MonoBehaviour
     void OnInkResetMsg(object data, SteamId from)
     {
         mainThread.Enqueue(ClearAllInk);
+    }
+
+    // ── Combat ─────────────────────────────────────────────────────────────
+    // The shooter is authoritative: its projectiles paint (Splat messages) and decide hits.
+    // Other clients replay each volley as visual-only projectiles, and a hit on a remote copy
+    // is forwarded to that player's client, which owns its health.
+
+    public PlayerController GetPlayer(ulong steamId) =>
+        players.TryGetValue(steamId, out var pc) ? pc : null;
+
+    // One message per volley; unreliable since the replay is purely visual.
+    public void BroadcastShots(PlayerController shooter, Vector3 origin, float[] velocities, int[] splashSizes, bool[] visible)
+    {
+        Send(NetMsg.ProjectileSpawn, new ProjectileSpawnData
+        {
+            shooterSteamId = shooter.OwnerId,
+            team           = shooter.Team,
+            origin         = origin,
+            velocities     = velocities,
+            splashSizes    = splashSizes,
+            visible        = visible
+        }, reliable: false);
+    }
+
+    public void SendDamage(ulong target, float amount, int fromTeam, ulong attacker)
+    {
+        SendTo(target, NetMsg.Damage, new DamageData
+        {
+            targetSteamId = target, attackerSteamId = attacker, amount = amount, fromTeam = fromTeam
+        });
+    }
+
+    void OnProjectileSpawnMsg(object data, SteamId from)
+    {
+        if (data is ProjectileSpawnData d) mainThread.Enqueue(() => SpawnRemoteShots(d));
+    }
+
+    void SpawnRemoteShots(ProjectileSpawnData d)
+    {
+        if (d.shooterSteamId == localId || d.splashSizes == null) return;
+        PlayerController shooter = GetPlayer(d.shooterSteamId);
+        if (shooter == null) return;
+        WeaponShooter weapon = shooter.GetComponentInChildren<WeaponShooter>(true);
+        if (weapon == null || weapon.ProjectilePrefab == null) return;
+
+        Vector3 origin = d.origin;
+        int count = Mathf.Min(d.splashSizes.Length, d.visible.Length, d.velocities.Length / 3);
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 v = new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]);
+            Quaternion rot = v.sqrMagnitude > 0.0001f ? Quaternion.LookRotation(v) : Quaternion.identity;
+            ProjectilePool.Get(weapon.ProjectilePrefab, origin, rot)
+                          .Setup(v, d.splashSizes[i], d.team, d.visible[i], authoritative: false, ownerId: d.shooterSteamId);
+        }
+    }
+
+    void OnDamageMsg(object data, SteamId from)
+    {
+        if (data is DamageData d)
+            mainThread.Enqueue(() =>
+            {
+                if (d.targetSteamId != localId || localPlayer == null || localPlayer.Hitbox == null) return;
+                localPlayer.Hitbox.TakeDamage(d.amount, d.fromTeam, d.attackerSteamId);
+            });
+    }
+
+    // ── Sending (and test hooks) ───────────────────────────────────────────
+    // Tests: when set, outgoing messages go here instead of Steam (target 0 = everyone).
+    public static System.Action<NetMsg, object, ulong> SendOverride;
+
+    void Send(NetMsg id, object data, bool reliable = true)
+    {
+        if (SendOverride != null) { SendOverride(id, data, 0); return; }
+        SteamGlobal.SendAllData((ushort)id, data, reliable);
+    }
+
+    void SendTo(ulong target, NetMsg id, object data, bool reliable = true)
+    {
+        if (SendOverride != null) { SendOverride(id, data, target); return; }
+        SteamGlobal.SendDirectData((ushort)id, data, (SteamId)target, reliable);
+    }
+
+    // Tests: deliver a message as if it had arrived from `from`.
+    public void Receive(NetMsg id, object data, ulong from)
+    {
+        SteamId sender = (SteamId)from;
+        switch (id)
+        {
+            case NetMsg.PlayerSpawn:     OnPlayerSpawnMsg(data, sender); break;
+            case NetMsg.PlayerDespawn:   OnPlayerDespawnMsg(data, sender); break;
+            case NetMsg.PlayerState:     OnPlayerStateMsg(data, sender); break;
+            case NetMsg.Splat:           OnSplatMsg(data, sender); break;
+            case NetMsg.InkReset:        OnInkResetMsg(data, sender); break;
+            case NetMsg.Teleport:        OnTeleportMsg(data, sender); break;
+            case NetMsg.ProjectileSpawn: OnProjectileSpawnMsg(data, sender); break;
+            case NetMsg.Damage:          OnDamageMsg(data, sender); break;
+        }
     }
 }

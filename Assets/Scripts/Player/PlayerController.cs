@@ -498,6 +498,10 @@ public class PlayerController : MonoBehaviour
     // ── Networking API (driven by NetGameManager) ─────────────────────────
     public void SetPlayerMode(PlayerMode mode) => playerMode = mode;
     public void SetTeam(int t) => team = t;
+    public void SetOwner(ulong steamId) => OwnerId = steamId;
+    public ulong OwnerId { get; private set; } // Steam id of the client that owns this player
+    public PlayerHitbox Hitbox => hitbox != null ? hitbox : (hitbox = GetComponentInChildren<PlayerHitbox>(true));
+    PlayerHitbox hitbox;
 
     public PlayerStateData GetNetState(ulong steamId, uint tick)
     {

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public class WeaponShooter : MonoBehaviour
@@ -12,6 +13,13 @@ public class WeaponShooter : MonoBehaviour
     ControlLayer input;
     CharacterController playerController;
     float lastShotTime = 0f;
+
+    // Current volley, broadcast as one message so remotes can replay it.
+    readonly List<float> volleyVelocities = new List<float>();
+    readonly List<int> volleySizes = new List<int>();
+    readonly List<bool> volleyVisible = new List<bool>();
+
+    public GameObject ProjectilePrefab => projectile;
 
     void Start()
     {
@@ -39,6 +47,10 @@ public class WeaponShooter : MonoBehaviour
 
             Vector3 inherit = playerController != null ? playerController.velocity : Vector3.zero;
 
+            volleyVelocities.Clear();
+            volleySizes.Clear();
+            volleyVisible.Clear();
+
             SpawnShot(rot, Range, inherit, splashSize, true);
 
             // Shorter filler shots cover the floor between the shooter and the main shot.
@@ -52,12 +64,20 @@ public class WeaponShooter : MonoBehaviour
                     0f);
                 SpawnShot(noisyRot, r + Random.Range(-0.1f, 0.1f), inherit, Mathf.RoundToInt(splashSize * 0.7f), Random.value < 0.1f);
             }
+
+            NetGameManager.Instance?.BroadcastShots(player, shotPoint.position,
+                volleyVelocities.ToArray(), volleySizes.ToArray(), volleyVisible.ToArray());
         }
     }
 
     void SpawnShot(Quaternion rotation, float range, Vector3 inherit, int splashSize, bool visible)
     {
         Vector3 vel = inherit + rotation * Vector3.forward * range;
-        ProjectilePool.Get(projectile, shotPoint.position, rotation).Setup(vel, splashSize, player.Team, visible);
+        ProjectilePool.Get(projectile, shotPoint.position, rotation)
+                      .Setup(vel, splashSize, player.Team, visible, authoritative: true, ownerId: player.OwnerId);
+
+        volleyVelocities.Add(vel.x); volleyVelocities.Add(vel.y); volleyVelocities.Add(vel.z);
+        volleySizes.Add(splashSize);
+        volleyVisible.Add(visible);
     }
 }

@@ -1,6 +1,7 @@
 using UnityEngine;
 
 // Pooled ink projectile (see ProjectilePool): damages enemy hitboxes, splats ink surfaces.
+// Remote replays (authoritative = false) only show the flight and impact.
 public class ProjectileSystem : MonoBehaviour
 {
     int splashSize = 10, team = 1;
@@ -13,6 +14,8 @@ public class ProjectileSystem : MonoBehaviour
     Color                 inkColor = Color.white;
     bool  hasImpacted;     // removal is deferred, so guard against impacting twice meanwhile
     float releaseAt = -1f; // when the deferred return to the pool happens
+    bool  authoritative;   // false = remote replay: visuals only, no splat or damage
+    ulong ownerId;         // shooter's Steam id
 
     static readonly int ShaderDirection = Shader.PropertyToID("_Direction");
     static readonly int ShaderColor     = Shader.PropertyToID("_Color");
@@ -30,10 +33,12 @@ public class ProjectileSystem : MonoBehaviour
     }
 
     // Resets all per-shot state (instances are reused).
-    public void Setup(Vector3 velocity, int splashSize, int team, bool visible = true)
+    public void Setup(Vector3 velocity, int splashSize, int team, bool visible = true, bool authoritative = true, ulong ownerId = 0)
     {
         hasImpacted = false;
         releaseAt = -1f;
+        this.authoritative = authoritative;
+        this.ownerId = ownerId;
         this.splashSize = splashSize;
         this.team = team;
         rb.linearVelocity = velocity;
@@ -92,7 +97,7 @@ public class ProjectileSystem : MonoBehaviour
             if (hitbox.Team != team)
             {
                 hasImpacted = true;
-                hitbox.TakeDamage(damage, team);
+                if (authoritative) hitbox.TakeDamage(damage, team, ownerId);
                 DeleteProjectile();
             }
             return;
@@ -108,7 +113,7 @@ public class ProjectileSystem : MonoBehaviour
             if (other.Raycast(new Ray(transform.position - dir * 0.5f, dir), out RaycastHit hit, 2f))
             {
                 hasImpacted = true;
-                inkManager.Splat(inkManager.UVFromHit(hit), splashSize, team);
+                if (authoritative) inkManager.Splat(inkManager.UVFromHit(hit), splashSize, team); // replays get the shooter's Splat message
                 InkParticles.Spawn(splashParticlesPrefab, hit.point, Quaternion.FromToRotation(Vector3.up, hit.normal), inkColor);
             }
         }
