@@ -26,7 +26,9 @@ public class MatchHUD : MonoBehaviour
     [SerializeField] RectTransform alphaFill, betaFill;
     [SerializeField] RawImage alphaWave, betaWave;        // wavy leading edges; complementary so they interlock
     [SerializeField] float waveScroll = 0.3f;             // wave periods per second, drifting along the edge
-    [SerializeField] GameObject percentLabels;           // hidden unless toggled from the host menu
+    [SerializeField] GameObject percentLabels;           // hidden unless toggled from the host menu, and never in a match
+    [SerializeField] CanvasGroup turfBarGroup;           // fades out for the final stretch ("who's winning?")
+    [SerializeField] float barFadeSpeed = 1.5f;          // alpha per second
     [SerializeField] TMP_Text alphaPercent, betaPercent, neutralPercent;
     [SerializeField] bool topDownScoring = true; // floors only, like the real game's turf count
     [SerializeField] float scoreInterval = 1f;   // seconds between coverage readbacks
@@ -61,6 +63,11 @@ public class MatchHUD : MonoBehaviour
         UpdateTimer(gm);
         UpdateRosters(gm);
         UpdateCoverage(gm);
+
+        bool barHidden = gm.InFinalStretch || gm.Phase == MatchPhase.TimesUp || gm.Phase == MatchPhase.Results;
+        turfBarGroup.alpha = Mathf.MoveTowards(turfBarGroup.alpha, barHidden ? 0f : 1f, barFadeSpeed * Time.deltaTime);
+        bool pct = percentagesWanted && !gm.InMatch;
+        if (percentLabels.activeSelf != pct) percentLabels.SetActive(pct);
     }
 
     void ApplyTeamColours(NetGameManager gm)
@@ -172,11 +179,15 @@ public class MatchHUD : MonoBehaviour
         if (label.text != text) label.text = text;
     }
 
+    // The host's toggle; only shown outside matches.
     public bool ShowPercentages
     {
-        get => percentLabels.activeSelf;
-        set => percentLabels.SetActive(value);
+        get => percentagesWanted;
+        set => percentagesWanted = value;
     }
+    bool percentagesWanted;
+    public float TurfBarAlpha => turfBarGroup.alpha;
+    public bool PercentagesShown => percentLabels.activeSelf;
 
     // Read-only views for tests.
     public string TimerText => timerText.text;

@@ -358,6 +358,16 @@ public class ClimbTestRunner : MonoBehaviour
         yield return S("Special: charges from new turf and damage dealt; bubble shield refills ink and blocks damage for 5s", Station.Lobby, SpecialShield);
         yield return S("Loadout HUD: gauges follow ink and special charge, READY when full", Station.Lobby, LoadoutGauges);
         yield return S("Special: half lost on death; charged state is synced and shown on the player bar", Station.Lobby, SpecialDeathAndSync);
+        yield return S("Lobby: swimming is fastest in our ink, slower on bare ground, slowest in enemy ink", Station.Lobby, SwimSpeeds);
+        yield return S("LobbyMenu: hidden in dev mode, lists lobbies as rows, a failed join reports and refreshes", Station.Lobby, LobbyMenuList);
+        yield return S("Match: countdown locks and resets everyone, final minute hides the bar, results fill to a suspense point then the real split", Station.Lobby, MatchFlow);
+        yield return S("Match: a mid-match joiner spectates the rest of the round, then gets their team back", Station.Lobby, LateJoin);
+        yield return S("Spectating: no player of our own means the overhead view", Station.Lobby, SpectatorView);
+        yield return S("Weapon: holding fire also drops 12-18 ink at our feet every 0.4s", Station.Lobby, FeetInk);
+        yield return S("Weapons: Inkshot fires slower, further and tighter than Airspray SE", Station.Lobby, WeaponVariety);
+        yield return S("Weapons: prefabs swapped in our hands, synced to remote copies; jumping doesn't carry into shots", Station.Lobby, WeaponPrefabs);
+        yield return S("LoadoutMenu: picks the weapon and sub, applies and remembers them, can't open mid-match", Station.Lobby, LoadoutMenuPicks);
+        yield return S("Sprinkler: thrown, sticks, sprays both ways and winds down; one at a time; 30 HP; remote copies follow the owner", Station.Lobby, SprinklerSub);
         yield return S("HUD: rosters, death marks, match timer and turf bar track the game", Station.Lobby, Hud);
     }
 
@@ -1257,8 +1267,9 @@ public class ClimbTestRunner : MonoBehaviour
         PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
         MapScreen map = FindFirstObjectByType<MapScreen>();
         if (loadout == null || map == null) { Fail("player has no PlayerLoadout (or no MapScreen)"); yield break; }
+        loadout.SetSub(SubType.Beacon);
         CaptureSends();
-        Beacon.RemoveAll();
+        SubDevice.RemoveAll();
         const ulong FoeId = 3011;
         int enemyTeam = player.Team == 1 ? 2 : 1;
 
@@ -1266,21 +1277,21 @@ public class ClimbTestRunner : MonoBehaviour
         player.RefillInk();
         yield return Hold(Still, false, 0.2f, "stand");
         if (!loadout.UseSub()) { Fail("couldn't place a beacon with a full tank"); NetGameManager.SendOverride = null; yield break; }
-        Beacon beacon = Beacon.All.First(b => b.OwnerId == player.OwnerId);
+        Beacon beacon = SubDevice.All.OfType<Beacon>().First(b => b.OwnerId == player.OwnerId);
         Vector3 beaconPos = beacon.transform.position;
         float ahead = Vector3.Dot(beaconPos - player.transform.position, player.transform.forward);
         Note($"ink after placing {player.InkLevel:F2}, beacon {ahead:F1}m ahead");
         if (Mathf.Abs(player.InkLevel - 0.3f) > 0.01f) Fail($"ink went to {player.InkLevel:F2}, not 0.30");
         if (ahead < 0.5f) Fail("beacon isn't in front of the player");
-        if (!sent.Any(m => m.id == NetMsg.BeaconSpawn)) Fail("beacon wasn't broadcast");
-        if (loadout.UseSub() || Beacon.All.Count != 1) Fail("placed a beacon with only 30% ink");
+        if (!sent.Any(m => m.id == NetMsg.SubSpawn)) Fail("beacon wasn't broadcast");
+        if (loadout.UseSub() || SubDevice.All.Count != 1) Fail("placed a beacon with only 30% ink");
 
         // An enemy beacon arrives from its owner; only ours shows on our map.
         SpawnRemote(FoeId, enemyTeam, station.TransformPoint(new Vector3(-9f, 0.05f, 8f)), "Foe");
         yield return Hold(Still, false, 0.1f, "stand");
-        gm.Receive(NetMsg.BeaconSpawn, new BeaconData { ownerId = FoeId, beaconId = 1, team = enemyTeam, position = station.TransformPoint(new Vector3(-8f, 0f, 8f)) }, FoeId);
+        gm.Receive(NetMsg.SubSpawn, new SubData { ownerId = FoeId, subId = 1, team = enemyTeam, subType = (int)SubType.Beacon, landed = true, normal = Vector3.up, position = station.TransformPoint(new Vector3(-8f, 0f, 8f)) }, FoeId);
         yield return Hold(Still, false, 0.1f, "stand");
-        if (Beacon.Find(FoeId, 1) == null) Fail("enemy beacon wasn't created from its message");
+        if (SubDevice.Find(FoeId, 1) == null) Fail("enemy beacon wasn't created from its message");
 
         // Walk away, open the map and pick our beacon.
         player.PlaceAt(player.transform.position + station.TransformDirection(new Vector3(9f, 0f, -7f)), player.transform.eulerAngles.y);
@@ -1300,12 +1311,12 @@ public class ClimbTestRunner : MonoBehaviour
             Note($"landed {miss:F2}m from the beacon");
             if (miss > 1.5f) Fail($"landed {miss:F2}m from the beacon");
             if (beacon != null) Fail("landing on the beacon didn't break it");
-            if (!sent.Any(m => m.id == NetMsg.BeaconDestroy)) Fail("the break wasn't broadcast");
+            if (!sent.Any(m => m.id == NetMsg.SubDestroy)) Fail("the break wasn't broadcast");
         }
 
         Despawn(FoeId);
         yield return Hold(Still, false, 0.1f, "stand");
-        if (Beacon.Find(FoeId, 1) != null) Fail("enemy beacon outlived its owner leaving");
+        if (SubDevice.Find(FoeId, 1) != null) Fail("enemy beacon outlived its owner leaving");
         NetGameManager.SendOverride = null;
     }
 
@@ -1314,14 +1325,15 @@ public class ClimbTestRunner : MonoBehaviour
         NetGameManager gm = NetGameManager.Instance;
         PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
         if (loadout == null) { Fail("player has no PlayerLoadout"); yield break; }
+        loadout.SetSub(SubType.Beacon);
         CaptureSends();
-        Beacon.RemoveAll();
+        SubDevice.RemoveAll();
         const ulong FoeId = 3012;
         int enemyTeam = player.Team == 1 ? 2 : 1;
 
         player.RefillInk();
         loadout.UseSub();
-        Beacon beacon = Beacon.All.FirstOrDefault(b => b.OwnerId == player.OwnerId);
+        Beacon beacon = SubDevice.All.OfType<Beacon>().FirstOrDefault(b => b.OwnerId == player.OwnerId);
         if (beacon == null) { Fail("couldn't place a beacon"); NetGameManager.SendOverride = null; yield break; }
 
         // An enemy shot takes a chunk; friendly fire doesn't; the next enemy hit breaks it.
@@ -1337,12 +1349,12 @@ public class ClimbTestRunner : MonoBehaviour
         if (beacon != null) beacon.TakeDamage(afterShot, enemyTeam, 4242);
         yield return null;
         if (beacon != null) Fail("didn't break at 0 health");
-        if (!sent.Any(m => m.id == NetMsg.BeaconDestroy)) Fail("breaking wasn't broadcast");
+        if (!sent.Any(m => m.id == NetMsg.SubDestroy)) Fail("breaking wasn't broadcast");
 
         // Lifetime: one left alone expires.
         player.RefillInk();
         loadout.UseSub();
-        Beacon timed = Beacon.All.FirstOrDefault(b => b.OwnerId == player.OwnerId);
+        Beacon timed = SubDevice.All.OfType<Beacon>().FirstOrDefault(b => b.OwnerId == player.OwnerId);
         if (timed != null) timed.ExpireIn(0.3f);
         yield return Hold(Still, false, 0.6f, "expire");
         if (timed != null) Fail("didn't expire");
@@ -1350,9 +1362,9 @@ public class ClimbTestRunner : MonoBehaviour
         // Someone else's: our hit goes to its owner (who decides), and charges our special.
         SpawnRemote(FoeId, enemyTeam, station.TransformPoint(new Vector3(-9f, 0.05f, 8f)), "Foe");
         yield return Hold(Still, false, 0.1f, "remote");
-        gm.Receive(NetMsg.BeaconSpawn, new BeaconData { ownerId = FoeId, beaconId = 4, team = enemyTeam, position = station.TransformPoint(new Vector3(6f, 0f, 6f)) }, FoeId);
+        gm.Receive(NetMsg.SubSpawn, new SubData { ownerId = FoeId, subId = 4, team = enemyTeam, subType = (int)SubType.Beacon, landed = true, normal = Vector3.up, position = station.TransformPoint(new Vector3(6f, 0f, 6f)) }, FoeId);
         yield return Hold(Still, false, 0.1f, "remote");
-        Beacon theirs = Beacon.Find(FoeId, 4);
+        SubDevice theirs = SubDevice.Find(FoeId, 4);
         if (theirs == null) { Fail("their beacon wasn't created"); }
         else
         {
@@ -1360,14 +1372,14 @@ public class ClimbTestRunner : MonoBehaviour
             float points = loadout.SpecialPoints;
             Shoot(theirs.transform.position + Vector3.up * 3f, player.Team, player.OwnerId);
             yield return Hold(Still, false, 0.6f, "remote");
-            var hit = sent.FirstOrDefault(m => m.id == NetMsg.BeaconDamage);
+            var hit = sent.FirstOrDefault(m => m.id == NetMsg.SubDamage);
             Note($"special +{loadout.SpecialPoints - points:F0}p for the hit");
             if (hit.data == null || hit.to != FoeId) Fail("hit on their beacon wasn't sent to its owner");
             if (theirs == null || theirs.Health != 35f) Fail("our copy applied the damage itself");
             if (loadout.SpecialPoints - points < 1f) Fail("hitting their beacon didn't charge the special");
-            gm.Receive(NetMsg.BeaconDestroy, new BeaconData { ownerId = FoeId, beaconId = 4 }, FoeId);
+            gm.Receive(NetMsg.SubDestroy, new SubData { ownerId = FoeId, subId = 4 }, FoeId);
             yield return Hold(Still, false, 0.1f, "remote");
-            if (Beacon.Find(FoeId, 4) != null) Fail("their break message didn't remove it");
+            if (SubDevice.Find(FoeId, 4) != null) Fail("their break message didn't remove it");
         }
 
         Despawn(FoeId);
@@ -1477,6 +1489,460 @@ public class ClimbTestRunner : MonoBehaviour
         loadout.SetSpecialPoints(0f);
     }
 
+    IEnumerator SwimSpeeds()
+    {
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        var speeds = new Dictionary<string, float>();
+        foreach (var (label, team) in new[] { ("own", player.Team), ("ground", 0), ("enemy", enemyTeam) })
+        {
+            floor.FillRegion(new Rect(0, 0, 1, 1), team);
+            yield return Hold(Still, true, 0.3f, "dive " + label); // readback, and into swim form
+            yield return Hold(Fwd, true, 0.4f, "swim " + label);
+            speeds[label] = player.CurrentSpeed;
+            yield return Hold(Back, true, 0.4f, "back " + label); // stay on the station
+        }
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        Note($"swim speed: own {speeds["own"]:F2}, ground {speeds["ground"]:F2}, enemy {speeds["enemy"]:F2}");
+        if (!(speeds["own"] > speeds["ground"] && speeds["ground"] > speeds["enemy"])) Fail("swim speeds aren't own > ground > enemy");
+    }
+
+    IEnumerator LobbyMenuList()
+    {
+        LobbyMenu menu = FindFirstObjectByType<LobbyMenu>();
+        if (menu == null) { Fail("no LobbyMenu in the scene"); yield break; }
+        yield return Hold(Still, false, 0.1f, "menu");
+        if (menu.IsShown) Fail("shown in dev mode");
+
+        menu.ForceShow = true;
+        yield return Hold(Still, false, 0.1f, "menu");
+        if (!menu.IsShown) Fail("didn't show when forced");
+        NetGameManager.LobbyInfo L(string host, int n) => new NetGameManager.LobbyInfo { host = host, players = n, maxPlayers = 8 };
+        menu.ShowLobbies(new[] { L("Alpha Tester", 3), L("Beta Tester", 1), L("Gamma Tester", 7) });
+        var active = menu.Rows.Where(r => r.gameObject.activeSelf).ToList();
+        if (active.Count != 3 || active[1].hostName.text != "Beta Tester" || active[2].players.text != "7/8" || menu.EmptyShown)
+            Fail($"rows don't match the lobbies ({active.Count} shown)");
+        menu.ShowLobbies(new[] { L("Solo", 1) });
+        if (menu.Rows.Count(r => r.gameObject.activeSelf) != 1) Fail("rows weren't reused/hidden for a shorter list");
+
+        // No Steam in dev mode, so joining fails: reported, then the list refreshes (to empty here).
+        menu.ForceShow = false; // let it run its own logic for the click
+        menu.Rows.First(r => r.gameObject.activeSelf).join.onClick.Invoke();
+        Note($"after a failed join: \"{menu.Status}\"");
+        if (!menu.EmptyShown || menu.Rows.Any(r => r.gameObject.activeSelf)) Fail("failed join didn't refresh the list");
+        yield return Hold(Still, false, 0.1f, "menu");
+        if (menu.IsShown) Fail("still shown after un-forcing in dev mode");
+        Cursor.lockState = CursorLockMode.Locked;
+    }
+
+    IEnumerator MatchFlow()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        MatchHUD hud = FindFirstObjectByType<MatchHUD>();
+        MatchFlowHUD flow = FindFirstObjectByType<MatchFlowHUD>();
+        HostMenu menu = FindFirstObjectByType<HostMenu>();
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        if (hud == null || flow == null || menu == null || loadout == null) { Fail("missing MatchHUD, MatchFlowHUD, HostMenu or PlayerLoadout"); yield break; }
+        float Flat(Vector3 v) => new Vector2(v.x, v.z).magnitude;
+        bool Broadcast(MatchPhase phase) => sent.Any(m => m.id == NetMsg.MatchEvent && ((MatchEventData)m.data).phase == phase);
+        CaptureSends();
+        gm.SetMatchTimings(1f, 3f, 1.5f, 0.6f, 5.5f);
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        floor.FillRegion(new Rect(0, 0, 1, 1), player.Team);
+        loadout.SetSpecialPoints(600f);
+        hud.ShowPercentages = true;
+        yield return Hold(Still, false, 0.3f, "free");
+
+        // Start: everyone to their spawn, locked, map and loadout reset, host features off.
+        gm.StartGame();
+        frames.Clear(); // the respawn teleport
+        Vector3 start = player.transform.position;
+        if (gm.Phase != MatchPhase.Countdown || !Broadcast(MatchPhase.Countdown)) Fail("countdown didn't start (or wasn't broadcast)");
+        yield return Hold(Fwd, true, 0.5f, "countdown");
+        Note($"countdown banner \"{flow.BannerText}\"");
+        if (flow.BannerText != "1") Fail("countdown number not shown");
+        if (!InputGate.MatchLocked || Flat(player.transform.position - start) > 0.05f || player.IsSquid) Fail("could move or swim during the countdown");
+        if (loadout.SpecialPoints != 0f || player.InkLevel < 0.999f) Fail("special/ink not reset for the match");
+        if (floor.getSurfaceTeam(new Vector2(0.5f, 0.5f)) != 0) Fail("map wasn't reset");
+        if (hud.PercentagesShown) Fail("percentages shown during a match");
+        menu.SetOpen(true);
+        yield return null;
+        if (menu.ResetButton.interactable || menu.TeamsButton.interactable || menu.PercentButton.interactable || menu.StartButtonText != "End match")
+            Fail("host menu still offers free-roam features mid-match");
+        menu.SetOpen(false);
+
+        // Playing: GO!, free to move.
+        yield return HoldUntil(Still, false, 2f, "play", f => gm.Phase == MatchPhase.Playing);
+        yield return null; // the HUD may have updated before the phase changed that frame
+        if (flow.BannerText != "GO!" || InputGate.MatchLocked) Fail("no GO! (or still locked) when play starts");
+        Vector3 before = player.transform.position;
+        yield return Hold(Fwd, false, 0.4f, "play");
+        if (Flat(player.transform.position - before) < 0.3f) Fail("can't move once playing");
+        floor.FillRegion(new Rect(0, 0, 1, 0.6f), player.Team); // our win
+
+        // Final stretch: announcement, then the coverage bar fades out.
+        yield return HoldUntil(Still, false, 3f, "play", f => gm.InFinalStretch);
+        yield return Hold(Still, false, 0.1f, "final");
+        if (flow.BannerText != "ONE MINUTE LEFT!") Fail("no final stretch announcement");
+        yield return Hold(Still, false, 1.1f, "final");
+        Note($"turf bar alpha {hud.TurfBarAlpha:F2} 1.2s into the final stretch");
+        if (hud.TurfBarAlpha > 0.05f) Fail("coverage bar didn't fade out for the final stretch");
+
+        // Time's up: locked again.
+        yield return HoldUntil(Still, false, 2f, "timesup", f => gm.Phase == MatchPhase.TimesUp);
+        yield return Hold(Fwd, false, 0.2f, "timesup");
+        if (flow.BannerText != "TIME'S UP!" || !InputGate.MatchLocked) Fail("no TIME'S UP (or not locked)");
+
+        // Results: the host's score for everyone, overhead view, suspense fill, then the real split.
+        yield return HoldUntil(Still, false, 4f, "results", f => gm.Phase == MatchPhase.Results);
+        Vector3Int r = gm.MatchResult;
+        Note($"result alpha {r.x}, beta {r.y}, neutral {r.z}");
+        var resultMsg = sent.LastOrDefault(m => m.id == NetMsg.MatchEvent && ((MatchEventData)m.data).phase == MatchPhase.Results);
+        if (resultMsg.data == null || ((MatchEventData)resultMsg.data).alphaScore != r.x) Fail("results weren't broadcast with the score");
+        int ours = player.Team == 1 ? r.x : r.y, theirs = player.Team == 1 ? r.y : r.x;
+        if (ours <= theirs) Fail("our painted turf didn't win");
+        yield return Hold(Still, false, 0.3f, "results");
+        if (!flow.OverheadActive) Fail("no overhead view");
+        yield return Hold(Still, false, 2.6f, "results"); // into the pause
+        float alphaShare = r.x / (float)(r.x + r.y);
+        float suspense = Mathf.Max(0.2f, 0.8f * Mathf.Min(alphaShare, 1f - alphaShare));
+        Note($"suspense fill {flow.ResultAlphaShown:F2}/{flow.ResultBetaShown:F2} (expected {suspense:F2} each)");
+        if (Mathf.Abs(flow.ResultAlphaShown - suspense) > 0.01f || Mathf.Abs(flow.ResultBetaShown - suspense) > 0.01f) Fail("bar didn't hold both sides at the suspense point");
+        if (flow.ResultsRevealed) Fail("revealed before the pause ended");
+        yield return Hold(Still, false, 1f, "results");
+        string winner = player.Team == 1 ? "ALPHA TEAM WINS!" : "BETA TEAM WINS!";
+        Note($"revealed {flow.ResultAlphaShown:F3}/{flow.ResultBetaShown:F3}, banner \"{flow.BannerText}\"");
+        if (Mathf.Abs(flow.ResultAlphaShown - alphaShare) > 0.001f || Mathf.Abs(flow.ResultBetaShown - (1f - alphaShare)) > 0.001f) Fail("bar didn't settle on the real split");
+        if (flow.BannerText != winner) Fail("winner not announced");
+
+        // Back to free roam: unlocked, player view, bar and the host's percentages back.
+        yield return HoldUntil(Still, false, 3f, "free", f => gm.Phase == MatchPhase.FreeRoam);
+        yield return Hold(Still, false, 0.8f, "free");
+        if (InputGate.MatchLocked || flow.OverheadActive) Fail("still locked (or overhead) after the results");
+        if (hud.TurfBarAlpha < 0.95f || !hud.PercentagesShown) Fail("coverage bar or percentages didn't come back");
+
+        // The host can abandon a match.
+        gm.StartGame();
+        frames.Clear();
+        yield return Hold(Still, false, 0.2f, "abort");
+        gm.EndMatch();
+        yield return Hold(Still, false, 0.1f, "abort");
+        if (gm.Phase != MatchPhase.FreeRoam || InputGate.MatchLocked) Fail("End match didn't return to free roam");
+
+        hud.ShowPercentages = false;
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        gm.SetMatchTimings(3f, 180f, 60f, 2.5f, 15f);
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator LateJoin()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        const ulong LateId = 3020;
+        CaptureSends();
+        gm.SetMatchTimings(0.3f, 60f, 30f, 0.5f, 2f);
+        gm.StartGame();
+        frames.Clear();
+        yield return HoldUntil(Still, false, 2f, "match", f => gm.Phase == MatchPhase.Playing);
+        sent.Clear();
+
+        SpawnRemote(LateId, 2, station.TransformPoint(new Vector3(-9f, 0.05f, 8f)), "Latecomer");
+        yield return Hold(Still, false, 0.2f, "join");
+        PlayerController late = gm.GetPlayer(LateId);
+        if (late == null) { Fail("late joiner didn't spawn"); gm.EndMatch(); NetGameManager.SendOverride = null; yield break; }
+        bool rosterSaysSpectate = sent.Any(m => m.id == NetMsg.TeamAssign && m.data is TeamAssignData t
+            && Array.IndexOf(t.ids, LateId) is int i && i >= 0 && t.roles[i] == (int)PlayerRole.Spectator);
+        var phaseMsg = sent.FirstOrDefault(m => m.id == NetMsg.MatchEvent && m.to == LateId);
+        var phaseData = phaseMsg.data as MatchEventData;
+        Note($"late joiner role {late.Role}; told phase {phaseData?.phase} with {phaseData?.duration:F1}s left");
+        if (late.Role != PlayerRole.Spectator || !rosterSaysSpectate) Fail("late joiner wasn't made a spectator");
+        if (phaseData == null || phaseData.phase != MatchPhase.Playing || !phaseData.lateJoin || Mathf.Abs(phaseData.duration - gm.PhaseTimeRemaining) > 0.5f)
+            Fail("late joiner wasn't told the current phase and time left");
+        if (late.Team != 0) Fail("a spectator still has a team");
+
+        // The match ends: back to the team they joined on.
+        sent.Clear();
+        gm.EndMatch();
+        yield return Hold(Still, false, 0.2f, "after");
+        if (late.Role != PlayerRole.Beta || !sent.Any(m => m.id == NetMsg.TeamAssign)) Fail($"late joiner didn't get their team back ({late.Role})");
+        if (gm.IsLateJoiner(LateId)) Fail("still marked as a late joiner");
+
+        Despawn(LateId);
+        yield return Hold(Still, false, 0.1f, "after");
+        gm.SetMatchTimings(3f, 180f, 60f, 2.5f, 15f);
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator SpectatorView()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        MatchFlowHUD flow = FindFirstObjectByType<MatchFlowHUD>();
+        if (flow == null) { Fail("no MatchFlowHUD"); yield break; }
+        NetGameManager.SendOverride = (id, data, target) => { };
+        int team = player.Team;
+        if (flow.OverheadActive) Fail("overhead view while playing");
+
+        // The host moves us to spectate: our player goes away, the overhead view takes over.
+        gm.Receive(NetMsg.TeamAssign, new TeamAssignData { ids = new[] { player.OwnerId }, roles = new[] { (int)PlayerRole.Spectator } }, 0);
+        yield return Hold(Still, false, 0.2f, "spectate");
+        if (player.gameObject.activeInHierarchy) Fail("our player is still in the level");
+        if (!flow.OverheadActive || !flow.SpectatingShown) Fail("no overhead view (or label) while spectating");
+
+        gm.Receive(NetMsg.TeamAssign, new TeamAssignData { ids = new[] { player.OwnerId }, roles = new[] { team } }, 0);
+        yield return Hold(Still, false, 0.2f, "back");
+        frames.Clear(); // back at our spawn
+        if (!player.gameObject.activeInHierarchy || flow.OverheadActive || flow.SpectatingShown) Fail("overhead view didn't hand back to our player");
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator FeetInk()
+    {
+        WeaponShooter weapon = player.GetComponentInChildren<WeaponShooter>();
+        if (weapon == null) { Fail("no WeaponShooter"); yield break; }
+        NetGameManager.SendOverride = (id, data, target) => { };
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        player.RefillInk();
+        yield return Hold(Still, false, 0.3f, "ready");
+
+        int before = weapon.FeetShots;
+        weapon.ScriptedFire = true;
+        yield return Hold(Still, false, 1.3f, "fire");
+        weapon.ScriptedFire = false;
+        int drops = weapon.FeetShots - before;
+        yield return Hold(Still, false, 0.6f, "land");
+
+        int underfoot = -1;
+        if (Physics.Raycast(player.BodyCenter, Vector3.down, out RaycastHit hit, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore))
+        {
+            SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
+            if (ink != null) underfoot = ink.getSurfaceTeam(ink.UVFromHit(hit));
+        }
+        Note($"{drops} feet drops in 1.3s; ink underfoot team {underfoot}");
+        if (drops < 3 || drops > 4) Fail($"expected 3-4 feet drops in 1.3s (every 0.4s), got {drops}");
+        if (underfoot != player.Team) Fail("not standing in our own ink after shooting");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator WeaponVariety()
+    {
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        if (loadout == null || loadout.Weapons.Count < 2) { Fail("need two weapons"); yield break; }
+        NetGameManager.SendOverride = (id, data, target) => { };
+        var shots = new int[2];
+        var speed = new float[2];
+        var maxYaw = new float[2];
+        for (int w = 0; w < 2; w++)
+        {
+            loadout.SetMainWeapon(w);
+            player.RefillInk();
+            yield return Hold(Still, false, 0.3f, "equip");
+            WeaponShooter weapon = loadout.CurrentWeapon as WeaponShooter;
+            if (weapon == null) { Fail($"{loadout.Weapons[w].DisplayName} isn't a gun"); break; }
+            int index = w;
+            Action<Vector3, Quaternion> onShot = (v, aim) =>
+            {
+                speed[index] = v.magnitude;
+                Vector3 flatAim = Vector3.ProjectOnPlane(aim * Vector3.forward, Vector3.up);
+                maxYaw[index] = Mathf.Max(maxYaw[index], Mathf.Abs(Vector3.SignedAngle(flatAim, Vector3.ProjectOnPlane(v, Vector3.up), Vector3.up)));
+            };
+            weapon.MainShotFired += onShot;
+            int before = weapon.MainShots;
+            weapon.ScriptedFire = true;
+            yield return Hold(Still, false, 1f, "fire " + weapon.DisplayName);
+            weapon.ScriptedFire = false;
+            weapon.MainShotFired -= onShot;
+            shots[w] = weapon.MainShots - before;
+        }
+        Note($"Airspray SE: {shots[0]} shots/s, speed {speed[0]:F1}, max yaw {maxYaw[0]:F1}°; Inkshot: {shots[1]} shots/s, speed {speed[1]:F1}, max yaw {maxYaw[1]:F1}°");
+        if (loadout.Weapons[0].DisplayName != "Airspray SE" || loadout.Weapons[1].DisplayName != "Inkshot") Fail("weapons aren't Airspray SE and Inkshot");
+        if (shots[1] >= shots[0] * 0.8f) Fail("Inkshot doesn't fire slower");
+        if (speed[1] < speed[0] * 1.2f) Fail("Inkshot doesn't reach further");
+        if (maxYaw[1] >= maxYaw[0] * 0.5f) Fail("Inkshot's spread isn't much narrower");
+        loadout.SetMainWeapon(0);
+        yield return Hold(Still, false, 0.5f, "settle"); // let the shots land
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator WeaponPrefabs()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        if (loadout == null) { Fail("player has no PlayerLoadout"); yield break; }
+        NetGameManager.SendOverride = (id, data, target) => { };
+        const ulong MateId = 3040;
+
+        // Switching replaces the instance in our hands with the other prefab.
+        loadout.SetMainWeapon(1);
+        yield return null;
+        Weapon held = loadout.CurrentWeapon;
+        Transform mount = held != null ? held.transform.parent : null;
+        int inHand = mount == null ? 0 : mount.GetComponentsInChildren<Weapon>().Length;
+        Note($"holding {held?.DisplayName} under {mount?.name} ({inHand} weapon(s) there)");
+        if (held == null || held.DisplayName != "Inkshot" || inHand != 1) Fail("switching didn't swap the weapon in our hands");
+        if (player.GetNetState(0, 0).weapon != 1) Fail("our weapon choice isn't in our state");
+
+        // Jumping doesn't carry into the shots; running still does.
+        WeaponShooter gun = held as WeaponShooter;
+        player.RefillInk();
+        player.PressJump();
+        gun.ScriptedFire = true;
+        float risingY = 0f, inheritedY = 0f;
+        for (int i = 0; i < 20; i++)
+        {
+            yield return null;
+            Record("jumpfire");
+            if (player.VerticalVelocity > risingY) { risingY = player.VerticalVelocity; inheritedY = gun.LastInherited.y; }
+        }
+        gun.ScriptedFire = false;
+        Note($"rising at {risingY:F1} m/s, shots inherited {inheritedY:F2} m/s vertically");
+        if (risingY < 1f) Fail("never left the ground");
+        if (inheritedY != 0f) Fail("shots inherited our vertical velocity");
+        yield return Hold(Still, false, 1f, "land");
+
+        // A teammate's copy shows the weapon their state says, as a model only.
+        SpawnRemote(MateId, player.Team, station.TransformPoint(new Vector3(-9f, 0.05f, 8f)), "Mate");
+        yield return Hold(Still, false, 0.2f, "remote");
+        PlayerController mate = gm.GetPlayer(MateId);
+        PlayerLoadout mateLoadout = mate != null ? mate.GetComponent<PlayerLoadout>() : null;
+        if (mateLoadout == null || mateLoadout.CurrentWeapon == null || mateLoadout.CurrentWeapon.DisplayName != "Airspray SE") Fail("remote copy didn't start with the default weapon");
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = MateId, position = mate.transform.position, moveDir = Vector2.zero, team = player.Team, weapon = 1 }, MateId);
+        yield return Hold(Still, false, 0.2f, "remote");
+        Weapon theirs = mateLoadout != null ? mateLoadout.CurrentWeapon : null;
+        if (theirs == null || theirs.DisplayName != "Inkshot") Fail("remote copy didn't switch to their Inkshot");
+        else if (theirs.enabled) Fail("remote copy's weapon is live (it should only be a model)");
+
+        Despawn(MateId);
+        loadout.SetMainWeapon(0);
+        yield return Hold(Still, false, 0.1f, "remote");
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator LoadoutMenuPicks()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        LoadoutMenu menu = FindFirstObjectByType<LoadoutMenu>();
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        LoadoutHUD gauges = FindFirstObjectByType<LoadoutHUD>();
+        if (menu == null || loadout == null) { Fail("missing LoadoutMenu or PlayerLoadout"); yield break; }
+        NetGameManager.SendOverride = (id, data, target) => { };
+
+        menu.SetOpen(true);
+        yield return null;
+        if (!menu.IsOpen || !InputGate.Blocked) Fail("didn't open (or didn't block gameplay input)");
+        menu.WeaponButtons[1].onClick.Invoke();
+        menu.SubButtons[1].onClick.Invoke();
+        yield return null;
+        if (loadout.WeaponIndex != 1 || loadout.CurrentWeapon == null || loadout.CurrentWeapon.DisplayName != "Inkshot") Fail("picking Inkshot didn't equip it");
+        if (loadout.Sub != SubType.Sprinkler || Mathf.Abs(loadout.SubInkCost - 0.6f) > 0.001f) Fail("picking the sprinkler didn't select it");
+        if (PlayerPrefs.GetInt("loadout.weapon", -1) != 1 || PlayerPrefs.GetInt("loadout.sub", -1) != (int)SubType.Sprinkler) Fail("choices weren't remembered");
+        menu.SetOpen(false);
+        yield return Hold(Still, false, 0.1f, "menu");
+        if (menu.IsOpen || InputGate.Blocked) Fail("didn't close");
+        if (gauges != null && gauges.SubName != "SPRINKLER") Fail("sub gauge doesn't show the sprinkler");
+
+        // Not during a match; one in progress closes it.
+        gm.SetMatchTimings(5f, 60f, 30f, 0.5f, 2f);
+        menu.SetOpen(true);
+        gm.StartGame();
+        frames.Clear();
+        yield return Hold(Still, false, 0.1f, "match");
+        if (menu.IsOpen) Fail("stayed open when a match started");
+        menu.SetOpen(true);
+        if (menu.IsOpen) Fail("opened during a match");
+        gm.EndMatch();
+        gm.SetMatchTimings(3f, 180f, 60f, 2.5f, 15f);
+        yield return Hold(Still, false, 0.1f, "match");
+
+        loadout.SetMainWeapon(0);
+        loadout.SetSub(SubType.Beacon);
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator SprinklerSub()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        if (loadout == null) { Fail("player has no PlayerLoadout"); yield break; }
+        CaptureSends();
+        SubDevice.RemoveAll();
+        const ulong FoeId = 3030;
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        loadout.SetSub(SubType.Sprinkler);
+        player.RefillInk();
+        yield return Hold(Still, false, 0.3f, "ready");
+
+        // Thrown: costs 60%, flies, then sticks to the floor.
+        if (!loadout.UseSub()) { Fail("couldn't throw a sprinkler"); loadout.SetSub(SubType.Beacon); NetGameManager.SendOverride = null; yield break; }
+        Sprinkler s = SubDevice.All.OfType<Sprinkler>().First(d => d.OwnerId == player.OwnerId);
+        Note($"ink after throwing {player.InkLevel:F2}");
+        if (Mathf.Abs(player.InkLevel - 0.4f) > 0.01f) Fail("didn't cost 60% ink");
+        if (s.Landed) Fail("landed the moment it was thrown");
+        if (!sent.Any(m => m.id == NetMsg.SubSpawn && m.data is SubData d && !d.landed && d.subType == (int)SubType.Sprinkler)) Fail("throw wasn't broadcast");
+        yield return HoldUntil(Still, false, 3f, "throw", f => s == null || s.Landed);
+        if (s == null || !s.Landed) { Fail("never landed"); loadout.SetSub(SubType.Beacon); NetGameManager.SendOverride = null; yield break; }
+        float thrownTo = Vector3.Distance(s.transform.position, player.transform.position);
+        Note($"stuck {thrownTo:F1}m away, tilt {Vector3.Angle(s.transform.up, Vector3.up):F0}°, {s.TimeLeft:F1}s to live");
+        if (Vector3.Angle(s.transform.up, Vector3.up) > 5f) Fail("not stuck upright on the floor");
+        if (!sent.Any(m => m.id == NetMsg.SubSpawn && m.data is SubData d && d.landed)) Fail("landing wasn't broadcast");
+        if (Mathf.Abs(s.TimeLeft - s.Lifetime) > 0.2f) Fail("doesn't last its lifetime from landing");
+
+        // Spraying, winding down.
+        float spin = s.SpinSpeed, shotSpeed = s.ShotSpeed, gap = s.FireInterval;
+        int shots = s.ShotsFired;
+        yield return Hold(Still, false, 3f, "spray");
+        Note($"after 3s: spin {spin:F0}->{s.SpinSpeed:F0}°/s, shot speed {shotSpeed:F1}->{s.ShotSpeed:F1}, gap {gap:F2}->{s.FireInterval:F2}s, {s.ShotsFired - shots} volleys");
+        if (s.ShotsFired - shots < 5) Fail("barely fired");
+        if (!(s.SpinSpeed < spin && s.ShotSpeed < shotSpeed && s.FireInterval > gap)) Fail("didn't wind down");
+        int inked = 0;
+        for (int i = 0; i < 16 * 6; i++) // rings 1-6m out
+        {
+            Vector3 probe = s.transform.position + Quaternion.Euler(0f, i * 22.5f, 0f) * Vector3.forward * (1 + i / 16) + Vector3.up;
+            if (Physics.Raycast(probe, Vector3.down, out RaycastHit hit, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)
+                && hit.collider.GetComponent<SurfaceInkManager>() is SurfaceInkManager ink && ink.getSurfaceTeam(ink.UVFromHit(hit)) == player.Team) inked++;
+        }
+        Note($"{inked}/96 floor points 1-6m around it are our ink");
+        if (inked == 0) Fail("didn't ink around itself");
+
+        // One at a time: another throw replaces it. 30 HP.
+        player.RefillInk();
+        loadout.UseSub();
+        yield return null;
+        if (s != null) Fail("the first sprinkler survived a second throw");
+        Sprinkler second = SubDevice.All.OfType<Sprinkler>().FirstOrDefault(d => d.OwnerId == player.OwnerId);
+        yield return HoldUntil(Still, false, 3f, "throw", f => second == null || second.Landed);
+        if (second != null) second.TakeDamage(29f, enemyTeam, 4242);
+        if (second == null) Fail("broke before 30 damage");
+        else second.TakeDamage(1f, enemyTeam, 4242);
+        yield return null;
+        if (second != null) Fail("survived 30 damage");
+
+        // Someone else's: flies from their throw, snaps to their landing, sprays (visual only).
+        SpawnRemote(FoeId, enemyTeam, station.TransformPoint(new Vector3(-9f, 0.05f, 8f)), "Foe");
+        yield return Hold(Still, false, 0.1f, "remote");
+        Vector3 from = station.TransformPoint(new Vector3(-6f, 2f, 6f)), at = station.TransformPoint(new Vector3(-3f, 0f, 6f));
+        gm.Receive(NetMsg.SubSpawn, new SubData { ownerId = FoeId, subId = 9, team = enemyTeam, subType = (int)SubType.Sprinkler, position = from, velocity = new Vector3(4f, 3f, 0f), normal = Vector3.up }, FoeId);
+        yield return Hold(Still, false, 0.15f, "remote");
+        Sprinkler theirs = SubDevice.Find(FoeId, 9) as Sprinkler;
+        if (theirs == null || theirs.Landed || theirs.IsOwnedLocally) Fail("their thrown sprinkler wasn't created in flight");
+        gm.Receive(NetMsg.SubSpawn, new SubData { ownerId = FoeId, subId = 9, team = enemyTeam, subType = (int)SubType.Sprinkler, position = at, normal = Vector3.up, landed = true }, FoeId);
+        yield return Hold(Still, false, 1f, "remote");
+        if (theirs == null || !theirs.Landed || Vector3.Distance(theirs.transform.position, at) > 0.01f) Fail("their sprinkler didn't snap to the owner's landing");
+        else if (theirs.ShotsFired == 0) Fail("their sprinkler isn't spraying");
+        gm.Receive(NetMsg.SubDestroy, new SubData { ownerId = FoeId, subId = 9 }, FoeId);
+        yield return Hold(Still, false, 0.1f, "remote");
+        if (SubDevice.Find(FoeId, 9) != null) Fail("their destroy message didn't remove it");
+
+        Despawn(FoeId);
+        loadout.SetSub(SubType.Beacon);
+        yield return Hold(Still, false, 0.5f, "settle");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        NetGameManager.SendOverride = null;
+    }
+
     // Runs last: starting the match clears all ink.
     IEnumerator Hud()
     {
@@ -1510,8 +1976,10 @@ public class ClimbTestRunner : MonoBehaviour
 
         // Timer: full duration before the match, counting down after it starts.
         string before = hud.TimerText;
-        gm.ResetMap();
-        yield return Hold(Still, false, 1.2f, "timer");
+        gm.SetMatchTimings(0.3f, 180f, 60f, 2.5f, 15f); // short countdown
+        gm.StartGame();
+        frames.Clear(); // starting a match respawns us at our spawn
+        yield return Hold(Still, false, 1.5f, "timer");
         string after = hud.TimerText;
         Note($"timer {before} -> {after} after 1.2s");
         if (gm.Phase != MatchPhase.Playing) Fail("match didn't start");
@@ -1532,6 +2000,8 @@ public class ClimbTestRunner : MonoBehaviour
         if (ourShare() <= 0f) Fail("turf bar didn't pick up the painted floor");
         if (player.Team == 1 && hud.ShownAlphaFill <= 0f) Fail("alpha bar didn't move");
 
+        gm.EndMatch();
+        gm.SetMatchTimings(3f, 180f, 60f, 2.5f, 15f);
         NetGameManager.SendOverride = null;
     }
 

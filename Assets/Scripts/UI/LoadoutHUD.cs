@@ -25,6 +25,7 @@ public class LoadoutHUD : MonoBehaviour
     public float SubFill => shownSub;
     public float SpecialFill => shownSpecial;
     public bool ReadyShown => specialReady.activeSelf;
+    public string SubName => subLabel.text;
 
     void Awake()
     {
@@ -59,6 +60,7 @@ public class LoadoutHUD : MonoBehaviour
         float h = ((RectTransform)subFill.transform).rect.height;
         subCostMark.anchoredPosition = new Vector2(0f, (loadout.SubInkCost - 0.5f) * h);
         subLabel.alpha = canSub ? 1f : 0.5f;
+        if (subLabel.text != loadout.SubName) subLabel.text = loadout.SubName; // stands in for the sub's icon
 
         // Special: charge, or the time left while it's running.
         float target = loadout.ShieldActive ? loadout.ShieldRemaining / loadout.ShieldDuration : loadout.SpecialCharge;

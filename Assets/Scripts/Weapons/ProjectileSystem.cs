@@ -16,6 +16,8 @@ public class ProjectileSystem : MonoBehaviour
     float releaseAt = -1f; // when the deferred return to the pool happens
     bool  authoritative;   // false = remote replay: visuals only, no splat or damage
     ulong ownerId;         // shooter's Steam id
+    float shotDamage;      // this shot's damage (the prefab's unless overridden)
+    bool  impactParticles; // splash effect on hitting a surface
 
     static readonly int ShaderDirection = Shader.PropertyToID("_Direction");
     static readonly int ShaderColor     = Shader.PropertyToID("_Color");
@@ -33,8 +35,11 @@ public class ProjectileSystem : MonoBehaviour
     }
 
     // Resets all per-shot state (instances are reused).
-    public void Setup(Vector3 velocity, int splashSize, int team, bool visible = true, bool authoritative = true, ulong ownerId = 0)
+    public void Setup(Vector3 velocity, int splashSize, int team, bool visible = true, bool authoritative = true, ulong ownerId = 0,
+                      float damage = -1f, bool impactParticles = true)
     {
+        shotDamage = damage >= 0f ? damage : this.damage;
+        this.impactParticles = impactParticles;
         hasImpacted = false;
         releaseAt = -1f;
         this.authoritative = authoritative;
@@ -90,14 +95,14 @@ public class ProjectileSystem : MonoBehaviour
         if (other.CompareTag("Projectile")) return;
         if (hasImpacted) return;
 
-        // Enemy beacons and hitboxes take the hit; teammates' (and the shooter) are passed through.
-        Beacon beacon = other.GetComponentInParent<Beacon>();
-        if (beacon != null)
+        // Enemy subs and hitboxes take the hit; teammates' (and the shooter) are passed through.
+        SubDevice device = other.GetComponentInParent<SubDevice>();
+        if (device != null)
         {
-            if (beacon.Team != team)
+            if (device.Team != team)
             {
                 hasImpacted = true;
-                if (authoritative) beacon.TakeDamage(damage, team, ownerId);
+                if (authoritative) device.TakeDamage(shotDamage, team, ownerId);
                 DeleteProjectile();
             }
             return;
@@ -109,7 +114,7 @@ public class ProjectileSystem : MonoBehaviour
             if (hitbox.Team != team)
             {
                 hasImpacted = true;
-                if (authoritative) hitbox.TakeDamage(damage, team, ownerId);
+                if (authoritative) hitbox.TakeDamage(shotDamage, team, ownerId);
                 DeleteProjectile();
             }
             return;
@@ -126,7 +131,7 @@ public class ProjectileSystem : MonoBehaviour
             {
                 hasImpacted = true;
                 if (authoritative) inkManager.Splat(inkManager.UVFromHit(hit), splashSize, team); // replays get the shooter's Splat message
-                InkParticles.Spawn(splashParticlesPrefab, hit.point, Quaternion.FromToRotation(Vector3.up, hit.normal), inkColor);
+                if (impactParticles) InkParticles.Spawn(splashParticlesPrefab, hit.point, Quaternion.FromToRotation(Vector3.up, hit.normal), inkColor);
             }
         }
 

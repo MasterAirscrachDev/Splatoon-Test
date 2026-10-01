@@ -40,13 +40,13 @@ public enum NetMsg : ushort
     Splat,           // a paint event to replay on remote clients
     ProjectileSpawn, // spawn a visual-only projectile on remote clients
     Damage,          // a player took damage / died
-    MatchEvent,      // match phase changes (start / end / reset)
-    InkReset,        // clear all ink surfaces before a match
+    MatchEvent,      // match phase changes, from the host (see MatchPhase)
+    InkReset,        // host's "Reset map" in free roam: clear all ink
     Teleport,        // instant reposition (respawn) — bypasses PlayerState interpolation
     TeamAssign,      // host's roster: every player's role
-    BeaconSpawn,     // a player placed a beacon (sub)
-    BeaconDestroy,   // a beacon broke, expired or was landed on
-    BeaconDamage     // a hit on someone's beacon, sent to its owner
+    SubSpawn,        // a player placed/threw a sub (beacon, sprinkler), or it landed
+    SubDestroy,      // a sub broke, expired, or (beacon) was landed on
+    SubDamage        // a hit on someone's sub, sent to its owner
 }
 
 // Where a player sits in the roster. Alpha/Beta match the team numbers used everywhere else.
@@ -68,6 +68,7 @@ public class PlayerStateData
     public uint tick;
     public bool shielded;     // bubble shield (special) active
     public bool specialReady; // special charged, shown on everyone's player bar
+    public int weapon;        // index into PlayerLoadout's weapons, so remotes show the right one
 }
 
 // ── Spawn / despawn ───────────────────────────────────────────────────────
@@ -122,21 +123,27 @@ public class DamageData
     public int fromTeam;
 }
 
-// ── Beacons (sub): ids are per owner ─────────────────────────────────────
+// ── Sub weapons: ids are per owner ───────────────────────────────────────
+public enum SubType { Beacon, Sprinkler }
+
 [System.Serializable]
-public class BeaconData
+public class SubData
 {
     public ulong ownerId;
-    public int beaconId;
+    public int subId;
     public int team;
+    public int subType;       // SubType
     public NVector3 position;
+    public NVector3 velocity; // thrown subs, until they land
+    public NVector3 normal;   // the surface it's stuck to, once landed
+    public bool landed;
 }
 
 [System.Serializable]
-public class BeaconDamageData
+public class SubDamageData
 {
     public ulong ownerId;
-    public int beaconId;
+    public int subId;
     public float amount;
     public int fromTeam;
     public ulong attackerSteamId;
@@ -151,12 +158,15 @@ public class TeamAssignData
 }
 
 // ── Match-level state ─────────────────────────────────────────────────────
-public enum MatchPhase { Lobby, Countdown, Playing, Ended }
+// FreeRoam between matches; a match runs Countdown -> Playing -> TimesUp -> Results -> FreeRoam.
+public enum MatchPhase { FreeRoam, Countdown, Playing, TimesUp, Results }
 
 [System.Serializable]
 public class MatchEventData
 {
     public MatchPhase phase;
     public float serverTime;
-    public float duration; // match length in seconds, when starting
+    public float duration;                             // how long this phase lasts, in seconds
+    public int alphaScore, betaScore, neutralScore;    // Results: the host's final turf (texels)
+    public bool lateJoin;                              // sent to a mid-match joiner: they spectate this round
 }

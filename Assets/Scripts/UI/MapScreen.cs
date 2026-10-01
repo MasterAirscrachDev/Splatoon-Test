@@ -100,6 +100,8 @@ public class MapScreen : MonoBehaviour
         PlayerController local = NetGameManager.LocalPlayer;
         if (InputGate.Blocked || local == null || !local.gameObject.activeInHierarchy || local.Team == 0) return; // another menu, or benched
         if (local.IsSuperJumping) return;
+        NetGameManager gm = NetGameManager.Instance;
+        if (gm != null && (gm.Phase == MatchPhase.TimesUp || gm.Phase == MatchPhase.Results)) return; // the match is over
         SetOpen(true);
     }
 
@@ -145,48 +147,24 @@ public class MapScreen : MonoBehaviour
 
     // ── Map rendering ──────────────────────────────────────────────────────
 
-    // Orthographic camera looking down at viewPitch, turned by viewYaw, framed on every map
-    // renderer as seen from that angle. Only map layers are drawn, over a transparent background.
+    // Orthographic camera looking down at viewPitch, turned by viewYaw, framed on the map layers.
+    // Only those layers are drawn, over a transparent background.
     void EnsureMapCamera()
     {
         if (mapCamera != null) return;
         int mask = LayerMask.GetMask(mapLayers);
-        var go = new GameObject("MapCamera");
-        go.transform.rotation = Quaternion.Euler(viewPitch, viewYaw, 0f);
-
-        Vector3 min = Vector3.one * float.MaxValue, max = -min;
-        foreach (MeshRenderer r in FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None))
-        {
-            if (!r.enabled || (mask & (1 << r.gameObject.layer)) == 0) continue;
-            Bounds b = r.bounds;
-            for (int i = 0; i < 8; i++)
-            {
-                Vector3 corner = new Vector3(i % 2 == 0 ? b.min.x : b.max.x, i / 2 % 2 == 0 ? b.min.y : b.max.y, i / 4 == 0 ? b.min.z : b.max.z);
-                Vector3 local = go.transform.InverseTransformPoint(corner); // camera space
-                min = Vector3.Min(min, local);
-                max = Vector3.Max(max, local);
-            }
-        }
-        if (min.x > max.x) { min = -Vector3.one * 25f; max = Vector3.one * 25f; } // no map geometry
-
         Rect area = markerArea.rect;
         float aspect = area.width / area.height;
         mapTexture = new RenderTexture(mapResolution, Mathf.RoundToInt(mapResolution / aspect), 16, RenderTextureFormat.ARGB32) { name = "MapView" };
         mapImage.texture = mapTexture;
 
-        mapCamera = go.AddComponent<Camera>();
+        mapCamera = new GameObject("MapCamera").AddComponent<Camera>();
         mapCamera.enabled = false; // rendered on demand
-        mapCamera.orthographic = true;
-        mapCamera.aspect = aspect;
-        mapCamera.orthographicSize = Mathf.Max((max.y - min.y) / 2f, (max.x - min.x) / 2f / aspect) * viewPadding;
         mapCamera.clearFlags = CameraClearFlags.SolidColor;
         mapCamera.backgroundColor = Color.clear;
         mapCamera.cullingMask = mask;
-        // Centred on the level, backed off in front of its nearest point.
-        go.transform.position = go.transform.TransformPoint(new Vector3((min.x + max.x) / 2f, (min.y + max.y) / 2f, min.z - 10f));
-        mapCamera.nearClipPlane = 0.1f;
-        mapCamera.farClipPlane = max.z - min.z + 20f;
         mapCamera.targetTexture = mapTexture;
+        LevelView.Frame(mapCamera, mask, viewPitch, viewYaw, aspect, viewPadding);
     }
 
     void RenderMap()
@@ -299,8 +277,8 @@ public class MapScreen : MonoBehaviour
     void RefreshBeacons(int ourTeam, Color colour)
     {
         shownBeacons.Clear();
-        foreach (Beacon b in Beacon.All)
-            if (b != null && b.Team == ourTeam) shownBeacons.Add(b);
+        foreach (SubDevice d in SubDevice.All)
+            if (d is Beacon b && b != null && b.Team == ourTeam) shownBeacons.Add(b);
 
         while (beaconMarkers.Count < shownBeacons.Count)
         {

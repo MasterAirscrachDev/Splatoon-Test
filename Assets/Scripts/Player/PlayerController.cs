@@ -273,7 +273,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         float prevHeight = controller.height;
         float prevRadius = controller.radius;
         bool wasClimbingWall = wasClimbing;
-        bool swimHeld = charging || (ScriptedInput != null ? ScriptedInput.swim
+        bool swimHeld = charging || !InputGate.MatchLocked && (ScriptedInput != null ? ScriptedInput.swim
                       : !InputGate.Blocked && input.Movement.Squidmode.ReadValue<float>() != 0);
         if (swimHeld)
         {
@@ -316,14 +316,14 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         if (surfaceTeam != 0)
         {
             bool inOwnInk = surfaceTeam == team;
-            if (swimMode) realSpeed = inOwnInk ? swimSpeed + 2 : swimSpeed / 2;
+            if (swimMode) realSpeed = inOwnInk ? swimSpeed + 2 : swimSpeed / 8; // enemy ink: slower than bare ground
             else          realSpeed = inOwnInk ? moveSpeed : moveSpeed - 2;
         }
         else
         {
             realSpeed = swimMode ? swimSpeed / 4 : moveSpeed;
         }
-        targetDir = charging ? Vector2.zero
+        targetDir = charging || InputGate.MatchLocked ? Vector2.zero
                   : ScriptedInput != null ? ScriptedInput.move
                   : InputGate.Blocked ? Vector2.zero : input.Movement.Move.ReadValue<Vector2>();
         targetDir.Normalize();
@@ -429,7 +429,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     // Once started, only dying (or a respawn/teleport) cancels it. Returns false if it can't start.
     public bool StartSuperJump(ISuperJumpTarget target)
     {
-        if (playerMode != PlayerMode.Client || isDead || IsSuperJumping || team == 0) return false;
+        if (playerMode != PlayerMode.Client || isDead || IsSuperJumping || team == 0 || InputGate.MatchLocked) return false;
         if (!SuperJumpTargets.Alive(target) || ReferenceEquals(target, this) || !target.IsValidTargetFor(this)) return false;
         superJumpTarget = target;
         superJumpLanding = target.JumpPosition;
@@ -640,7 +640,8 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
             dead     = isDead,
             tick     = tick,
             shielded = Shielded,
-            specialReady = SpecialCharged
+            specialReady = SpecialCharged,
+            weapon   = WeaponIndex
         };
     }
 
@@ -655,6 +656,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         swimMode     = s.swimMode; // team comes from the host's roster, not from state updates
         Shielded     = s.shielded;
         SpecialCharged = s.specialReady;
+        WeaponIndex  = s.weapon;
         isClimbing = s.climbing;
         effectivelyClimbing = s.climbing;
 
@@ -791,6 +793,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     // Set by PlayerLoadout locally, from state updates on remote copies.
     public bool Shielded { get; set; }       // bubble shield running
     public bool SpecialCharged { get; set; } // special ready to use
+    public int WeaponIndex { get; set; }     // equipped main weapon (PlayerLoadout)
 
     public bool ConsumeInk(float amount)
     {
@@ -857,7 +860,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
 
     void Jump()
     {
-        if (IsSuperJumping) return;
+        if (IsSuperJumping || InputGate.MatchLocked) return;
         if (effectivelyClimbing)
         {
             float wallClimbSpeed = currentDir.y * realSpeed + velocityY;

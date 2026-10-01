@@ -1,16 +1,29 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// Sub and special weapons. The sub (beacon) costs a fixed share of the ink tank. The special
-// (bubble shield) charges from turf inked and damage dealt, refills the tank and makes the player
-// immune to damage for a few seconds. Lives on remote copies too, for their visuals and beacons.
+// Main weapon, sub and special. The main weapon and sub are picked in the loadout menu (and
+// remembered); weapons are prefabs, equipped under the weapon mount (remote copies follow the
+// owner's choice from their state updates). Subs cost a fixed share of the ink tank: a beacon is placed in front of the player,
+// a sprinkler is thrown. The special (bubble shield) charges from turf inked and damage dealt,
+// refills the tank and makes the player immune to damage for a few seconds. Lives on remote
+// copies too, for their visuals and subs.
 public class PlayerLoadout : MonoBehaviour
 {
+    [Header("Main weapons")]
+    [SerializeField] Weapon[] weapons;     // prefabs; the first is the default
+    [SerializeField] Transform weaponMount;
+
     [Header("Sub: beacon")]
     [SerializeField] Beacon beaconPrefab;
-    [SerializeField] float subInkCost = 0.7f;
+    [SerializeField] float beaconInkCost = 0.7f;
     [SerializeField] int maxBeacons = 3;           // placing another breaks the oldest
     [SerializeField] float placeDistance = 1.5f;   // in front of the player
+
+    [Header("Sub: sprinkler")]
+    [SerializeField] Sprinkler sprinklerPrefab;
+    [SerializeField] float sprinklerInkCost = 0.6f;
+    [SerializeField] float throwSpeed = 11f;       // along the aim, plus an upward lob
+    [SerializeField] float throwLift = 4f;
 
     [Header("Special: bubble shield")]
     [SerializeField] float specialCost = 1000f;    // points to charge
@@ -19,15 +32,22 @@ public class PlayerLoadout : MonoBehaviour
 
     [Header("Special charge")]
     [SerializeField] float pointsPerSquareMetre = 1f;  // turf newly turned to our colour
-    [SerializeField] float pointsPerDamage = 1f;       // damage dealt to enemies and their beacons
+    [SerializeField] float pointsPerDamage = 1f;       // damage dealt to enemies and their subs
     [SerializeField] float deathSpecialKept = 0.5f;    // share of the charge kept when splatted
 
     public static PlayerLoadout Local { get; private set; }
 
     public PlayerController Player => player;
+    public IReadOnlyList<Weapon> Weapons => weapons;
+    public int WeaponIndex => weaponIndex;
+    public Weapon CurrentWeapon => equipped; // the instance in our hands
     public Beacon BeaconPrefab => beaconPrefab;
-    public float SubInkCost => subInkCost;
-    public bool CanUseSub => player.InkLevel >= subInkCost;
+    public Sprinkler SprinklerPrefab => sprinklerPrefab;
+    public SubType Sub => sub;
+    public string SubName => sub == SubType.Beacon ? "BEACON" : "SPRINKLER";
+    public float SubInkCost => InkCost(sub);
+    public float InkCost(SubType type) => type == SubType.Beacon ? beaconInkCost : sprinklerInkCost;
+    public bool CanUseSub => player.InkLevel >= SubInkCost;
     public float SpecialPoints => specialPoints;
     public float SpecialCharge => Mathf.Clamp01(specialPoints / specialCost);
     public bool SpecialReady => specialPoints >= specialCost && !ShieldActive;
@@ -38,9 +58,12 @@ public class PlayerLoadout : MonoBehaviour
     PlayerController player;
     ControlLayer input;
     float specialPoints, shieldUntil = -1f;
-    int nextBeaconId;
+    int nextSubId, weaponIndex, equippedIndex = -1;
+    Weapon equipped;
+    SubType sub = SubType.Beacon;
     bool wasDead;
     readonly List<Beacon> ownBeacons = new List<Beacon>(); // oldest first
+    Sprinkler ownSprinkler;                                // one at a time
     Vector3 shieldScale;
     int shieldTintTeam = -1;
 
@@ -55,10 +78,14 @@ public class PlayerLoadout : MonoBehaviour
         }
     }
 
+    const string WeaponPref = "loadout.weapon", SubPref = "loadout.sub";
+
     void Start()
     {
-        if (!player.IsLocalPlayer) return;
+        if (!player.IsLocalPlayer) { Equip(player.WeaponIndex); return; }
         Local = this;
+        SetMainWeapon(PlayerPrefs.GetInt(WeaponPref, 0));
+        SetSub((SubType)PlayerPrefs.GetInt(SubPref, (int)SubType.Beacon));
         input = new ControlLayer();
         input.Weapon.Enable();
         input.Weapon.Sub.performed += _ => { if (!InputGate.Blocked) UseSub(); };
@@ -82,25 +109,78 @@ public class PlayerLoadout : MonoBehaviour
             player.Shielded = Time.time < shieldUntil && !player.IsDead;
             player.SpecialCharged = SpecialReady;
         }
+        else if (player.WeaponIndex != equippedIndex) Equip(player.WeaponIndex); // they switched
         UpdateShieldVisual();
+    }
+
+    // ── Choices (loadout menu) ─────────────────────────────────────────────
+
+    public void SetMainWeapon(int index)
+    {
+        if (weapons == null || weapons.Length == 0) return;
+        weaponIndex = Mathf.Clamp(index, 0, weapons.Length - 1);
+        Equip(weaponIndex);
+        player.WeaponIndex = weaponIndex; // sent with our state
+        if (player.IsLocalPlayer) PlayerPrefs.SetInt(WeaponPref, weaponIndex);
+    }
+
+    // Swaps the weapon in our hands for a fresh instance of the chosen prefab.
+    void Equip(int index)
+    {
+        if (weapons == null || weapons.Length == 0 || weaponMount == null) return;
+        index = Mathf.Clamp(index, 0, weapons.Length - 1);
+        if (index == equippedIndex && equipped != null) return;
+        if (equipped != null)
+        {
+            equipped.gameObject.SetActive(false); // gone from lookups now, destroyed at the end of the frame
+            Destroy(equipped.gameObject);
+        }
+        equipped = Instantiate(weapons[index], weaponMount, false);
+        equipped.Equip(player);
+        equippedIndex = index;
+    }
+
+    public void SetSub(SubType type)
+    {
+        sub = System.Enum.IsDefined(typeof(SubType), type) ? type : SubType.Beacon;
+        if (player.IsLocalPlayer) PlayerPrefs.SetInt(SubPref, (int)sub);
     }
 
     // ── Sub ────────────────────────────────────────────────────────────────
 
-    // Places a beacon on the ground in front of the player. Needs the ink and a spot to stand it on.
     public bool UseSub()
     {
-        if (!player.IsLocalPlayer || player.IsDead || player.IsSuperJumping || player.Team == 0 || beaconPrefab == null) return false;
-        if (!CanUseSub || !FindBeaconSpot(out Vector3 spot)) return false;
-        if (!player.ConsumeInk(subInkCost)) return false;
+        if (!player.IsLocalPlayer || player.IsDead || player.IsSuperJumping || player.Team == 0 || InputGate.MatchLocked || !CanUseSub) return false;
+        return sub == SubType.Beacon ? PlaceBeacon() : ThrowSprinkler();
+    }
+
+    // On the ground in front of the player; needs a spot to stand it on.
+    bool PlaceBeacon()
+    {
+        if (beaconPrefab == null || !FindBeaconSpot(out Vector3 spot) || !player.ConsumeInk(beaconInkCost)) return false;
 
         ownBeacons.RemoveAll(b => b == null);
         if (ownBeacons.Count >= maxBeacons) { ownBeacons[0].Break(); ownBeacons.RemoveAt(0); }
 
         Beacon beacon = Instantiate(beaconPrefab, spot, Quaternion.Euler(0f, player.transform.eulerAngles.y, 0f));
-        beacon.Init(player.OwnerId, nextBeaconId++, player.Team, ownedLocally: true);
+        beacon.Init(player.OwnerId, nextSubId++, player.Team, ownedLocally: true);
         ownBeacons.Add(beacon);
-        NetGameManager.Instance?.SendBeaconSpawn(beacon);
+        NetGameManager.Instance?.SendSubSpawn(beacon);
+        return true;
+    }
+
+    // Lobbed along the camera's aim; a new one replaces the last.
+    bool ThrowSprinkler()
+    {
+        if (sprinklerPrefab == null || !player.ConsumeInk(sprinklerInkCost)) return false;
+        if (ownSprinkler != null) ownSprinkler.Break();
+
+        Transform aim = player.CameraRig != null ? player.CameraRig : player.transform;
+        Vector3 from = player.BodyCenter + Vector3.up * 0.4f + Vector3.ProjectOnPlane(aim.forward, Vector3.up).normalized * 0.6f;
+        ownSprinkler = Instantiate(sprinklerPrefab, from, Quaternion.identity);
+        ownSprinkler.Init(player.OwnerId, nextSubId++, player.Team, ownedLocally: true);
+        ownSprinkler.Throw(aim.forward * throwSpeed + Vector3.up * throwLift);
+        NetGameManager.Instance?.SendSubSpawn(ownSprinkler);
         return true;
     }
 
@@ -118,19 +198,33 @@ public class PlayerLoadout : MonoBehaviour
         return found;
     }
 
-    // Remote players' beacons, from their BeaconSpawn message.
-    public void SpawnRemoteBeacon(BeaconData d)
+    // Remote players' subs, from their SubSpawn messages. A sprinkler sends one when thrown and
+    // another when it lands; either may arrive first.
+    public void SpawnRemoteSub(SubData d)
     {
-        if (beaconPrefab == null || Beacon.Find(d.ownerId, d.beaconId) != null) return;
-        Beacon beacon = Instantiate(beaconPrefab, d.position, Quaternion.identity);
-        beacon.Init(d.ownerId, d.beaconId, d.team, ownedLocally: false);
+        SubDevice existing = SubDevice.Find(d.ownerId, d.subId);
+        if (existing is Sprinkler landing && d.landed) { landing.Land(d.position, d.normal); return; }
+        if (existing != null) return;
+
+        if ((SubType)d.subType == SubType.Sprinkler)
+        {
+            if (sprinklerPrefab == null) return;
+            Sprinkler s = Instantiate(sprinklerPrefab, d.position, Quaternion.identity);
+            s.Init(d.ownerId, d.subId, d.team, ownedLocally: false);
+            if (d.landed) s.Land(d.position, d.normal); else s.Throw(d.velocity);
+        }
+        else if (beaconPrefab != null)
+        {
+            Beacon beacon = Instantiate(beaconPrefab, d.position, Quaternion.identity);
+            beacon.Init(d.ownerId, d.subId, d.team, ownedLocally: false);
+        }
     }
 
     // ── Special ────────────────────────────────────────────────────────────
 
     public bool UseSpecial()
     {
-        if (!player.IsLocalPlayer || player.IsDead || player.Team == 0 || !SpecialReady) return false;
+        if (!player.IsLocalPlayer || player.IsDead || player.Team == 0 || !SpecialReady || InputGate.MatchLocked) return false;
         specialPoints = 0f;
         player.RefillInk();
         shieldUntil = Time.time + shieldDuration;
@@ -143,6 +237,15 @@ public class PlayerLoadout : MonoBehaviour
     {
         if (ShieldActive || points <= 0f) return;
         specialPoints = Mathf.Min(specialCost, specialPoints + points);
+    }
+
+    // Match start: no charge, no shield, full tank.
+    public void ResetForMatch()
+    {
+        specialPoints = 0f;
+        shieldUntil = -1f;
+        player.Shielded = false;
+        player.RefillInk();
     }
 
     public void SetSpecialPoints(float points) => specialPoints = Mathf.Clamp(points, 0f, specialCost); // tests, debug

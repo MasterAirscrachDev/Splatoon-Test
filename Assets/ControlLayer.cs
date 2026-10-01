@@ -406,6 +406,15 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Loadout"",
+                    ""type"": ""Button"",
+                    ""id"": ""4fb0bb2a-40b3-45d7-aa3c-31357df59797"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -439,6 +448,28 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""groups"": """",
                     ""action"": ""Map"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""e0d1cef6-f5af-4ce9-af1f-92ef8af9efce"",
+                    ""path"": ""<Keyboard>/l"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Loadout"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""dafba34f-d3ec-4b1a-b156-6a4b2e19abe3"",
+                    ""path"": ""<Gamepad>/start"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Loadout"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 }
@@ -485,6 +516,7 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         m_GameControl = asset.FindActionMap("GameControl", throwIfNotFound: true);
         m_GameControl_GameStart = m_GameControl.FindAction("GameStart", throwIfNotFound: true);
         m_GameControl_Map = m_GameControl.FindAction("Map", throwIfNotFound: true);
+        m_GameControl_Loadout = m_GameControl.FindAction("Loadout", throwIfNotFound: true);
     }
 
     ~@ControlLayer()
@@ -827,6 +859,7 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
     private List<IGameControlActions> m_GameControlActionsCallbackInterfaces = new List<IGameControlActions>();
     private readonly InputAction m_GameControl_GameStart;
     private readonly InputAction m_GameControl_Map;
+    private readonly InputAction m_GameControl_Loadout;
     /// <summary>
     /// Provides access to input actions defined in input action map "GameControl".
     /// </summary>
@@ -846,6 +879,10 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "GameControl/Map".
         /// </summary>
         public InputAction @Map => m_Wrapper.m_GameControl_Map;
+        /// <summary>
+        /// Provides access to the underlying input action "GameControl/Loadout".
+        /// </summary>
+        public InputAction @Loadout => m_Wrapper.m_GameControl_Loadout;
         /// <summary>
         /// Provides access to the underlying input action map instance.
         /// </summary>
@@ -878,6 +915,9 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
             @Map.started += instance.OnMap;
             @Map.performed += instance.OnMap;
             @Map.canceled += instance.OnMap;
+            @Loadout.started += instance.OnLoadout;
+            @Loadout.performed += instance.OnLoadout;
+            @Loadout.canceled += instance.OnLoadout;
         }
 
         /// <summary>
@@ -895,6 +935,9 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
             @Map.started -= instance.OnMap;
             @Map.performed -= instance.OnMap;
             @Map.canceled -= instance.OnMap;
+            @Loadout.started -= instance.OnLoadout;
+            @Loadout.performed -= instance.OnLoadout;
+            @Loadout.canceled -= instance.OnLoadout;
         }
 
         /// <summary>
@@ -1034,5 +1077,12 @@ public partial class @ControlLayer: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnMap(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Loadout" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnLoadout(InputAction.CallbackContext context);
     }
 }

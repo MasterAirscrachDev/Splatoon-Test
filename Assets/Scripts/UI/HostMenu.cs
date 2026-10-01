@@ -7,6 +7,7 @@ using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
 // Host-only menu (G): reset the map, edit teams, toggle coverage percentages, start the game.
+// During a match only "End match" is available.
 public class HostMenu : MonoBehaviour
 {
     [System.Serializable]
@@ -20,7 +21,7 @@ public class HostMenu : MonoBehaviour
     [SerializeField] MatchHUD hud;
     [SerializeField] GameObject mainPanel, teamPanel;
     [SerializeField] Button resetButton, teamsButton, percentButton, startButton, closeButton, teamsBackButton;
-    [SerializeField] TMP_Text percentButtonLabel;
+    [SerializeField] TMP_Text percentButtonLabel, startButtonLabel;
 
     [Header("Team editor columns")]
     [SerializeField] SlotButton[] alphaSlots = new SlotButton[4];
@@ -58,7 +59,13 @@ public class HostMenu : MonoBehaviour
         resetButton.onClick.AddListener(() => { NetGameManager.Instance?.ResetMap(); SetOpen(false); });
         teamsButton.onClick.AddListener(OpenTeamEditor);
         percentButton.onClick.AddListener(TogglePercentages);
-        startButton.onClick.AddListener(() => { NetGameManager.Instance?.StartGame(); SetOpen(false); });
+        startButton.onClick.AddListener(() =>
+        {
+            NetGameManager gm = NetGameManager.Instance;
+            if (gm == null) return;
+            if (gm.InMatch) gm.EndMatch(); else gm.StartGame();
+            SetOpen(false);
+        });
         closeButton.onClick.AddListener(() => SetOpen(false));
         teamsBackButton.onClick.AddListener(() => { teamPanel.SetActive(false); mainPanel.SetActive(true); });
 
@@ -74,6 +81,7 @@ public class HostMenu : MonoBehaviour
     {
         if (!open) return;
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) SetOpen(false);
+        RefreshMatchButtons();
         if (TeamEditorOpen) RefreshTeamEditor(); // reflect joins/leaves while open
     }
 
@@ -92,6 +100,16 @@ public class HostMenu : MonoBehaviour
         Cursor.lockState = value ? CursorLockMode.None : CursorLockMode.Locked;
         Cursor.visible = value;
         if (value) EnsureEventSystem();
+    }
+
+    void RefreshMatchButtons()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        bool inMatch = gm != null && gm.InMatch;
+        resetButton.interactable = teamsButton.interactable = percentButton.interactable = !inMatch;
+        string start = inMatch ? "End match" : "Start game";
+        if (startButtonLabel.text != start) startButtonLabel.text = start;
+        if (inMatch && teamPanel.activeSelf) { teamPanel.SetActive(false); mainPanel.SetActive(true); }
     }
 
     void TogglePercentages()
@@ -196,5 +214,8 @@ public class HostMenu : MonoBehaviour
     public SlotButton[][] Columns => columns;
     public Button TeamsButton => teamsButton;
     public Button PercentButton => percentButton;
+    public Button ResetButton => resetButton;
+    public Button StartButton => startButton;
+    public string StartButtonText => startButtonLabel.text;
     public Button CloseButton => closeButton;
 }

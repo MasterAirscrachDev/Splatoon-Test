@@ -42,6 +42,16 @@ public static class MatchHUDBuilder
     static Sprite circle, rounded, cap, arrow, ring;
     static Material outline;
 
+    // Sprites and materials the helpers below use; for other UI builders.
+    internal static void LoadShared()
+    {
+        circle  = EnsureCircleSprite();
+        rounded = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        outline = AssetDatabase.LoadAssetAtPath<Material>(OutlineMat);
+    }
+    internal static Sprite Rounded => rounded;
+    internal static Color PanelBackground => PanelColour;
+
     [MenuItem("Tools/UI/Build Match HUD Prefab")]
     public static void Build()
     {
@@ -69,6 +79,7 @@ public static class MatchHUDBuilder
 
         MatchHUD hud = BuildHud(root);
         BuildLoadoutHud(root);
+        BuildMatchFlow(root);
         BuildHostMenu(root, hud);
         BuildMapScreen(root);
 
@@ -101,48 +112,8 @@ public static class MatchHUDBuilder
             betaSlots[i]  = HudSlot($"Slot{i}", betaTeam, i);
         }
 
-        // Turf bar: a tube with flattened rounded ends. The track masks the fills, stripes and
-        // shading to its shape; a darker copy behind it is the outline.
-        RectTransform bar = Rect("TurfBar", top, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -112), new Vector2(BarWidth, BarHeight));
-        RectTransform frame = Rect("Frame", bar, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-        StretchInset(frame, -5);
-        CapImg(frame.gameObject, new Color(0f, 0f, 0f, 0.7f), BarHeight + 10);
-        RectTransform track = Rect("Track", bar, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-        Stretch(track);
-        CapImg(track.gameObject, new Color(0.24f, 0.24f, 0.29f, 0.95f), BarHeight);
-        track.gameObject.AddComponent<Mask>().showMaskGraphic = true;
-
-        RectTransform alphaFill = Rect("AlphaFill", track, Vector2.zero, new Vector2(0f, 0.5f), Vector2.zero, Vector2.zero);
-        alphaFill.anchorMin = new Vector2(0f, 0f); alphaFill.anchorMax = new Vector2(0f, 1f);
-        alphaFill.offsetMin = Vector2.zero; alphaFill.offsetMax = new Vector2(-WaveDepth / 2f, 0f);
-        Img(alphaFill.gameObject, null, Color.cyan, sliced: false);
-        RawImage alphaWave = Wave("Wave", alphaFill, 1f, new Rect(0f, 0f, 1f, BarHeight / WaveLength), Color.cyan);
-        RectTransform betaFill = Rect("BetaFill", track, Vector2.zero, new Vector2(1f, 0.5f), Vector2.zero, Vector2.zero);
-        betaFill.anchorMin = new Vector2(1f, 0f); betaFill.anchorMax = new Vector2(1f, 1f);
-        betaFill.offsetMin = new Vector2(WaveDepth / 2f, 0f); betaFill.offsetMax = Vector2.zero;
-        Img(betaFill.gameObject, null, Color.magenta, sliced: false);
-        RawImage betaWave = Wave("Wave", betaFill, 0f, new Rect(1f, 0.5f, -1f, BarHeight / WaveLength), Color.magenta); // mirrored, half a period on
-
-        // Diagonal stripes over everything, StripeSpacing apart along the bar.
-        RectTransform stripes = Rect("Stripes", track, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-        Stretch(stripes);
-        RawImage stripeImg = stripes.gameObject.AddComponent<RawImage>();
-        stripeImg.texture = EnsureStripeTexture();
-        stripeImg.color = new Color(1f, 1f, 1f, 0.16f);
-        stripeImg.raycastTarget = false;
-        float tileW = StripeSpacing * StripesPerTile; // UI px covered by one texture tile
-        float tileH = tileW / Mathf.Tan(StripeAngle * Mathf.Deg2Rad);
-        stripeImg.uvRect = new Rect(0, 0, BarWidth / tileW, BarHeight / tileH);
-
-        // Tube shading: darker underside, glossy highlight along the top.
-        RectTransform shade = Rect("Shade", track, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-        shade.anchorMin = new Vector2(0f, 0f); shade.anchorMax = new Vector2(1f, 0.38f);
-        shade.offsetMin = shade.offsetMax = Vector2.zero;
-        Img(shade.gameObject, null, new Color(0f, 0f, 0f, 0.2f), sliced: false);
-        RectTransform gloss = Rect("Gloss", track, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
-        gloss.anchorMin = new Vector2(0f, 0.58f); gloss.anchorMax = new Vector2(1f, 0.86f);
-        gloss.offsetMin = new Vector2(12, 0); gloss.offsetMax = new Vector2(-12, 0);
-        CapImg(gloss.gameObject, new Color(1f, 1f, 1f, 0.24f), BarHeight * 0.28f);
+        BarParts turf = Bar("TurfBar", top, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -112), BarWidth, BarHeight);
+        RectTransform bar = turf.root;
 
         // Percentages (hidden by default; toggled from the host menu).
         RectTransform pct = Rect("Percentages", bar, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
@@ -158,10 +129,11 @@ public static class MatchHUDBuilder
         MatchHUD hud = root.AddComponent<MatchHUD>();
         SerializedObject so = new SerializedObject(hud);
         so.FindProperty("timerText").objectReferenceValue = timer;
-        so.FindProperty("alphaFill").objectReferenceValue = alphaFill;
-        so.FindProperty("betaFill").objectReferenceValue = betaFill;
-        so.FindProperty("alphaWave").objectReferenceValue = alphaWave;
-        so.FindProperty("betaWave").objectReferenceValue = betaWave;
+        so.FindProperty("alphaFill").objectReferenceValue = turf.alphaFill;
+        so.FindProperty("betaFill").objectReferenceValue = turf.betaFill;
+        so.FindProperty("alphaWave").objectReferenceValue = turf.alphaWave;
+        so.FindProperty("betaWave").objectReferenceValue = turf.betaWave;
+        so.FindProperty("turfBarGroup").objectReferenceValue = bar.gameObject.AddComponent<CanvasGroup>();
         so.FindProperty("percentLabels").objectReferenceValue = pct.gameObject;
         so.FindProperty("alphaPercent").objectReferenceValue = alphaPct;
         so.FindProperty("betaPercent").objectReferenceValue = betaPct;
@@ -170,6 +142,109 @@ public static class MatchHUDBuilder
         AssignHudSlots(so.FindProperty("betaSlots"), betaSlots);
         so.ApplyModifiedPropertiesWithoutUndo();
         return hud;
+    }
+
+    struct BarParts
+    {
+        public RectTransform root, alphaFill, betaFill;
+        public RawImage alphaWave, betaWave;
+    }
+
+    // Turf bar: a tube with flattened rounded ends. The track masks the fills, stripes and
+    // shading to its shape; a darker copy behind it is the outline. Alpha fills from the left,
+    // beta from the right, each with a wavy leading edge (scaled with the bar's height).
+    static BarParts Bar(string name, RectTransform parent, Vector2 anchor, Vector2 pivot, Vector2 pos, float width, float height)
+    {
+        float scale = height / BarHeight, depth = WaveDepth * scale, wavelength = WaveLength * scale;
+        RectTransform bar = Rect(name, parent, anchor, pivot, pos, new Vector2(width, height));
+        RectTransform frame = Rect("Frame", bar, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        StretchInset(frame, -5 * scale);
+        CapImg(frame.gameObject, new Color(0f, 0f, 0f, 0.7f), height + 10 * scale);
+        RectTransform track = Rect("Track", bar, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        Stretch(track);
+        CapImg(track.gameObject, new Color(0.24f, 0.24f, 0.29f, 0.95f), height);
+        track.gameObject.AddComponent<Mask>().showMaskGraphic = true;
+
+        RectTransform alphaFill = Rect("AlphaFill", track, Vector2.zero, new Vector2(0f, 0.5f), Vector2.zero, Vector2.zero);
+        alphaFill.anchorMin = new Vector2(0f, 0f); alphaFill.anchorMax = new Vector2(0f, 1f);
+        alphaFill.offsetMin = Vector2.zero; alphaFill.offsetMax = new Vector2(-depth / 2f, 0f);
+        Img(alphaFill.gameObject, null, Color.cyan, sliced: false);
+        RawImage alphaWave = Wave("Wave", alphaFill, 1f, new Rect(0f, 0f, 1f, height / wavelength), Color.cyan, depth);
+        RectTransform betaFill = Rect("BetaFill", track, Vector2.zero, new Vector2(1f, 0.5f), Vector2.zero, Vector2.zero);
+        betaFill.anchorMin = new Vector2(1f, 0f); betaFill.anchorMax = new Vector2(1f, 1f);
+        betaFill.offsetMin = new Vector2(depth / 2f, 0f); betaFill.offsetMax = Vector2.zero;
+        Img(betaFill.gameObject, null, Color.magenta, sliced: false);
+        RawImage betaWave = Wave("Wave", betaFill, 0f, new Rect(1f, 0.5f, -1f, height / wavelength), Color.magenta, depth); // mirrored, half a period on
+
+        // Diagonal stripes over everything, StripeSpacing apart along the bar.
+        RectTransform stripes = Rect("Stripes", track, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        Stretch(stripes);
+        RawImage stripeImg = stripes.gameObject.AddComponent<RawImage>();
+        stripeImg.texture = EnsureStripeTexture();
+        stripeImg.color = new Color(1f, 1f, 1f, 0.16f);
+        stripeImg.raycastTarget = false;
+        float tileW = StripeSpacing * StripesPerTile * scale; // UI px covered by one texture tile
+        float tileH = tileW / Mathf.Tan(StripeAngle * Mathf.Deg2Rad);
+        stripeImg.uvRect = new Rect(0, 0, width / tileW, height / tileH);
+
+        // Tube shading: darker underside, glossy highlight along the top.
+        RectTransform shade = Rect("Shade", track, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        shade.anchorMin = new Vector2(0f, 0f); shade.anchorMax = new Vector2(1f, 0.38f);
+        shade.offsetMin = shade.offsetMax = Vector2.zero;
+        Img(shade.gameObject, null, new Color(0f, 0f, 0f, 0.2f), sliced: false);
+        RectTransform gloss = Rect("Gloss", track, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        gloss.anchorMin = new Vector2(0f, 0.58f); gloss.anchorMax = new Vector2(1f, 0.86f);
+        gloss.offsetMin = new Vector2(12 * scale, 0); gloss.offsetMax = new Vector2(-12 * scale, 0);
+        CapImg(gloss.gameObject, new Color(1f, 1f, 1f, 0.24f), height * 0.28f);
+
+        return new BarParts { root = bar, alphaFill = alphaFill, betaFill = betaFill, alphaWave = alphaWave, betaWave = betaWave };
+    }
+
+    // ── Match flow: announcements and results ──────────────────────────────
+
+    static void BuildMatchFlow(GameObject root)
+    {
+        Vector2 centre = new Vector2(0.5f, 0.5f);
+        TextMeshProUGUI banner = Text("Banner", root.transform, "", 110, Color.white, TextAlignmentOptions.Center, true);
+        Place(banner.rectTransform, centre, centre, new Vector2(0, 150), new Vector2(1600, 150));
+        banner.textWrappingMode = TextWrappingModes.NoWrap;
+        TextMeshProUGUI bannerSub = Text("BannerSub", root.transform, "", 40, Color.white, TextAlignmentOptions.Center, true);
+        Place(bannerSub.rectTransform, centre, centre, new Vector2(0, 60), new Vector2(1200, 60));
+        TextMeshProUGUI spectating = Text("Spectating", root.transform, "SPECTATING", 40, Color.white, TextAlignmentOptions.Center, true);
+        Place(spectating.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 40), new Vector2(900, 100));
+        spectating.gameObject.SetActive(false);
+
+        // Results: a big turf bar along the bottom, real percentages at its ends once revealed.
+        RectTransform resultsRt = Rect("Results", root.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 90), new Vector2(1400, 160));
+        CanvasGroup results = resultsRt.gameObject.AddComponent<CanvasGroup>();
+        BarParts big = Bar("ResultsBar", resultsRt, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 40), 1400, 64);
+        TextMeshProUGUI alphaPct = Text("AlphaPercent", resultsRt, "0.0%", 44, Color.white, TextAlignmentOptions.Left, true);
+        Place(alphaPct.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(10, 0), new Vector2(300, 56));
+        TextMeshProUGUI betaPct = Text("BetaPercent", resultsRt, "0.0%", 44, Color.white, TextAlignmentOptions.Right, true);
+        Place(betaPct.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-10, 0), new Vector2(300, 56));
+        TextMeshProUGUI neutral = Text("Unclaimed", resultsRt, "Unclaimed 0.0%", 22, new Color(0.9f, 0.9f, 0.95f), TextAlignmentOptions.Center, false);
+        Place(neutral.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 4), new Vector2(400, 30));
+        resultsRt.gameObject.SetActive(false);
+
+        MatchFlowHUD flow = root.AddComponent<MatchFlowHUD>();
+        var so = new SerializedObject(flow);
+        so.FindProperty("banner").objectReferenceValue = banner;
+        so.FindProperty("bannerSub").objectReferenceValue = bannerSub;
+        so.FindProperty("spectatingLabel").objectReferenceValue = spectating;
+        so.FindProperty("results").objectReferenceValue = results;
+        so.FindProperty("resultAlphaFill").objectReferenceValue = big.alphaFill;
+        so.FindProperty("resultBetaFill").objectReferenceValue = big.betaFill;
+        so.FindProperty("resultAlphaWave").objectReferenceValue = big.alphaWave;
+        so.FindProperty("resultBetaWave").objectReferenceValue = big.betaWave;
+        so.FindProperty("resultAlphaPercent").objectReferenceValue = alphaPct;
+        so.FindProperty("resultBetaPercent").objectReferenceValue = betaPct;
+        so.FindProperty("resultNeutral").objectReferenceValue = neutral;
+        SerializedProperty hidden = so.FindProperty("hiddenDuringResults");
+        string[] groups = { "Top", "Loadout" };
+        hidden.arraySize = groups.Length;
+        for (int i = 0; i < groups.Length; i++)
+            hidden.GetArrayElementAtIndex(i).objectReferenceValue = root.transform.Find(groups[i]).gameObject.AddComponent<CanvasGroup>();
+        so.ApplyModifiedPropertiesWithoutUndo();
     }
 
     static MatchHUD.PlayerSlot HudSlot(string name, RectTransform team, int index)
@@ -249,6 +324,10 @@ public static class MatchHUDBuilder
         Place(subKey.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(32.4f, 19.2f), new Vector2(34.6f, 22));
         TextMeshProUGUI subIcon = Text("Icon", subFrame, "BEACON", 15, Color.white, TextAlignmentOptions.Center, true);
         Place(subIcon.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(3.1f, 56.5f), new Vector2(74.8f, 22));
+        subIcon.textWrappingMode = TextWrappingModes.NoWrap; // the sub's name changes with the loadout
+        subIcon.enableAutoSizing = true;
+        subIcon.fontSizeMin = 9;
+        subIcon.fontSizeMax = 15;
 
         LoadoutHUD hud = root.AddComponent<LoadoutHUD>();
         var so = new SerializedObject(hud);
@@ -294,7 +373,7 @@ public static class MatchHUDBuilder
         Button reset   = MenuButton("ResetMap",    main, "Reset map",        new Vector2(0, -100), new Vector2(360, 58), out _);
         Button teams   = MenuButton("EditTeams",   main, "Edit teams",       new Vector2(0, -170), new Vector2(360, 58), out _);
         Button percent = MenuButton("Percentages", main, "Show percentages", new Vector2(0, -240), new Vector2(360, 58), out TextMeshProUGUI percentLabel);
-        Button start   = MenuButton("StartGame",   main, "Start game",       new Vector2(0, -310), new Vector2(360, 58), out _);
+        Button start   = MenuButton("StartGame",   main, "Start game",       new Vector2(0, -310), new Vector2(360, 58), out TextMeshProUGUI startLabel);
         Button close   = MenuButton("Close",       main, "Close",            new Vector2(0, -392), new Vector2(180, 46), out _);
         TextMeshProUGUI hint = Text("Hint", main, "G / Esc to close", 16, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
         Place(hint.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(300, 24));
@@ -338,6 +417,7 @@ public static class MatchHUDBuilder
         so.FindProperty("closeButton").objectReferenceValue = close;
         so.FindProperty("teamsBackButton").objectReferenceValue = back;
         so.FindProperty("percentButtonLabel").objectReferenceValue = percentLabel;
+        so.FindProperty("startButtonLabel").objectReferenceValue = startLabel;
         AssignMenuSlots(so.FindProperty("alphaSlots"), columns[0]);
         AssignMenuSlots(so.FindProperty("betaSlots"), columns[1]);
         AssignMenuSlots(so.FindProperty("spectateSlots"), columns[2]);
@@ -498,20 +578,20 @@ public static class MatchHUDBuilder
         };
     }
 
-    static RectTransform Panel(string name, RectTransform parent, Vector2 size)
+    internal static RectTransform Panel(string name, RectTransform parent, Vector2 size)
     {
         RectTransform panel = Rect(name, parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, size);
         Img(panel.gameObject, rounded, PanelColour, sliced: true).raycastTarget = true; // swallow clicks behind it
         return panel;
     }
 
-    static void Title(RectTransform panel, string text)
+    internal static void Title(RectTransform panel, string text)
     {
         TextMeshProUGUI title = Text("Title", panel, text, 34, Color.white, TextAlignmentOptions.Center, true);
         Place(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -18), new Vector2(600, 44));
     }
 
-    static Button MenuButton(string name, RectTransform parent, string text, Vector2 pos, Vector2 size, out TextMeshProUGUI label)
+    internal static Button MenuButton(string name, RectTransform parent, string text, Vector2 pos, Vector2 size, out TextMeshProUGUI label)
     {
         RectTransform rt = Rect(name, parent, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), pos, size);
         Image bg = Img(rt.gameObject, rounded, ButtonColour, sliced: true);
@@ -545,7 +625,7 @@ public static class MatchHUDBuilder
 
     // ── Helpers ────────────────────────────────────────────────────────────
 
-    static RectTransform Rect(string name, Transform parent, Vector2 anchor, Vector2 pivot, Vector2 pos, Vector2 size)
+    internal static RectTransform Rect(string name, Transform parent, Vector2 anchor, Vector2 pivot, Vector2 pos, Vector2 size)
     {
         RectTransform rt = new GameObject(name, typeof(RectTransform)).GetComponent<RectTransform>();
         rt.SetParent(parent, false);
@@ -553,7 +633,7 @@ public static class MatchHUDBuilder
         return rt;
     }
 
-    static void Place(RectTransform rt, Vector2 anchor, Vector2 pivot, Vector2 pos, Vector2 size)
+    internal static void Place(RectTransform rt, Vector2 anchor, Vector2 pivot, Vector2 pos, Vector2 size)
     {
         rt.anchorMin = rt.anchorMax = anchor;
         rt.pivot = pivot;
@@ -561,9 +641,9 @@ public static class MatchHUDBuilder
         rt.sizeDelta = size;
     }
 
-    static void Stretch(RectTransform rt) => StretchInset(rt, 0);
+    internal static void Stretch(RectTransform rt) => StretchInset(rt, 0);
 
-    static void StretchInset(RectTransform rt, float inset)
+    internal static void StretchInset(RectTransform rt, float inset)
     {
         rt.anchorMin = Vector2.zero;
         rt.anchorMax = Vector2.one;
@@ -571,7 +651,7 @@ public static class MatchHUDBuilder
         rt.offsetMax = new Vector2(-inset, -inset);
     }
 
-    static Image Img(GameObject go, Sprite sprite, Color colour, bool sliced)
+    internal static Image Img(GameObject go, Sprite sprite, Color colour, bool sliced)
     {
         Image img = go.AddComponent<Image>();
         img.sprite = sprite;
@@ -589,13 +669,13 @@ public static class MatchHUDBuilder
         return img;
     }
 
-    // Wave strip on one side of a fill (side 1 = right edge, 0 = left), WaveDepth wide.
-    static RawImage Wave(string name, RectTransform fill, float side, Rect uv, Color colour)
+    // Wave strip on one side of a fill (side 1 = right edge, 0 = left), depth wide.
+    static RawImage Wave(string name, RectTransform fill, float side, Rect uv, Color colour, float depth)
     {
         RectTransform rt = Rect(name, fill, Vector2.zero, new Vector2(1f - side, 0.5f), Vector2.zero, Vector2.zero);
         rt.anchorMin = new Vector2(side, 0f); rt.anchorMax = new Vector2(side, 1f);
         rt.anchoredPosition = Vector2.zero;
-        rt.sizeDelta = new Vector2(WaveDepth, 0f);
+        rt.sizeDelta = new Vector2(depth, 0f);
         RawImage img = rt.gameObject.AddComponent<RawImage>();
         img.texture = EnsureWaveTexture();
         img.uvRect = uv;
@@ -604,7 +684,7 @@ public static class MatchHUDBuilder
         return img;
     }
 
-    static TextMeshProUGUI Text(string name, Transform parent, string text, float size, Color colour,
+    internal static TextMeshProUGUI Text(string name, Transform parent, string text, float size, Color colour,
                                 TextAlignmentOptions align, bool bold, bool useOutline = true)
     {
         TextMeshProUGUI t = new GameObject(name, typeof(RectTransform)).AddComponent<TextMeshProUGUI>();
