@@ -36,7 +36,12 @@ public class PlayerController : MonoBehaviour
     public float InkLevel => inkLevel;
     public bool IsSquid => swimMode;
     public bool IsDead => isDead;
-    public bool IsInInk => swimMode && (surfaceTeam == team || (isClimbing && climbSurfaceTeam == team));
+    // Suppresses wall-ink status for a brief window right after a wall-jump, regardless of
+    // whether the sensor still detects the wall (it can, for the whole jump arc, if the wall
+    // stays in range) — without this, jumping off a wall didn't count as leaving its ink
+    // until the sensor eventually lost contact, which could be well after landing elsewhere.
+    bool InWallJumpGrace => Time.time < wallJumpGraceUntil;
+    public bool IsInInk => swimMode && (surfaceTeam == team || (!InWallJumpGrace && isClimbing));
     public float SlopeLimit => controller.slopeLimit;
     float realSpeed, airSpeed, cameraPitch = 0.0f, velocityY = 0.0f;
     CharacterController controller = null;
@@ -44,13 +49,24 @@ public class PlayerController : MonoBehaviour
     [SerializeField] Material mat;
     [SerializeField] float groundStickForce = 3f; // keeps the capsule pressed onto slopes instead of separating/reacquiring each frame
     [SerializeField] float climbSlideCap = 3f; // max gravity slide speed while climbing — kept well below realSpeed so gravity slows a climb, never fully arrests it
-    [SerializeField] float climbJumpScale = 0.4f; // wall kick-off strength while climbing, as a fraction of the normal jump impulse
+    [SerializeField] float climbJumpScale = 0.4f; // wall kick-off strength while ejecting from a climb (jump pressed while descending), as a fraction of the normal jump impulse
+    [SerializeField] float climbBoostScale = 0.5f; // upward boost strength while staying on the wall (jump pressed while climbing/holding still), as a fraction of the normal jump impulse
+    [SerializeField] float wallJumpGraceDuration = 0.3f; // how long after a wall-jump the player is forced out of wall-ink/climb state
+    float wallJumpGraceUntil = -1f;
     bool isClimbing;
     bool wasClimbing;
+    int missedWallFrames;
+    [SerializeField] int missedWallGrace = 3; // consecutive frames the wall can go undetected before actually dropping climb contact
+    [SerializeField] float climbNormalSmoothing = 15f; // how fast climbNormal eases toward a newly-detected normal once already climbing
     Vector3 climbNormal;
-    int climbSurfaceTeam;
+    SurfaceInkManager climbInk; // set by WallClimbSensor alongside climbNormal; used to indent the wall's normal map while climbing
+    Vector2 climbInkUV;
     bool prevInOwnInk;
     float lastExitSplatTime = -1f;
+    float lastEnterSplatTime = -1f;
+    [SerializeField] float fallSplashMinHeight = 0.5f; // minimum fall distance to trigger a landing-in-ink splash
+    float lastGroundedY;
+    bool wasGroundedPrev;
     bool effectivelyClimbing;
     SurfaceInkManager groundInk; // cached each frame by GetInkTeam; also used to indent the swim trail
     Vector2 groundInkUV;
@@ -175,6 +191,8 @@ public class PlayerController : MonoBehaviour
         if (isDead) return;
 
         float prevHeight = controller.height;
+        float prevRadius = controller.radius;
+        bool wasClimbingWall = wasClimbing; // captured before this frame's climbing state is recomputed below
         if(input.Movement.Squidmode.ReadValue<float>() != 0){
             swimMode = true;
             controller.height = 0.1f;
@@ -195,7 +213,24 @@ public class PlayerController : MonoBehaviour
             // the ground across the transition without moving the origin (or viewmodels, which
             // sit at a fixed local offset from it) every frame.
             transform.position += Vector3.up * ((controller.height - prevHeight) / 2f);
+
+            // Radius grows a lot too (0.1 -> 0.5). If that happens while still flush against a
+            // wall (leaving swim mode mid-climb), the much wider capsule spawns overlapping the
+            // wall and CharacterController's own push-out resolution can leave the player
+            // visibly jammed/stuck instead of cleanly separated. Push away from the wall we were
+            // just on by the radius growth (plus a skin-width margin) to avoid that overlap.
+            if (wasClimbingWall && controller.radius > prevRadius)
+                transform.position += climbNormal * (controller.radius - prevRadius + controller.skinWidth);
         }
+        bool enteredSwimModeThisFrame = swimMode && controller.height != prevHeight;
+
+        // Track grounded transitions for the "entered ink from a fall" splash trigger below.
+        bool grounded = controller.isGrounded;
+        bool justLanded = grounded && !wasGroundedPrev;
+        float fallHeight = justLanded ? lastGroundedY - transform.position.y : 0f;
+        if (grounded) lastGroundedY = transform.position.y;
+        wasGroundedPrev = grounded;
+
         gameObject.layer = swimMode ? 11 : 7;
         realSpeed = 6;
         if(surfaceTeam != 0){ // if standing on ink
@@ -216,11 +251,21 @@ public class PlayerController : MonoBehaviour
         currentDir = Vector2.SmoothDamp(currentDir, targetDir, ref currentDirVelocity, moveSmoothTime);
 
         // Eject from climbing when we've descended to the floor at the base of a wall.
-        // The sensor keeps reporting contact while the trigger overlaps the wall, so we
-        // gate on "grounded and not actively climbing up" rather than on sensor state.
-        // Holding up (currentDir.y > 0) still lets the player mount a wall from the ground.
-        bool atWallBase = controller.isGrounded && currentDir.y <= 0.01f;
-        bool climbing = swimMode && isClimbing && climbSurfaceTeam == team && !atWallBase;
+        bool wantsToClimb = currentDir.y > 0.01f;
+        bool atWallBase = controller.isGrounded && !wantsToClimb;
+        // Entering a climb requires actively pressing up into the wall. Without this,
+        // merely becoming airborne near a climbable surface (e.g. walking off a ledge with
+        // an inked wall below it) already satisfied the old check on its own and pulled the
+        // player onto/down the wall instead of just letting them fall. Once already
+        // climbing, atWallBase alone still governs staying attached, so climbing down or
+        // passively sliding (climbSlideCap) doesn't require continuously holding up.
+        // inWallJumpGrace forces a brief window of "definitely not climbing" right after a
+        // wall-jump so the sensor can't immediately re-engage it before the jump carries the
+        // player away.
+        bool canEngageClimb = !InWallJumpGrace && (wasClimbing ? !atWallBase : wantsToClimb);
+        // isClimbing already means "own-team wall right here" — team filtering happens at
+        // acquisition in WallClimbSensor now, nothing left to check here.
+        bool climbing = swimMode && isClimbing && canEngageClimb;
         effectivelyClimbing = climbing;
         if (climbing)
         {
@@ -244,35 +289,61 @@ public class PlayerController : MonoBehaviour
                      - wallRight *  currentDir.x * realSpeed
                      - climbNormal * 2f;
             controller.Move(velocity * Time.deltaTime);
-            return;
+            // No forced yaw/camera rotation here — WallClimbSensor re-detects the closest wall
+            // fresh every frame regardless of which way the player is facing, so movement and
+            // visuals (UpdateViewmodels/UpdateSquidTrail) can just read the current climbNormal
+            // directly without needing the player's actual facing to track the wall at all.
+        }
+        else
+        {
+            // Leaving wall: discard any negative wall-slide velocity so it doesn't carry into freefall.
+            if (wasClimbing) velocityY = Mathf.Max(velocityY, 0f);
+            wasClimbing = false;
+
+            controller.slopeLimit = 45f;
+            controller.stepOffset = swimMode ? 0f : 0.3f; // disable step logic in squid mode to avoid "bouncing" off walls
+            velocityY += (gravity * 3) * Time.deltaTime;
+            if (controller.isGrounded)
+            {
+                airSpeed = realSpeed;
+                // A small constant downward "stick" instead of zeroing velocityY keeps the
+                // capsule pressed onto sloped ground (see groundStickForce). Guarded on
+                // velocityY <= 0 so it never stomps a jump impulse applied earlier this same
+                // frame — Jump()'s input callback fires before this runs, and the character
+                // hasn't physically left the ground yet by the time this check happens, so an
+                // unguarded reset here cancelled every jump before Move() could apply it.
+                if (velocityY <= 0f) velocityY = -groundStickForce;
+            }
+
+            if (velocityY > 10){ velocityY = 10; }
+            float hSpeed = controller.isGrounded ? realSpeed : airSpeed;
+            velocity = (transform.forward * currentDir.y + transform.right * currentDir.x) * hSpeed + Vector3.up * velocityY;
+            controller.Move(velocity * Time.deltaTime);
         }
 
-        // Leaving wall: discard any negative wall-slide velocity so it doesn't carry into freefall.
-        if (wasClimbing) velocityY = Mathf.Max(velocityY, 0f);
-        wasClimbing = false;
+        // Spawn a splash when transitioning into or out of own ink while swimming. Runs every
+        // frame regardless of climbing state — this used to sit after the climbing branch's
+        // early return, so prevInOwnInk froze for the whole duration of a climb and only
+        // caught up the instant climbing ended, firing the exit splash wherever that happened
+        // to be (e.g. on landing somewhere unrelated after a wall-jump) instead of at the wall.
+        // !InWallJumpGrace: a wall-jump counts as leaving the ink immediately, regardless of
+        // whether the sensor still detects the wall for the rest of the jump's arc.
+        bool onWallInk = !InWallJumpGrace && isClimbing;
+        bool inOwnInkNow = swimMode && team != 0 && (surfaceTeam == team || onWallInk);
+        Vector3 inkNormal = onWallInk ? climbNormal : groundNormal;
 
-        controller.slopeLimit = 45f;
-        controller.stepOffset = swimMode ? 0f : 0.3f; // disable step logic in squid mode to avoid "bouncing" off walls
-        velocityY += (gravity * 3) * Time.deltaTime;
-        // A small constant downward "stick" instead of zeroing velocityY keeps the capsule
-        // pressed onto sloped ground. Zeroing it outright lets the capsule separate from a
-        // downward slope for a frame (it fell exactly 0 while the floor dropped away), then
-        // reacquire with a visible snap next frame — worse the steeper/faster the descent.
-        if (controller.isGrounded){ velocityY = -groundStickForce; airSpeed = realSpeed; }
-
-        if (velocityY > 10){ velocityY = 10; }
-        float hSpeed = controller.isGrounded ? realSpeed : airSpeed;
-        velocity = (transform.forward * currentDir.y + transform.right * currentDir.x) * hSpeed + Vector3.up * velocityY;
-        controller.Move(velocity * Time.deltaTime);
-
-        // Spawn a splash when transitioning into or out of own ink while swimming.
-        bool inOwnInkNow = swimMode && team != 0 && (surfaceTeam == team || (isClimbing && climbSurfaceTeam == team));
-        Vector3 inkNormal = (isClimbing && climbSurfaceTeam == team) ? climbNormal : groundNormal;
-
-        if (!prevInOwnInk && inOwnInkNow)
+        // Deliberately NOT "any transition into ink" (prevInOwnInk-based) — that fired every
+        // time isClimbing flickered true on a wall, which is continuously, the whole time
+        // you're pressed against one. Only two specific triggers: entering swim mode while
+        // already standing on own ink, or landing on own ink from a meaningful fall. Neither
+        // can be satisfied by wall-climbing at all.
+        bool enteredSwimModeOnInk  = enteredSwimModeThisFrame && surfaceTeam == team;
+        bool landedOnInkFromHeight = justLanded && surfaceTeam == team && fallHeight > fallSplashMinHeight;
+        if ((enteredSwimModeOnInk || landedOnInkFromHeight) && Time.time - lastEnterSplatTime >= 0.2f)
         {
+            lastEnterSplatTime = Time.time;
             InkParticles.Spawn(swimSplashParticlesPrefab, transform.position + controller.center,
-                Quaternion.FromToRotation(Vector3.up, inkNormal), teamColor);
+                Quaternion.FromToRotation(Vector3.up, groundNormal), teamColor);
         }
 
         // The && swimMode guard prevents triggering when the player leaves swim mode while still on ink.
@@ -324,14 +395,24 @@ public class PlayerController : MonoBehaviour
 
     public void Respawn()
     {
+        Vector3 pos;
+        // try/finally so any exception between disabling and re-enabling the controller
+        // (e.g. FindGameObjectsWithTag throwing if a spawn tag is ever missing/renamed)
+        // can't leave it permanently disabled with no other code path to recover it.
         controller.enabled = false;
-        string tag = team == 1 ? "AlphaSpawn" : "BetaSpawn";
-        GameObject[] pts = GameObject.FindGameObjectsWithTag(tag);
-        Vector3 pos = pts.Length > 0
-            ? pts[Random.Range(0, pts.Length)].transform.position
-            : spawnPoint;
-        transform.position = pos;
-        controller.enabled = true;
+        try
+        {
+            string tag = team == 1 ? "AlphaSpawn" : "BetaSpawn";
+            GameObject[] pts = GameObject.FindGameObjectsWithTag(tag);
+            pos = pts.Length > 0
+                ? pts[Random.Range(0, pts.Length)].transform.position
+                : spawnPoint;
+            transform.position = pos;
+        }
+        finally
+        {
+            controller.enabled = true;
+        }
         velocityY  = 0f;
         velocity   = Vector3.zero;
         isClimbing = false;
@@ -396,8 +477,9 @@ public class PlayerController : MonoBehaviour
         swimMode     = s.swimMode;
         isClimbing = s.climbing;
         effectivelyClimbing = s.climbing;
-        climbSurfaceTeam = s.climbing ? s.team : 0; // keep viewmodel "in own ink" logic happy
         // surfaceTeam is computed locally every frame by GetInkTeam (runs for remotes too).
+        // climbNormal/climbInk are NOT networked — WallClimbSensor keeps running locally for
+        // remote entities too (see below) and supplies them independently for rendering.
 
         if (s.dead != isDead)
         {
@@ -480,6 +562,11 @@ public class PlayerController : MonoBehaviour
             Vector3 wallUp    = Vector3.Cross(climbNormal, wallRight).normalized;
             moveDir = (wallUp * currentDir.y - wallRight * currentDir.x).normalized;
             upHint  = climbNormal; // trail lies flat on wall face
+
+            // Indent the wall's normal map along the climb path too, now that WallClimbSensor
+            // passes its own UV/SurfaceInkManager through SetClimbContact.
+            if (climbInk != null)
+                climbInk.PaintTrailNormal(climbInkUV, 4, 4, 0.01f);
         }
         else
         {
@@ -487,9 +574,7 @@ public class PlayerController : MonoBehaviour
             moveDir = Vector3.ProjectOnPlane(flatDir, groundNormal).normalized; // orthogonal to upHint, see UpdateViewmodels
             upHint  = groundNormal; // trail lies flat on the floor/slope
 
-            // Indent the ink's normal map along the swim path so you can see where players
-            // have swum. Floor only for now — wall climbing doesn't track the climbed
-            // surface's own UV/SurfaceInkManager, only groundInk from the downward raycast.
+            // Indent the ink's normal map along the swim path so you can see where players have swum.
             if (groundInk != null)
                 groundInk.PaintTrailNormal(groundInkUV, 4, 4, 0.01f);
         }
@@ -527,16 +612,46 @@ public class PlayerController : MonoBehaviour
         return true;
     }
 
-    public void SetClimbContact(Vector3 normal, int surfTeam)
+    // Called every frame by WallClimbSensor. isClimbing being true always means "there is a
+    // climbable wall of my own ink right here" — team filtering happens at acquisition in
+    // the sensor now, so there's nothing left to check here.
+    public void SetClimbContact(Vector3 normal, SurfaceInkManager wallInk, Vector2 wallUV)
     {
+        bool wasAlreadyClimbing = isClimbing;
         isClimbing = true;
-        climbNormal = normal;
-        climbSurfaceTeam = surfTeam;
+        missedWallFrames = 0;
+        // Smoothed rather than snapped once already climbing — a raycast against a (likely
+        // multi-triangle) mesh collider can report a slightly different face normal frame to
+        // frame even on a visually flat wall, since the closest hit can land on a different
+        // triangle as the player's position shifts by even a tiny amount while climbing.
+        // wallRight/wallUp (and so the actual movement) are derived from climbNormal via
+        // cross products, so any per-triangle noise there was propagating straight into
+        // visible position/rotation jitter. Smoothing filters that out while still tracking
+        // a real normal change (rounding a corner) within a fraction of a second. Snap
+        // immediately on first contact instead — there's no stale previous normal to blend
+        // from, and a fresh grab shouldn't visibly ease in.
+        climbNormal = wasAlreadyClimbing
+            ? Vector3.Slerp(climbNormal, normal, Time.deltaTime * climbNormalSmoothing)
+            : normal;
+        climbInk = wallInk;
+        climbInkUV = wallUV;
     }
 
+    // A single missed frame doesn't immediately drop climb contact — SurfaceInkManager's
+    // getSurfaceTeam is an async-cached GPU readback (one pending request at a time per
+    // surface), and the ring casts up to 12 rays a frame competing for that same slot, so a
+    // momentarily-stale team read could report "not my ink" for a frame even while genuinely
+    // still pressed against the same own-team wall. Without this grace window, that single
+    // false negative flipped isClimbing off and back on, which cascaded into IsInInk (and the
+    // squid camouflage hide/show it drives) visibly jittering while just standing still on a wall.
     public void ClearClimbContact()
     {
-        isClimbing = false;
+        missedWallFrames++;
+        if (missedWallFrames > missedWallGrace)
+        {
+            isClimbing = false;
+            climbInk = null;
+        }
     }
 
     void OnDestroy()
@@ -557,11 +672,29 @@ public class PlayerController : MonoBehaviour
     }
 
     void Jump(){
-        // Climbing already has its own vertical input (currentDir.y in the wall-move branch),
-        // so the full ground/ink jump impulse stacked on top and launched players off the
-        // wall far harder than intended — but zero response ("does nothing") over-corrected.
-        // A scaled-down kick-off gives a felt push without the original overpowered launch.
-        if (effectivelyClimbing) { velocityY += jump * 2 * climbJumpScale; return; }
+        if (effectivelyClimbing)
+        {
+            // Same term the climbing branch itself uses for wallUp's coefficient — negative
+            // means we're currently descending the wall (holding down, or just sliding via
+            // climbSlideCap with no input at all).
+            float wallClimbSpeed = currentDir.y * realSpeed + velocityY;
+            if (wallClimbSpeed < 0f)
+            {
+                // Jumping while descending ejects from the wall entirely — pressing jump on
+                // the way down reads as "get me off this wall", not "climb faster".
+                velocityY += jump * 2 * climbJumpScale;
+                // Counts as immediately leaving the wall's ink — see InWallJumpGrace.
+                wallJumpGraceUntil = Time.time + wallJumpGraceDuration;
+            }
+            else
+            {
+                // Otherwise (climbing up, or holding still) jump is a boost that keeps us on
+                // the wall — press it repeatedly to climb faster. No wall-jump grace here:
+                // we're deliberately staying attached, not leaving.
+                velocityY += jump * climbBoostScale;
+            }
+            return;
+        }
         // Unified to the same signal UpdateMovement uses for gravity/ground resolution —
         // previously Jump() read a separate raycast-derived bool that (like the raycast
         // itself) went stale in swim mode once the capsule wasn't recentring on shrink.

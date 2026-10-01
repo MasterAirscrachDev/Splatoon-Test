@@ -1,98 +1,114 @@
 using UnityEngine;
-using System.Collections.Generic;
 
-// Place this on the sphere trigger child of the player.
-// Probes 8 horizontal directions to detect nearby inked walls regardless of
-// whether the sphere centre is inside the wall collider's bounds.
-[RequireComponent(typeof(Collider))]
+// Detects a climbable wall via a ring of short horizontal raycasts, evaluated fresh every
+// frame from the player's current position — no persistent trigger/collider state at all.
+// A trigger's Enter/Exit events fire for whichever collider bounds overlap a (necessarily
+// generous) sphere, so it could keep reporting contact with a wall the player had already
+// moved past — e.g. going around a corner. Recasting fresh every frame means the detected
+// wall (and its normal) always reflects exactly where the player is right now: corners are
+// picked up immediately, there's no need to force the player/camera to face the wall (both
+// movement and visuals just read whatever's current), and a wall stops being "climbable" the
+// instant it's no longer within short range, not whenever a trigger happens to fire Exit.
 public class WallClimbSensor : MonoBehaviour
 {
-    PlayerController player;
-
+    [SerializeField] int rayCount = 12;
+    [SerializeField] float probeDistance = 0.75f; // short — only counts walls immediately adjacent
     // Extra margin above the CharacterController's own slopeLimit before a surface counts as
-    // climbable. Without this gap, a slope sitting almost exactly at slopeLimit could read as
-    // "walkable" to the controller one frame and "climbable" to this sensor the next — the
-    // controller's own ground handling is unreliable right at that boundary, so the two
-    // systems could disagree and flicker between walking and climbing on the same slope.
+    // climbable, so this sensor can't disagree with what the controller itself treats as a
+    // walkable floor/slope.
     [SerializeField] float climbMarginDeg = 5f;
+    [SerializeField] LayerMask raycastMask = ~0;
+    [SerializeField] bool debugDraw = true;
 
-    // Tracks how many ink surfaces are currently inside the trigger
-    // so exiting one wall doesn't clear contact while another is still active.
-    readonly HashSet<Collider> activeContacts = new HashSet<Collider>();
-
-    // 8 horizontal probe directions (world-space)
-    static readonly Vector3[] Probes = {
-        Vector3.forward, Vector3.back, Vector3.left, Vector3.right,
-        new Vector3( 1, 0,  1).normalized, new Vector3( 1, 0, -1).normalized,
-        new Vector3(-1, 0,  1).normalized, new Vector3(-1, 0, -1).normalized,
-    };
+    PlayerController player;
 
     void Awake()
     {
         player = GetComponentInParent<PlayerController>();
-        GetComponent<Collider>().isTrigger = true;
     }
 
-    void OnTriggerEnter(Collider other)
-    {
-        if (other.GetComponent<SurfaceInkManager>() != null)
-            activeContacts.Add(other);
-    }
-
-    void OnTriggerStay(Collider other)
+    void Update()
     {
         if (player == null) return;
-        SurfaceInkManager ink = other.GetComponent<SurfaceInkManager>();
-        if (ink == null)
-        {
-            // Orange: collider in trigger but no SurfaceInkManager
-            Debug.DrawLine(transform.position, other.bounds.center, Color.yellow);
-            return;
-        }
 
-        Vector3 origin = transform.position;
-        foreach (var dir in Probes)
-        {
-            if (!other.Raycast(new Ray(origin - dir * 2f, dir), out RaycastHit hit, 3f))
-                continue;
-
-            // Anything the CharacterController itself would treat as walkable ground (plus a
-            // margin) is never a climbable wall, so the sensor stays in sync with slopeLimit
-            // instead of using an independent hardcoded cutoff.
-            float climbThreshold = Mathf.Cos((player.SlopeLimit + climbMarginDeg) * Mathf.Deg2Rad);
-            if (Mathf.Abs(hit.normal.y) > climbThreshold)
-            {
-                // White: hit something but it's a floor/ceiling/shallow slope, not a wall
-                Debug.DrawLine(origin, hit.point, Color.white);
-                continue;
-            }
-
-            Vector2 uv = hit.textureCoord.sqrMagnitude > 0.0001f
-                ? hit.textureCoord
-                : FallbackUV(hit, ink);
-
-            int surfTeam = ink.getSurfaceTeam(uv);
-            if (surfTeam == player.Team)
-            {
-                // Green: wall detected and ink matches our team → climbing active
-                Debug.DrawLine(origin, hit.point, Color.green);
-            }
-            else
-            {
-                // Red: wall detected but wrong team (or unpainted)
-                Debug.DrawLine(origin, hit.point, Color.red);
-            }
-
-            player.SetClimbContact(hit.normal, surfTeam);
-            return;
-        }
+        if (TryFindWall(out RaycastHit hit, out SurfaceInkManager ink, out Vector2 uv))
+            player.SetClimbContact(hit.normal, ink, uv);
+        else
+            player.ClearClimbContact();
     }
 
-    void OnTriggerExit(Collider other)
+    // Casts rayCount evenly-spaced horizontal rays (world-space, independent of the player's
+    // facing) outward from this transform, keeping the closest hit that's steep enough to
+    // count as a wall (not a floor/ceiling/shallow slope) AND belongs to the player's own
+    // team's ink. A wall of any other team, or unpainted, is not a valid climb target at all
+    // — filtered out here at acquisition rather than downstream, so isClimbing being true
+    // always means "there is a climbable wall of my own ink right here."
+    bool TryFindWall(out RaycastHit bestHit, out SurfaceInkManager bestInk, out Vector2 bestUV)
     {
-        activeContacts.Remove(other);
-        if (activeContacts.Count == 0)
-            player?.ClearClimbContact();
+        bestHit = default;
+        bestInk = null;
+        bestUV = Vector2.zero;
+
+        float climbThreshold = Mathf.Cos((player.SlopeLimit + climbMarginDeg) * Mathf.Deg2Rad);
+        Vector3 origin = transform.position;
+        bool found = false;
+        float bestDist = float.MaxValue;
+
+        for (int i = 0; i < rayCount; i++)
+        {
+            float angle = i * (360f / rayCount) * Mathf.Deg2Rad;
+            Vector3 dir = new Vector3(Mathf.Sin(angle), 0f, Mathf.Cos(angle));
+
+            if (!Physics.Raycast(origin, dir, out RaycastHit hit, probeDistance, raycastMask))
+            {
+                // Gray: nothing within probe range in this direction
+                if (debugDraw) Debug.DrawRay(origin, dir * probeDistance, new Color(0.5f, 0.5f, 0.5f));
+                continue;
+            }
+
+            SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
+            if (ink == null)
+            {
+                // Orange: hit something, but it's not an inkable surface at all
+                if (debugDraw) Debug.DrawLine(origin, hit.point, new Color(1f, 0.5f, 0f));
+                continue;
+            }
+
+            if (Mathf.Abs(hit.normal.y) > climbThreshold)
+            {
+                // White: inkable, but too shallow to count as a wall (floor/ceiling/slope)
+                if (debugDraw) Debug.DrawLine(origin, hit.point, Color.white);
+                continue;
+            }
+
+            Vector2 uv = hit.textureCoord.sqrMagnitude > 0.0001f ? hit.textureCoord : FallbackUV(hit, ink);
+            int surfTeam = ink.getSurfaceTeam(uv);
+            if (surfTeam != player.Team)
+            {
+                // Red: a climbable wall, but not our own ink
+                if (debugDraw) Debug.DrawLine(origin, hit.point, Color.red);
+                continue;
+            }
+
+            // Green: a valid climb candidate this ray
+            if (debugDraw) Debug.DrawLine(origin, hit.point, Color.green);
+
+            if (hit.distance >= bestDist) continue; // valid, but not the closest one so far
+
+            found = true;
+            bestDist = hit.distance;
+            bestHit = hit;
+            bestInk = ink;
+            bestUV = uv;
+        }
+
+        // Cyan: the winning hit — this frame's actual climbNormal, drawn along the surface
+        // normal so it's easy to see both where the sensor thinks the wall is and which way
+        // it thinks it faces.
+        if (debugDraw && found)
+            Debug.DrawRay(bestHit.point, bestHit.normal * 0.5f, Color.cyan);
+
+        return found;
     }
 
     static Vector2 FallbackUV(RaycastHit hit, SurfaceInkManager inkManager)
