@@ -106,6 +106,11 @@ public class LoadoutMenu : MonoBehaviour
             Sprinkler s = loadout.SprinklerPrefab;
             return $"Thrown. Sticks where it lands and spins, spraying ink both ways, winding down over {s.Lifetime:0}s. {s.MaxHealth:0} HP.";
         }
+        if (loadout.Sub == SubType.CurlingBomb && loadout.CurlingBombPrefab != null)
+        {
+            CurlingBomb c = loadout.CurlingBombPrefab;
+            return $"Slides along the ground inking a stripe, bouncing off walls; {c.PassDamage:0} damage to anyone it passes. Explodes after {c.Fuse:0}s for {c.BlastDamage:0} damage. Hold the button to shorten the fuse.";
+        }
         return "";
     }
 

@@ -16,7 +16,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     [SerializeField] float swimSpeed = 10.0f;
     [SerializeField] bool lockCursor = true;
     [SerializeField] Vector3 velocity;
-    [SerializeField] GameObject ViewmodelPlayer, ViewmodelSquid, SquidTrail, InkTankScaler;
+    [SerializeField] GameObject ViewmodelPlayer, ViewmodelSquid, InkTankScaler;
     [SerializeField] GameObject InkExitSplashPrefab;
     [SerializeField] GameObject swimSplashParticlesPrefab;
     [SerializeField] Material mat;
@@ -229,13 +229,6 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         {
             Renderer r = InkTankScaler.GetComponentInChildren<Renderer>();
             if (r != null) r.material.color = teamColor;
-        }
-        if (SquidTrail != null)
-        {
-            Renderer tr = SquidTrail.GetComponentInChildren<Renderer>(true);
-            if (tr != null) tr.material.color = teamColor;
-            ParticleSystem ps = SquidTrail.GetComponentInChildren<ParticleSystem>(true);
-            if (ps != null) { var m = ps.main; m.startColor = teamColor; }
         }
         if (ViewmodelSquid != null && ViewmodelSquid.transform.childCount > 0)
         {
@@ -530,7 +523,6 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     {
         if (ViewmodelPlayer != null) ViewmodelPlayer.SetActive(false);
         if (ViewmodelSquid  != null) ViewmodelSquid.SetActive(false);
-        if (SquidTrail      != null) SquidTrail.SetActive(false);
     }
 
     void ShowModels()
@@ -802,23 +794,17 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         return Quaternion.LookRotation(dir, up);
     }
 
+    // Swimming through ink: SwimWake lays the wake, and the ink's normal map is indented along the path.
+    public bool Wading => !isDead && swimMode && IsInInk && currentDir.magnitude > 0.05f;
+
+    // The surface's normal under the squid (the floor's, or the wall's while climbing).
+    public Vector3 SwimUp { get { GetSwimPose(out _, out Vector3 up); return up; } }
+
     void UpdateSquidTrail()
     {
-        if (isDead || SquidTrail == null) return;
-        float moveMag = currentDir.magnitude;
-        bool show     = swimMode && IsInInk && moveMag > 0.05f;
-
-        SquidTrail.SetActive(show);
-        if (!show) return;
-
-        GetSwimPose(out Vector3 moveDir, out Vector3 upHint);
-        // Indent the ink's normal map along the swim path.
+        if (!Wading) return;
         if (effectivelyClimbing) { if (climbInk != null) climbInk.PaintTrailNormal(climbInkUV, 4, 4, 0.01f); }
         else if (groundInk != null) groundInk.PaintTrailNormal(groundInkUV, 4, 4, 0.01f);
-
-        if (moveDir.sqrMagnitude > 0.001f)
-            SquidTrail.transform.rotation = Quaternion.LookRotation(moveDir, upHint);
-        SquidTrail.transform.localScale = Vector3.one * moveMag;
     }
 
     // Movement direction and up vector for the squid and trail, flat on the wall or floor/slope.

@@ -38,7 +38,12 @@ public abstract class SubDevice : MonoBehaviour
         health = maxHealth;
         expiresAt = Time.time + lifetime;
         all.Add(this);
+        TintParts(team);
+    }
 
+    // The team-coloured parts.
+    protected void TintParts(int team)
+    {
         NetGameManager gm = NetGameManager.Instance;
         Color colour = gm == null ? Color.white : team == 2 ? gm.BetaTeam : gm.AlphaTeam;
         var block = new MaterialPropertyBlock();
@@ -82,6 +87,14 @@ public abstract class SubDevice : MonoBehaviour
         broken = true;
         all.Remove(this);
         Destroy(gameObject);
+    }
+
+    // Gone as far as the game's concerned (out of the registry) but kept for `delay` seconds to finish an effect.
+    protected void Retire(float delay)
+    {
+        broken = true;
+        all.Remove(this);
+        Destroy(gameObject, delay);
     }
 
     public void ExpireIn(float seconds) => expiresAt = Time.time + seconds; // tests

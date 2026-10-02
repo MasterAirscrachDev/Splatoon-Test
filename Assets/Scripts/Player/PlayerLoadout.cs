@@ -4,7 +4,8 @@ using UnityEngine;
 // Main weapon, sub and special. The main weapon and sub are picked in the loadout menu (and
 // remembered); weapons are prefabs, equipped under the weapon mount (remote copies follow the
 // owner's choice from their state updates). Subs cost a fixed share of the ink tank: a beacon is placed in front of the player,
-// a sprinkler is thrown. The special (bubble shield) charges from turf inked and damage dealt,
+// a sprinkler is thrown, a curling bomb slides off along the aim (holding the button first runs its
+// fuse down). The special (bubble shield) charges from turf inked and damage dealt,
 // refills the tank and makes the player immune to damage for a few seconds; or the Inkstrike,
 // called in on a spot picked from the map. Specials charge from turf inked and damage dealt, and
 // refill the tank. Lives on remote copies too, for their visuals, subs and strikes.
@@ -23,6 +24,10 @@ public class PlayerLoadout : MonoBehaviour
     [SerializeField] Sprinkler sprinklerPrefab;    // as is the sprinkler's
     [SerializeField] float throwSpeed = 11f;       // along the aim, plus an upward lob
     [SerializeField] float throwLift = 4f;
+
+    [Header("Sub: curling bomb")]
+    [SerializeField] CurlingBomb curlingBombPrefab; // as is the curling bomb's (and its fuse)
+    [SerializeField] Vector3 holdOffset = new Vector3(0.6f, 0.45f, 0.2f); // in hand (at our right side) while its fuse is held down
 
     [Header("Sub ready light")]
     [SerializeField] Light subReadyLight;          // on the ink tank: lit while there's ink for the sub
@@ -48,8 +53,11 @@ public class PlayerLoadout : MonoBehaviour
     public Weapon CurrentWeapon => equipped; // the instance in our hands
     public Beacon BeaconPrefab => beaconPrefab;
     public Sprinkler SprinklerPrefab => sprinklerPrefab;
+    public CurlingBomb CurlingBombPrefab => curlingBombPrefab;
+    public CurlingBomb HeldBomb => held;            // cooking in our hand
+    public CurlingBomb LastBomb { get; private set; } // tests
     public SubType Sub => sub;
-    public string SubName => sub == SubType.Beacon ? "BEACON" : "SPRINKLER";
+    public string SubName => sub == SubType.Beacon ? "BEACON" : sub == SubType.Sprinkler ? "SPRINKLER" : "CURLING";
     public SpecialType Special => special;
     public string SpecialName => special == SpecialType.BubbleShield ? "BUBBLE" : "INKSTRIKE";
     public InkStrike InkStrikePrefab => inkStrikePrefab;
@@ -58,7 +66,7 @@ public class PlayerLoadout : MonoBehaviour
     public Light SubReadyLight => subReadyLight;
     public float InkCost(SubType type)
     {
-        SubDevice prefab = type == SubType.Beacon ? beaconPrefab : sprinklerPrefab;
+        SubDevice prefab = type == SubType.Beacon ? beaconPrefab : type == SubType.Sprinkler ? sprinklerPrefab : (SubDevice)curlingBombPrefab;
         return prefab != null ? prefab.InkCost : 1f;
     }
     public bool CanUseSub => player.InkLevel >= SubInkCost;
@@ -78,6 +86,7 @@ public class PlayerLoadout : MonoBehaviour
     bool wasDead;
     readonly List<Beacon> ownBeacons = new List<Beacon>(); // oldest first
     Sprinkler ownSprinkler;                                // one at a time
+    CurlingBomb held;
     Vector3 shieldScale;
     int shieldTintTeam = -1, shieldTintPair = -1;
 
@@ -104,7 +113,8 @@ public class PlayerLoadout : MonoBehaviour
         SetSpecial((SpecialType)PlayerPrefs.GetInt(SpecialPref, (int)SpecialType.BubbleShield));
         input = new ControlLayer();
         input.Weapon.Enable();
-        input.Weapon.Sub.performed += _ => { if (!InputGate.Blocked) UseSub(); };
+        input.Weapon.Sub.performed += _ => { if (!InputGate.Blocked) PressSub(); };
+        input.Weapon.Sub.canceled += _ => ReleaseSub();
         input.Weapon.Special.performed += _ => { if (!InputGate.Blocked) UseSpecial(); };
         SurfaceInkManager.OnTurfInked += OnTurfInked;
     }
@@ -126,6 +136,7 @@ public class PlayerLoadout : MonoBehaviour
             player.Shielded = Time.time < shieldUntil && !player.IsDead;
             player.SpecialCharged = SpecialReady;
             player.SubReady = CanUseSub && !player.IsDead;
+            UpdateHeldBomb();
         }
         else if (player.WeaponIndex != equippedIndex) Equip(player.WeaponIndex); // they switched
         UpdateShieldVisual();
@@ -173,10 +184,51 @@ public class PlayerLoadout : MonoBehaviour
 
     // ── Sub ────────────────────────────────────────────────────────────────
 
+    bool CanStartSub => player.IsLocalPlayer && !player.IsDead && !player.IsRespawning && !player.IsSuperJumping && player.Team != 0 && !InputGate.MatchLocked && CanUseSub;
+
+    // Press and release at once (a curling bomb goes with its full fuse).
     public bool UseSub()
     {
-        if (!player.IsLocalPlayer || player.IsDead || player.IsRespawning || player.IsSuperJumping || player.Team == 0 || InputGate.MatchLocked || !CanUseSub) return false;
+        if (!CanStartSub) return false;
+        if (sub == SubType.CurlingBomb) return PressSub() && ReleaseSub();
         return sub == SubType.Beacon ? PlaceBeacon() : ThrowSprinkler();
+    }
+
+    // The sub button went down: most subs go now; a curling bomb is taken in hand, its fuse running.
+    public bool PressSub()
+    {
+        if (sub != SubType.CurlingBomb) return UseSub();
+        if (!CanStartSub || held != null || curlingBombPrefab == null) return false;
+        held = Instantiate(curlingBombPrefab, player.transform);
+        held.transform.localPosition = holdOffset;
+        held.transform.localRotation = Quaternion.identity;
+        held.Hold(player.Team);
+        return true;
+    }
+
+    // The sub button came up: a held curling bomb is thrown with what's left of its fuse.
+    public bool ReleaseSub()
+    {
+        if (held == null) return false;
+        CurlingBomb bomb = held;
+        held = null;
+        if (!CanStartSub || !player.ConsumeInk(InkCost(SubType.CurlingBomb))) { Destroy(bomb.gameObject); return false; }
+        Transform aim = player.CameraRig != null ? player.CameraRig : player.transform;
+        bomb.transform.SetParent(null, true);
+        bomb.transform.rotation = Quaternion.identity;
+        bomb.Init(player.OwnerId, nextSubId++, player.Team, ownedLocally: true);
+        bomb.Launch(bomb.ThrowVelocity(aim.forward), Mathf.Max(bomb.MinFuse, bomb.FuseLeft));
+        LastBomb = bomb;
+        NetGameManager.Instance?.SendSubSpawn(bomb);
+        return true;
+    }
+
+    // Held too long, it goes by itself; dying (or anything else that stops us acting) drops it unused.
+    void UpdateHeldBomb()
+    {
+        if (held == null) return;
+        if (player.IsDead || player.IsRespawning || player.IsSuperJumping || InputGate.MatchLocked) { Destroy(held.gameObject); held = null; return; }
+        if (held.FuseLeft <= held.MinFuse) ReleaseSub();
     }
 
     // On the ground in front of the player; needs a spot to stand it on.
@@ -229,9 +281,17 @@ public class PlayerLoadout : MonoBehaviour
     {
         SubDevice existing = SubDevice.Find(d.ownerId, d.subId);
         if (existing is Sprinkler landing && d.landed) { landing.Land(d.position, d.normal); return; }
+        if (existing is CurlingBomb bounced) { bounced.Resync(d.position, d.velocity, d.fuse); return; }
         if (existing != null) return;
 
-        if ((SubType)d.subType == SubType.Sprinkler)
+        if ((SubType)d.subType == SubType.CurlingBomb)
+        {
+            if (curlingBombPrefab == null) return;
+            CurlingBomb b = Instantiate(curlingBombPrefab, d.position, Quaternion.identity);
+            b.Init(d.ownerId, d.subId, d.team, ownedLocally: false);
+            b.Launch(d.velocity, d.fuse);
+        }
+        else if ((SubType)d.subType == SubType.Sprinkler)
         {
             if (sprinklerPrefab == null) return;
             Sprinkler s = Instantiate(sprinklerPrefab, d.position, Quaternion.identity);

@@ -11,6 +11,8 @@ public static class LoadoutBuilder
     const string ColumnMeshPath = "Assets/Models/InkStrike.fbx";       // the InkStrike's central column
     const string ColumnMaterialPath = "Assets/Materials/InkShape.mat";
     const string SprinklerPath = "Assets/Prefabs/Sprinkler.prefab";
+    const string CurlingBombPath = "Assets/Prefabs/CurlingBomb.prefab";
+    const string BlastMatPath = "Assets/Materials/SwimWakeLit.mat"; // the curling bomb's blast: lit ink
     const string InkStrikePath = "Assets/Prefabs/InkStrike.prefab";
     const string ProjectilePath = "Assets/Prefabs/Projectile.prefab";
     const string AirsprayPath = "Assets/Prefabs/Weapons/AirspraySE.prefab";
@@ -27,10 +29,12 @@ public static class LoadoutBuilder
         if (beacon == null) beacon = BuildBeacon();
         Sprinkler sprinkler = AssetDatabase.LoadAssetAtPath<Sprinkler>(SprinklerPath);
         if (sprinkler == null) sprinkler = BuildSprinkler();
+        CurlingBomb curling = AssetDatabase.LoadAssetAtPath<CurlingBomb>(CurlingBombPath);
+        if (curling == null) curling = BuildCurlingBomb();
         Material bubble = EnsureMaterial(BubbleMatPath, "Ink/Bubble", null);
         InkStrike strike = AssetDatabase.LoadAssetAtPath<InkStrike>(InkStrikePath);
         if (strike == null) strike = BuildInkStrike(bubble);
-        AddToPlayer(beacon, sprinkler, strike, bubble);
+        AddToPlayer(beacon, sprinkler, curling, strike, bubble);
         AssetDatabase.SaveAssets();
         Debug.Log($"[Loadout] Loadout assets ready; updated {PlayerPath}");
     }
@@ -237,6 +241,43 @@ public static class LoadoutBuilder
         return saved.GetComponent<Sprinkler>();
     }
 
+    // A squat puck with a grip on top and a light that blinks faster as its fuse runs out, plus the
+    // blast sphere (hidden until it goes off). No collider: it can't be shot.
+    internal static CurlingBomb BuildCurlingBomb()
+    {
+        Material body = EnsureMaterial(BeaconBodyMatPath, "Standard", m => m.color = new Color(0.22f, 0.22f, 0.26f));
+        Material light = AssetDatabase.LoadAssetAtPath<Material>(BeaconLightMatPath);
+
+        var root = new GameObject("CurlingBomb");
+        var model = new GameObject("Body").transform;
+        model.SetParent(root.transform, false);
+        Part(PrimitiveType.Cylinder, "Puck", model, new Vector3(0f, 0.12f, 0f), new Vector3(0.6f, 0.11f, 0.6f), body);
+        Renderer band = Part(PrimitiveType.Cylinder, "Band", model, new Vector3(0f, 0.12f, 0f), new Vector3(0.63f, 0.04f, 0.63f), light);
+        Part(PrimitiveType.Cube, "Grip", model, new Vector3(0f, 0.3f, 0f), new Vector3(0.08f, 0.1f, 0.34f), body);
+        Renderer blinker = Part(PrimitiveType.Sphere, "Light", model, new Vector3(0f, 0.25f, 0.16f), Vector3.one * 0.1f, light);
+
+        Renderer blastSphere = Part(PrimitiveType.Sphere, "Blast", root.transform, new Vector3(0f, 0.3f, 0f), Vector3.one, AssetDatabase.LoadAssetAtPath<Material>(BlastMatPath));
+        blastSphere.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        blastSphere.gameObject.SetActive(false);
+
+        CurlingBomb bomb = root.AddComponent<CurlingBomb>();
+        var so = new SerializedObject(bomb);
+        so.FindProperty("inkCost").floatValue = 0.7f;
+        SerializedProperty tinted = so.FindProperty("teamTinted");
+        tinted.arraySize = 1;
+        tinted.GetArrayElementAtIndex(0).objectReferenceValue = band;
+        so.FindProperty("blinker").objectReferenceValue = blinker;
+        so.FindProperty("blast").objectReferenceValue = blastSphere.transform;
+        so.FindProperty("body").objectReferenceValue = model;
+        var projectile = AssetDatabase.LoadAssetAtPath<ProjectileVisual>(ProjectilePath);
+        if (projectile != null) so.FindProperty("blastParticles").objectReferenceValue = projectile.SplashParticles;
+        so.ApplyModifiedPropertiesWithoutUndo();
+
+        GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, CurlingBombPath);
+        Object.DestroyImmediate(root);
+        return saved.GetComponent<CurlingBomb>();
+    }
+
     // A small post with a spinning team-coloured light on top. Only the root's trigger collides
     // (on the Hitbox layer, so projectiles hit it but movement and ink raycasts ignore it).
     static Beacon BuildBeacon()
@@ -300,7 +341,7 @@ public static class LoadoutBuilder
 
     // Adds PlayerLoadout (subs, weapon prefabs, mount) and the bubble shield to the player prefab.
     // The gun that used to be built into the player becomes the Airspray SE prefab.
-    static void AddToPlayer(Beacon beaconPrefab, Sprinkler sprinklerPrefab, InkStrike inkStrikePrefab, Material bubbleMat)
+    static void AddToPlayer(Beacon beaconPrefab, Sprinkler sprinklerPrefab, CurlingBomb curlingBombPrefab, InkStrike inkStrikePrefab, Material bubbleMat)
     {
         GameObject contents = PrefabUtility.LoadPrefabContents(PlayerPath);
         try
@@ -323,6 +364,7 @@ public static class LoadoutBuilder
             var so = new SerializedObject(loadout);
             so.FindProperty("beaconPrefab").objectReferenceValue = beaconPrefab;
             so.FindProperty("sprinklerPrefab").objectReferenceValue = sprinklerPrefab;
+            so.FindProperty("curlingBombPrefab").objectReferenceValue = curlingBombPrefab;
             so.FindProperty("inkStrikePrefab").objectReferenceValue = inkStrikePrefab;
             Weapon[] weapons = { airspray, inkshot };
             SerializedProperty list = so.FindProperty("weapons");

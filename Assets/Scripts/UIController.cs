@@ -3,7 +3,7 @@ using UnityEngine.UI;
 
 // The ink tank shown beside the player in swim form. With a tank material (UI/InkTank) the fill is
 // drawn by the shader: the ink level, a mark at the sub's cost, sloshing when the level jumps, the
-// surface tipping as the camera turns, and bubbles while it refills. Without one, the fill image is
+// surface tipping as the camera turns. Without one, the fill image is
 // scaled instead.
 public class UIController : MonoBehaviour
 {
@@ -18,19 +18,17 @@ public class UIController : MonoBehaviour
     [SerializeField] float tiltPerTurn = 0.0012f;   // surface slope per degree/second of camera turn
     [SerializeField] float tiltMax = 0.3f;
     [SerializeField] float tiltSpring = 90f, tiltDamping = 7f; // springy, so it wobbles back level
-    [SerializeField] float bubblesAtRefill = 0.25f; // refill rate (tanks/second) for full bubbles
 
     static readonly int FillId = Shader.PropertyToID("_Fill");
     static readonly int MarkId = Shader.PropertyToID("_Mark");
     static readonly int SloshId = Shader.PropertyToID("_Slosh");
     static readonly int TiltId = Shader.PropertyToID("_Tilt");
-    static readonly int BubblesId = Shader.PropertyToID("_Bubbles");
 
     bool swimMode;
     Image inkTankImage;
     Material tankMaterial; // our instance
     RectTransform squidUIRect;
-    float ink = 1f, shownInk = 1f, slosh, tilt, tiltSpeed, bubbles, lastYaw;
+    float ink = 1f, shownInk = 1f, slosh, tilt, tiltSpeed, lastYaw;
 
     public float Fill => ink;                 // tests
     public Material TankMaterial => tankMaterial;
@@ -102,11 +100,10 @@ public class UIController : MonoBehaviour
         float dt = Time.deltaTime;
         if (tankMaterial == null || dt <= 0f) return;
 
-        // Jumps in the level (a shot, a sub, a refill) slosh it; refilling bubbles.
+        // Jumps in the level (a shot, a sub, a refill) slosh it.
         float change = ink - shownInk;
         shownInk = ink;
         slosh = Mathf.Min(sloshMax, slosh * Mathf.Exp(-sloshDecay * dt) + Mathf.Abs(change) * sloshPerFill);
-        bubbles = Mathf.MoveTowards(bubbles, Mathf.Clamp01(change / dt / bubblesAtRefill), dt * 3f);
 
         // Turning tips the surface against the turn, then it wobbles back level.
         Camera cam = Camera.main;
@@ -122,6 +119,5 @@ public class UIController : MonoBehaviour
         tankMaterial.SetFloat(MarkId, loadout != null ? loadout.SubInkCost : 0f);
         tankMaterial.SetFloat(SloshId, slosh);
         tankMaterial.SetFloat(TiltId, tilt);
-        tankMaterial.SetFloat(BubblesId, bubbles);
     }
 }

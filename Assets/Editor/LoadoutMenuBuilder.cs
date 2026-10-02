@@ -13,6 +13,9 @@ public static class LoadoutMenuBuilder
 {
     const string PrefabPath = "Assets/Prefabs/UI/LoadoutMenu.prefab";
     const float ColumnWidth = 360, InfoHeight = 120;
+    const int Rows = 3;                               // buttons in the longest column
+    const float RowStep = 68, InfoTop = -156 - (Rows - 1) * RowStep - 86; // descriptions under the last row
+    const float CloseY = InfoTop - 160, PanelHeight = -CloseY + 90;
 
     [MenuItem("Tools/UI/Build Loadout Menu Prefab")]
     public static void Build()
@@ -36,17 +39,17 @@ public static class LoadoutMenuBuilder
         Stretch(backdrop);
         Img(backdrop.gameObject, null, new Color(0.02f, 0.02f, 0.05f, 0.6f), sliced: false).raycastTarget = true;
 
-        RectTransform panel = Panel("Panel", screen, new Vector2(3 * ColumnWidth + 160, 560));
+        RectTransform panel = Panel("Panel", screen, new Vector2(3 * ColumnWidth + 160, PanelHeight));
         Title(panel, "LOADOUT");
         TextMeshProUGUI note = Text("Note", panel, "Placeholder until the hub exists  ·  changes apply now", 18, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
         Place(note.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -64), new Vector2(900, 26));
 
         float[] x = { -(ColumnWidth + 40), 0, ColumnWidth + 40 };
         Button[] weapons = Column(panel, "MAIN WEAPON", x[0], new[] { "Airspray SE", "Inkshot" }, out TextMeshProUGUI weaponInfo);
-        Button[] subs = Column(panel, "SUB", x[1], new[] { "Beacon", "Ink Sprinkler" }, out TextMeshProUGUI subInfo);
+        Button[] subs = Column(panel, "SUB", x[1], new[] { "Beacon", "Ink Sprinkler", "Curling Bomb" }, out TextMeshProUGUI subInfo);
         Button[] specials = Column(panel, "SPECIAL", x[2], new[] { "Bubble Shield", "InkStrike" }, out TextMeshProUGUI specialInfo);
 
-        Button close = MenuButton("Close", panel, "Close", new Vector2(0, -470), new Vector2(180, 46), out _);
+        Button close = MenuButton("Close", panel, "Close", new Vector2(0, CloseY), new Vector2(180, 46), out _);
         TextMeshProUGUI hint = Text("Hint", panel, "L / Esc to close", 16, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
         Place(hint.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(300, 24));
 
@@ -76,9 +79,9 @@ public static class LoadoutMenuBuilder
         Place(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(x, -110), new Vector2(ColumnWidth, 34));
         var buttons = new Button[options.Length];
         for (int i = 0; i < options.Length; i++)
-            buttons[i] = MenuButton(options[i], panel, options[i], new Vector2(x, -156 - i * 68), new Vector2(ColumnWidth - 20, 58), out _);
+            buttons[i] = MenuButton(options[i], panel, options[i], new Vector2(x, -156 - i * RowStep), new Vector2(ColumnWidth - 20, 58), out _);
         info = Text(header + "Info", panel, "", 18, new Color(1f, 1f, 1f, 0.75f), TextAlignmentOptions.Top, false, useOutline: false);
-        Place(info.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(x, -310), new Vector2(ColumnWidth - 10, InfoHeight));
+        Place(info.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(x, InfoTop), new Vector2(ColumnWidth - 10, InfoHeight));
         info.textWrappingMode = TextWrappingModes.Normal;
         return buttons;
     }

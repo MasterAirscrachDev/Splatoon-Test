@@ -458,6 +458,7 @@ public class ClimbTestRunner : MonoBehaviour
         yield return S("Loadout HUD: gauges follow ink and special charge, READY when full", Station.Lobby, LoadoutGauges);
         yield return S("Special: half lost on death; charged state is synced and shown on the player bar", Station.Lobby, SpecialDeathAndSync);
         yield return S("Lobby: swimming is fastest in our ink, slower on bare ground, slowest in enemy ink", Station.Lobby, SwimSpeeds);
+        yield return S("Lobby: swimming raises a ring of ink around the squid and spraying side wakes that grow with speed; nothing while still", Station.Lobby, SwimWakeTrail);
         yield return S("LobbyMenu: hidden in dev mode, lists lobbies as rows, a failed join reports and refreshes", Station.Lobby, LobbyMenuList);
         yield return S("Colours: a random pair from the set each load, the host's pick reaches everyone and recolours ink, players and HUD", Station.Lobby, TeamColourPairs);
         yield return S("Match: countdown locks and resets everyone, final minute hides the bar (no banner), results fill to a suspense point then the real split", Station.Lobby, MatchFlow);
@@ -469,6 +470,7 @@ public class ClimbTestRunner : MonoBehaviour
         yield return S("LoadoutMenu: picks the weapon and sub, applies and remembers them, can't open mid-match", Station.Lobby, LoadoutMenuPicks);
         yield return S("InkStrike: aimed on the map (cancel keeps the charge), marked, then inks the whole column down to the ground; lethal core, non-fatal edge", Station.Lobby, InkStrikeSpecial);
         yield return S("Sprinkler: thrown, sticks, sprays both ways and winds down; one at a time; 30 HP; remote copies follow the owner", Station.Lobby, SprinklerSub);
+        yield return S("Curling bomb: slides inking a stripe, clips enemies (15) and carries on, bounces off walls, explodes on its fuse (45 in range); holding shortens the fuse", Station.Lobby, CurlingBombSub);
         yield return S("HUD: rosters, death marks, match timer and turf bar track the game", Station.Lobby, Hud);
     }
 
@@ -1780,6 +1782,164 @@ public class ClimbTestRunner : MonoBehaviour
         yield return Hold(Still, false, 0.2f, "gauges");
         if (!gauges.ReadyShown) Fail("READY not shown when full");
         loadout.SetSpecialPoints(0f);
+    }
+
+    IEnumerator CurlingBombSub()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        CurlingBomb prefab = loadout != null ? loadout.CurlingBombPrefab : null;
+        if (prefab == null) { Fail("player has no curling bomb"); yield break; }
+        CaptureSends();
+        SubDevice.RemoveAll();
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        const ulong FoePath = 3080, FoeBlast = 3081, FoeFar = 3082;
+        loadout.SetSub(SubType.CurlingBomb);
+        if (loadout.SubName != "CURLING") Fail("picking the curling bomb didn't select it");
+        int OnFloor(Vector3 at)
+        {
+            if (!Physics.Raycast(at + Vector3.up, Vector3.down, out RaycastHit hit, 2f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) return -1;
+            SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
+            return ink != null ? ink.getSurfaceTeam(ink.UVFromHit(hit)) : -1;
+        }
+        float DamageTo(ulong id) => sent.Where(m => m.id == NetMsg.Damage && m.to == id).Sum(m => ((DamageData)m.data).amount);
+
+        // Thrown along the aim: costs its ink, slides off inking a stripe, clips the enemy in its way and carries on.
+        Vector3 fwd = Vector3.ProjectOnPlane(player.CameraRig.forward, Vector3.up).normalized;
+        Vector3 start = player.transform.position;
+        SpawnRemote(FoePath, enemyTeam, start + fwd * 3.5f + Vector3.up * 0.05f, "FoePath");
+        yield return Hold(Still, false, 0.3f, "stand");
+        player.RefillInk();
+        sent.Clear();
+        if (!loadout.UseSub()) { Fail("couldn't throw a curling bomb with a full tank"); loadout.SetSub(SubType.Beacon); NetGameManager.SendOverride = null; yield break; }
+        CurlingBomb bomb = loadout.LastBomb;
+        float inkLeft = player.InkLevel;
+        bool told = sent.Any(m => m.id == NetMsg.SubSpawn && m.data is SubData d && d.subType == (int)SubType.CurlingBomb && Mathf.Abs(d.fuse - prefab.Fuse) < 0.1f);
+        yield return Hold(Still, false, 0.8f, "slide");
+        float slid = Vector3.Dot(bomb.transform.position - start, fwd);
+        int stripe = 0, probes = 0;
+        for (float x = 1.5f; x < slid - 0.5f; x += 0.5f) { probes++; if (OnFloor(start + fwd * x) == player.Team) stripe++; }
+        Note($"ink after throwing {inkLeft:F2}; slid {slid:F1}m in 0.8s ({(bomb.Grounded ? "on the ground" : "in the air")}); {stripe}/{probes} points along its path inked; FoePath took {DamageTo(FoePath):0}");
+        if (Mathf.Abs(inkLeft - (1f - prefab.InkCost)) > 0.01f) Fail($"didn't cost {prefab.InkCost * 100f:0}% ink");
+        if (!told) Fail("the throw (with its fuse) wasn't broadcast");
+        if (slid < 4f || !bomb.Grounded) Fail("didn't slide off along the ground");
+        if (probes == 0 || stripe < probes * 0.8f) Fail("didn't ink a stripe along its path");
+        if (Mathf.Abs(DamageTo(FoePath) - prefab.PassDamage) > 0.01f) Fail($"the enemy it slid through should take {prefab.PassDamage:0}, once");
+        if (slid < 4.5f) Fail("stopped at the enemy instead of carrying on");
+        bomb.Break();
+
+        // Off a wall: slid straight at the NeutralWall block (a visual-only copy, so that station stays clean), it comes back.
+        Transform wallStation = GameObject.Find(Name(Station.NeutralWall)).transform;
+        CurlingBomb bouncer = Instantiate(prefab, wallStation.TransformPoint(new Vector3(0f, 0.05f, -4f)), Quaternion.identity);
+        bouncer.Init(FoeFar, 901, enemyTeam, ownedLocally: false);
+        bouncer.Launch(wallStation.forward * prefab.SlideSpeed, 3f);
+        yield return Hold(Still, false, 1f, "bounce");
+        float back = wallStation.InverseTransformPoint(bouncer.transform.position).z;
+        float heading = Vector3.Dot(bouncer.Velocity.normalized, wallStation.forward);
+        Note($"1s after sliding at the wall from 4m: {-back:F1}m out from it, heading {(heading < 0f ? "away" : "into it")}");
+        if (heading >= 0f || back > -1f) Fail("didn't bounce off the wall");
+        bouncer.Remove();
+
+        // The blast: one parked on a short fuse; enemies in range take 45, those outside nothing; a wide patch of ink.
+        Vector3 spot = station.TransformPoint(new Vector3(-5f, 0f, 5f));
+        SpawnRemote(FoeBlast, enemyTeam, spot + station.right * (prefab.BlastRadius * 0.5f) + Vector3.up * 0.05f, "FoeBlast");
+        SpawnRemote(FoeFar, enemyTeam, spot + station.right * (prefab.BlastRadius + 2f) + Vector3.up * 0.05f, "FoeFar");
+        yield return Hold(Still, false, 0.2f, "blast");
+        sent.Clear();
+        CurlingBomb parked = Instantiate(prefab, spot, Quaternion.identity);
+        parked.Init(player.OwnerId, 900, player.Team, ownedLocally: true);
+        parked.Launch(Vector3.zero, 0.4f);
+        yield return Hold(Still, false, 0.8f, "blast");
+        int patch = 0;
+        for (int i = 0; i < 8; i++) if (OnFloor(spot + Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward * (prefab.BlastRadius * 0.6f)) == player.Team) patch++;
+        Note($"blast: FoeBlast took {DamageTo(FoeBlast):0}, FoeFar {DamageTo(FoeFar):0}; {patch}/8 points {prefab.BlastRadius * 0.6f:F1}m out inked; centre {(OnFloor(spot) == player.Team ? "inked" : "not inked")}");
+        if (SubDevice.Find(player.OwnerId, 900) != null || parked != null && !parked.Exploded) Fail("didn't explode on its fuse");
+        if (Mathf.Abs(DamageTo(FoeBlast) - prefab.BlastDamage) > 0.01f) Fail($"an enemy in the blast should take {prefab.BlastDamage:0}");
+        if (DamageTo(FoeFar) > 0f) Fail("hit an enemy outside the blast");
+        if (OnFloor(spot) != player.Team || patch < 7) Fail("the blast didn't ink a wide patch");
+
+        // Holding the button runs the fuse down; held to its end it goes by itself.
+        player.RefillInk();
+        if (!loadout.PressSub() || loadout.HeldBomb == null) Fail("pressing didn't take a bomb in hand");
+        yield return Hold(Still, false, 1.5f, "cook");
+        loadout.ReleaseSub();
+        CurlingBomb cooked = loadout.LastBomb;
+        float cookedFuse = cooked != null ? cooked.FuseLeft : 0f;
+        if (cooked != null) cooked.Break();
+        player.RefillInk();
+        loadout.PressSub();
+        float pressed = Time.time;
+        yield return HoldUntil(Still, false, prefab.Fuse, "cook", f => loadout.HeldBomb == null);
+        CurlingBomb overcooked = loadout.LastBomb;
+        Note($"held 1.5s: thrown with {cookedFuse:F2}s left; held on: thrown by itself after {Time.time - pressed:F2}s with {(overcooked != null ? overcooked.FuseLeft : 0f):F2}s left");
+        if (Mathf.Abs(cookedFuse - (prefab.Fuse - 1.5f)) > 0.15f) Fail("holding didn't shorten the fuse");
+        if (overcooked == cooked || overcooked == null || Mathf.Abs(overcooked.FuseLeft - prefab.MinFuse) > 0.15f) Fail("holding on didn't throw it at its shortest fuse");
+        if (overcooked != null) overcooked.Break();
+
+        // Theirs: slides and goes off here too, but only the owner paints and damages.
+        sent.Clear();
+        gm.Receive(NetMsg.SubSpawn, new SubData
+        {
+            ownerId = FoeFar, subId = 7, team = enemyTeam, subType = (int)SubType.CurlingBomb,
+            position = station.TransformPoint(new Vector3(6f, 0.05f, -6f)), velocity = station.right * 3f, fuse = 0.6f
+        }, FoeFar);
+        yield return Hold(Still, false, 0.2f, "remote");
+        bool shown = SubDevice.Find(FoeFar, 7) is CurlingBomb;
+        yield return Hold(Still, false, 0.8f, "remote");
+        if (!shown) Fail("their curling bomb wasn't shown");
+        if (SubDevice.Find(FoeFar, 7) != null) Fail("their curling bomb didn't go off");
+        if (sent.Any(m => m.id == NetMsg.Damage || m.id == NetMsg.Splat)) Fail("their bomb painted or damaged from here");
+
+        foreach (ulong id in new[] { FoePath, FoeBlast, FoeFar }) Despawn(id);
+        loadout.SetSub(SubType.Beacon);
+        SubDevice.RemoveAll();
+        yield return Hold(Still, false, 0.2f, "cleanup");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator SwimWakeTrail()
+    {
+        SwimWake wake = player.GetComponent<SwimWake>();
+        if (wake == null) { Fail("player has no SwimWake"); yield break; }
+        Transform entity = player.transform.parent != null ? player.transform.parent : player.transform;
+        if (!wake.View.transform.IsChildOf(entity)) Fail("the wake isn't under the player entity");
+        ParticleSystemRenderer sprayLook = wake.GetComponentInChildren<ParticleSystemRenderer>(true);
+        if (wake.View.sharedMaterial == null || wake.View.sharedMaterial.renderQueue > 2500 || sprayLook == null || sprayLook.sharedMaterial.renderQueue > 2500)
+            Fail("the wake (or its spray) is drawn as transparent, so it won't take shadows");
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        floor.FillRegion(new Rect(0, 0, 1, 1), player.Team);
+        Physics.Raycast(player.BodyCenter, Vector3.down, out RaycastHit ground, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore);
+
+        // Submerged and still: nothing (hidden squids stay hidden).
+        yield return Hold(Still, true, 0.6f, "dive");
+        Note($"still: shown {wake.Shown:F2}, ring {wake.RingShown:F2}, {wake.VertexCount} vertices, side wakes {wake.WakeLength:F2}m");
+        if (wake.VertexCount > 0 || wake.WakeLength > 0.1f) Fail("a wake around a squid sitting still");
+
+        // Swimming: the ring up around us, side wakes trailing back, and spray off them.
+        ParticleSystem spray = wake.GetComponentInChildren<ParticleSystem>(true);
+        int sprayBefore = spray != null ? spray.particleCount : 0;
+        yield return Hold(Fwd, true, 0.6f, "swim");
+        int sprayed = spray != null ? spray.particleCount : 0;
+        Bounds moving = wake.Bounds;
+        float behind = Vector3.Dot(player.BodyCenter - moving.center, player.transform.forward);
+        float top = moving.max.y - ground.point.y;
+        Note($"swimming at {wake.Speed * 100f:F0}% of full speed: ring {wake.RingShown:F2}, side wakes {wake.WakeLength:F2}m, footprint {moving.size.x:F2} x {moving.size.z:F2}m centred {behind:F2}m behind us, {top:F2}m high");
+        if (wake.RingShown < 0.99f || wake.VertexCount == 0) Fail("no ring around the swimming squid");
+        if (wake.WakeLength < 1f) Fail("the side wakes didn't grow with speed");
+        if (behind < 0.3f) Fail("the side wakes don't trail behind");
+        if (top < 0.03f || top > 0.45f) Fail("the wake isn't a low ridge on the surface");
+        Note($"{sprayed} spray droplets in the air (was {sprayBefore})");
+        if (spray == null || sprayed <= sprayBefore) Fail("no spray off the side wakes");
+
+        // Out of swim form: it fades away.
+        yield return Hold(Still, false, 0.5f, "stand");
+        Note($"standing: {wake.VertexCount} vertices");
+        if (wake.VertexCount > 0) Fail("the wake didn't fade after leaving the ink");
+        yield return Hold(Back, false, 0.6f, "back"); // stay on the station
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
     }
 
     IEnumerator SwimSpeeds()

@@ -43,7 +43,7 @@ public class InkStrike : MonoBehaviour
     [SerializeField] float holdTime = 0.5f;       // at full size
     [SerializeField] float shrinkTime = 0.6f;     // shrinking back to nothing
     const float ParticleClimbTime = 2.2f;         // the spiralling particles climb the column in about this long,
-    const float SpiralTurns = 1.5f;               // circling it this many times a second,
+    const float SpiralTwist = -12f;               // turning with it, their bands slanting like the mesh's ridges (yaw degrees per metre up),
     const int SpiralArms = 3;                     // in this many bands (they leave the ground from fixed points)
     const float SpiralOut = 1.15f;                // just outside its surface
 
@@ -60,6 +60,7 @@ public class InkStrike : MonoBehaviour
     float burstCount = -1f;  // the prefab's burst size, sprayed along the spreading edge
     float splashedTo, splashOwed;
     float width;             // the column's current radius
+    Vector2 startSize;       // the prefab's particle size range
     float columnRadius = 1f, columnHeight = 6f, columnCentre; // the mesh's own size (bounds)
     Renderer columnRenderer;
     ParticleSystem.Particle[] swirling;
@@ -137,6 +138,7 @@ public class InkStrike : MonoBehaviour
         var spin = tornado.main;
         spin.loop = true; // runs until Update stops it
         spin.startLifetime = new ParticleSystem.MinMaxCurve(ParticleClimbTime * 0.8f, ParticleClimbTime);
+        if (startSize.y <= 0f) startSize = new Vector2(spin.startSize.constantMin, spin.startSize.constantMax);
         var swirl = tornado.shape;
         swirl.shapeType = ParticleSystemShapeType.Cone;
         swirl.angle = 0f;
@@ -150,7 +152,8 @@ public class InkStrike : MonoBehaviour
         climb.y = (top - bottom) / ParticleClimbTime;
         climb.radial = 0f; // no drifting out: SetWidth keeps them on the column
         climb.orbitalX = climb.orbitalZ = 0f;
-        climb.orbitalY = SpiralTurns * 2f * Mathf.PI; // radians per second
+        climb.orbitalY = SpiralTwist * climb.y.constant * Mathf.Deg2Rad; // relative to the column, which the system spins with
+        tornado.transform.localRotation = Quaternion.identity;
         var emission = tornado.emission; // as dense in a tall column as in the default one (see SetWidth)
         if (tornadoRate < 0f) tornadoRate = emission.rateOverTimeMultiplier;
         width = 1f;
@@ -194,22 +197,24 @@ public class InkStrike : MonoBehaviour
         float close = Mathf.SmoothStep(0f, 1f, (s - AttackTime - holdTime) / shrinkTime);
         float thin = tightRadius * form;
         Front = Mathf.Lerp(thin, radius, spread);
-        SetWidth(Mathf.Lerp(thin, FullWidth, spread) * (1f - close));
-        if (column != null) column.localRotation = Quaternion.Euler(0f, columnSpin * s, 0f);
+        SetWidth(Mathf.Lerp(thin, FullWidth, spread) * (1f - close), close > 0f);
+        Quaternion turn = Quaternion.Euler(0f, columnSpin * s, 0f); // the particles turn with the column
+        if (column != null) column.localRotation = turn;
+        tornado.transform.localRotation = turn;
         if (authoritative) Advance();
         Splash(spread);
 
         float k = Mathf.Clamp01(s / AttackTime);
         Tint(0.15f * (1f - k), 0.8f * (1f - k));
         bool done = s >= AttackTime + holdTime + shrinkTime;
-        if (done && tornado.isEmitting) tornado.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+        if (done && tornado.isEmitting) tornado.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear); // gone with the column
         if (done && !tornado.IsAlive(true) && !burst.IsAlive(true)) Destroy(gameObject);
     }
 
     // Sizes the whole column at once: the mesh spans the column from bottom to top at this radius,
     // new particles leave a ring just outside it, and those already climbing are moved out (or in)
-    // to match, so they keep spiralling around it.
-    void SetWidth(float w)
+    // to match, so they keep spiralling around it. While it closes they shrink with it too.
+    void SetWidth(float w, bool closing = false)
     {
         if (column != null)
         {
@@ -223,10 +228,14 @@ public class InkStrike : MonoBehaviour
         swirl.radius = Mathf.Max(0.05f, w * SpiralOut);
         var emission = tornado.emission; // more as it widens, none until there's a column
         emission.rateOverTimeMultiplier = w < 0.05f ? 0f : tornadoRate * Mathf.Max(1f, (top - bottom) / height) * Mathf.Lerp(0.5f, 1.5f, w / FullWidth);
+        var look = tornado.main; // new ones shrink too
+        float sizeScale = closing ? w / FullWidth : 1f;
+        look.startSize = new ParticleSystem.MinMaxCurve(startSize.x * sizeScale, startSize.y * sizeScale);
         if (Mathf.Abs(w - width) < 1e-4f) return;
         float scale = w / width;
         bool rescale = width > 0.05f && w > 0.05f; // nothing sensible to scale from (or to) at nothing
         width = w;
+        if (closing && w <= 0.05f) tornado.Clear(); // closed: none left hanging in the air
         if (!rescale) return;
         int max = tornado.main.maxParticles;
         if (swirling == null || swirling.Length < max) swirling = new ParticleSystem.Particle[max];
@@ -237,6 +246,7 @@ public class InkStrike : MonoBehaviour
             p.x *= scale;
             p.z *= scale;
             swirling[i].position = p;
+            if (closing) swirling[i].startSize *= scale;
         }
         tornado.SetParticles(swirling, n);
     }

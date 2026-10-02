@@ -802,6 +802,7 @@ public class NetGameManager : MonoBehaviour
             position = sub.transform.position, velocity = Vector3.zero, normal = sub.transform.up, landed = true
         };
         if (sub is Sprinkler s) { d.landed = s.Landed; d.velocity = s.Velocity; }
+        if (sub is CurlingBomb b) { d.landed = false; d.velocity = b.Velocity; d.fuse = b.FuseLeft; }
         Send(NetMsg.SubSpawn, d);
     }
 

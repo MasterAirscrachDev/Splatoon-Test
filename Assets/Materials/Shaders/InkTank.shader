@@ -1,6 +1,5 @@
 // The swim-form ink tank: a rounded glass tank filled from the bottom up to _Fill, with two layers
-// of moving waves (higher while sloshing, tipped by _Tilt), a foamy surface, bubbles rising while it
-// refills, and a mark at _Mark (the sub's cost): dashed until there's enough ink, then solid and
+// of moving waves (higher while sloshing, tipped by _Tilt), a foamy surface, and a mark at _Mark (the sub's cost): dashed until there's enough ink, then solid and
 // glowing. Ink colour is the Image colour. Sized in pixels from the rect, so any tank shape works.
 Shader "UI/InkTank"
 {
@@ -20,7 +19,6 @@ Shader "UI/InkTank"
         _WaveSpeed ("Wave Speed", Float) = 0.7
         _Slosh ("Slosh (extra wave height)", Float) = 0
         _Tilt ("Tilt (surface slope)", Float) = 0
-        _Bubbles ("Bubbles", Range(0, 1)) = 0
 
         _StencilComp ("Stencil Comparison", Float) = 8
         _Stencil ("Stencil ID", Float) = 0
@@ -76,7 +74,7 @@ Shader "UI/InkTank"
             };
 
             fixed4 _Color, _EmptyColor, _OutlineColor, _MarkColor;
-            float _Outline, _Corner, _Fill, _Mark, _WaveAmp, _WaveFreq, _WaveSpeed, _Slosh, _Tilt, _Bubbles;
+            float _Outline, _Corner, _Fill, _Mark, _WaveAmp, _WaveFreq, _WaveSpeed, _Slosh, _Tilt;
             float4 _ClipRect;
 
             v2f vert(appdata v)
@@ -130,20 +128,6 @@ Shader "UI/InkTank"
                 a = lerp(a, 1.0, inFront);
                 float foam = saturate(1.0 - (front - uv.y) / (3.0 * aa)) * inFront * saturate((1.0 - _Fill) * 30.0);
                 col = lerp(col, lerp(ink, 1.0, 0.6), foam * 0.85);
-
-                // Bubbles rising through the ink while it refills.
-                float bubbles = 0.0;
-                for (int k = 0; k < 7; k++)
-                {
-                    float seed = k * 0.6180339;
-                    float rise = frac(_Time.y * (0.35 + frac(seed * 3.7) * 0.3) + seed);
-                    float2 c = float2(0.18 + frac(seed * 7.13 + 0.17) * 0.64 + 0.04 * sin(_Time.y * 3.0 + k), rise * (front - 0.03));
-                    float size = 1.5 + frac(seed * 5.3) * 1.8; // px
-                    float dist = length((uv - c) * px);
-                    float ring = saturate(1.0 - abs(dist - size)) * 0.7 + saturate(size - dist) * 0.2;
-                    bubbles += ring * saturate((1.0 - rise) * 6.0);
-                }
-                col += bubbles * _Bubbles * inFront * 0.6;
 
                 // Glass: a soft highlight down the left, brighter near the top.
                 float sheen = smoothstep(0.1, 0.16, uv.x) * (1.0 - smoothstep(0.22, 0.3, uv.x));
