@@ -97,7 +97,7 @@ public class WeaponShooter : Weapon
                     Random.Range(-fillerSpread, fillerSpread),
                     Random.Range(-fillerSpread, fillerSpread),
                     0f);
-                SpawnShot(player, noisyRot, r + Random.Range(-0.1f, 0.1f), inherit, Mathf.RoundToInt(splashSize * 0.7f), Random.value < 0.1f);
+                SpawnShot(player, noisyRot, r + Random.Range(-0.1f, 0.1f), inherit, Mathf.RoundToInt(splashSize * 0.7f), Random.value < 0.1f, false);
             }
 
             NetGameManager.Instance?.BroadcastShots(player, muzzle.position, inherit,
@@ -113,15 +113,15 @@ public class WeaponShooter : Weapon
         FeetShots++;
         Vector3 feet = player.transform.position + Vector3.up * 0.5f;
         ProjectileManager.Fire(projectile, feet, Vector3.down * feetShotDropSpeed, Random.Range(feetShotMinSize, feetShotMaxSize + 1), player.Team,
-                               visible: false, ownerId: player.OwnerId, damage: damage, impactParticles: false, source: DisplayName);
+                               visible: false, ownerId: player.OwnerId, damage: 0, impactParticles: false, source: DisplayName);
     }
 
     // Returns its launch velocity (without what the shooter carries into it).
-    Vector3 SpawnShot(PlayerController player, Quaternion rotation, float speed, Vector3 inherit, int size, bool visible)
+    Vector3 SpawnShot(PlayerController player, Quaternion rotation, float speed, Vector3 inherit, int size, bool visible, bool dealDamage = true)
     {
         Vector3 launch = rotation * Vector3.forward * speed;
         ProjectileManager.Fire(projectile, muzzle.position, launch, size, player.Team, visible,
-                               ownerId: player.OwnerId, damage: damage, ballistics: ballistics, inherit: inherit, source: DisplayName);
+                               ownerId: player.OwnerId, damage: dealDamage? damage : 0, ballistics: ballistics, inherit: inherit, source: DisplayName);
 
         volleyVelocities.Add(launch.x); volleyVelocities.Add(launch.y); volleyVelocities.Add(launch.z);
         volleySizes.Add(size);

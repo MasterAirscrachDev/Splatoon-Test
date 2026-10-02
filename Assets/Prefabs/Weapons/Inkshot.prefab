@@ -104,7 +104,7 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   splashSize: 11
-  damage: 45
+  damage: 21
   inkCostPerShot: 28
   projectile: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   muzzle: {fileID: 6527145706806977705}

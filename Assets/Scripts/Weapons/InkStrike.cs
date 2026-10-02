@@ -354,6 +354,12 @@ public class InkStrike : MonoBehaviour
                     hit.Add(p);
                     p.Hitbox.TakeDamage(DamageAt(p.BodyCenter), team, ownerId, "Inkstrike");
                 }
+        foreach (TargetDummy dummy in TargetDummy.All)
+            if (dummy.Hitbox != null && !hit.Contains(dummy) && Reached(dummy.BodyCenter))
+            {
+                hit.Add(dummy);
+                dummy.Hitbox.TakeDamage(DamageAt(dummy.BodyCenter), team, ownerId, "Inkstrike");
+            }
         var subs = new List<SubDevice>(SubDevice.All);
         foreach (SubDevice d in subs)
             if (d != null && d.Team != team && !hit.Contains(d) && Reached(d.transform.position))

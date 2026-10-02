@@ -58,11 +58,11 @@ MonoBehaviour:
   radius: 0.3
   trailSplash: 7
   trailSpacing: 0.3
-  passDamage: 15
+  passDamage: 25
   fuse: 2.8
   minFuse: 0.4
   blastRadius: 2
-  blastDamage: 45
+  blastDamage: 55
   blastSplash: 18
   blastParticles: {fileID: 7281054443066359860, guid: 18c5884bb54d6ee46ae2a5e7a69f61b7, type: 3}
   blinker: {fileID: 1138203960468566452}

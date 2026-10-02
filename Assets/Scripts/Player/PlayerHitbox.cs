@@ -31,6 +31,9 @@ public class PlayerHitbox : MonoBehaviour
     public float HealthNormalized => maxHealth > 0f ? health / maxHealth : 0f;
     public int Team => player != null ? player.Team : 0;
 
+    // A hit this hitbox accepted and applied (owner side): amount, source. See TargetDummy.
+    public event System.Action<float, string> Damaged;
+
     void Awake()
     {
         capsule = GetComponent<CapsuleCollider>();
@@ -63,16 +66,17 @@ public class PlayerHitbox : MonoBehaviour
     // source: what did it (weapon, sub or special), for the death popup.
     public bool TakeDamage(float amount, int fromTeam, ulong attackerId = 0, string source = null)
     {
+        if(amount <= 0f) return false;
         if (player != null && (fromTeam == player.Team || player.IsDead || player.Shielded)) return false;
         PlayerLoadout.ReportDamageDealt(attackerId, fromTeam, amount);
-        if (player != null && !player.IsLocalPlayer)
-        {
+        if (player != null && !player.IsLocalPlayer) {
             NetGameManager.Instance?.SendDamage(player.OwnerId, amount, fromTeam, attackerId, source);
             return false;
         }
         if (health <= 0f) return false;
 
         lastDamageTime = Time.time;
+        Damaged?.Invoke(amount, source);
         health -= amount;
         if (health <= 0f)
         {
