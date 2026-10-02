@@ -113,9 +113,10 @@ public class PlayerLoadout : MonoBehaviour
         SetSpecial((SpecialType)PlayerPrefs.GetInt(SpecialPref, (int)SpecialType.BubbleShield));
         input = new ControlLayer();
         input.Weapon.Enable();
-        input.Weapon.Sub.performed += _ => { if (!InputGate.Blocked) PressSub(); };
-        input.Weapon.Sub.canceled += _ => ReleaseSub();
-        input.Weapon.Special.performed += _ => { if (!InputGate.Blocked) UseSpecial(); };
+        // Real controls only when nothing's scripting the player (tests call these directly).
+        input.Weapon.Sub.performed += _ => { if (!InputGate.Blocked && player.ScriptedInput == null) PressSub(); };
+        input.Weapon.Sub.canceled += _ => { if (player.ScriptedInput == null) ReleaseSub(); };
+        input.Weapon.Special.performed += _ => { if (!InputGate.Blocked && player.ScriptedInput == null) UseSpecial(); };
         SurfaceInkManager.OnTurfInked += OnTurfInked;
     }
 

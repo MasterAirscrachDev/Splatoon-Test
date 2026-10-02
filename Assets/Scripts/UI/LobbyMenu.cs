@@ -41,12 +41,10 @@ public class LobbyMenu : MonoBehaviour
         if (screen.activeSelf != show)
         {
             screen.SetActive(show);
-            if (show) HostMenu.EnsureEventSystem();
+            if (show) GameCursor.Open(this, GameCursor.Use.Menu, hostButton.gameObject); else GameCursor.Close(this);
         }
         if (!show) return;
 
-        Cursor.lockState = CursorLockMode.None; // the player locks it again when it spawns
-        Cursor.visible = true;
         if (ForceShow || gm == null) return; // tests drive the list directly
 
         bool ready = gm.Steam == NetGameManager.SteamStatus.Ready;

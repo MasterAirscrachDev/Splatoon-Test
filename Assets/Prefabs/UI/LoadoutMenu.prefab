@@ -854,6 +854,7 @@ GameObject:
   - component: {fileID: 4698429166136739785}
   - component: {fileID: 7439230143336561805}
   - component: {fileID: 8017293825824059503}
+  - component: {fileID: 1509807351213272372}
   m_Layer: 0
   m_Name: Hint
   m_TagString: Untagged
@@ -980,6 +981,20 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
+--- !u!114 &1509807351213272372
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1739198031427681785}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bf24e19d00ae21647b2541d71fa54ab8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ControlPrompt
+  template: '{GameControl/Loadout} / {GameControl/Cancel} to close'
+  iconScale: 1.3
 --- !u!1 &1747940321639990260
 GameObject:
   m_ObjectHideFlags: 0

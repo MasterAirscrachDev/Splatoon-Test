@@ -80,13 +80,27 @@ public class HostMenu : MonoBehaviour
         UpdatePercentLabel();
     }
 
-    void OnEnable()  => NetGameManager.HostMenuToggled += Toggle;
-    void OnDisable() => NetGameManager.HostMenuToggled -= Toggle;
+    ControlLayer input; // Cancel closes it
+
+    void OnEnable()
+    {
+        NetGameManager.HostMenuToggled += Toggle;
+        if (input == null) input = new ControlLayer();
+        input.GameControl.Enable();
+    }
+
+    void OnDisable()
+    {
+        NetGameManager.HostMenuToggled -= Toggle;
+        input?.GameControl.Disable();
+    }
+
+    void OnDestroy() => input?.Dispose();
 
     void Update()
     {
         if (!open) return;
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) SetOpen(false);
+        if (input.GameControl.Cancel.WasPressedThisFrame()) SetOpen(false);
         RefreshMatchButtons();
         if (TeamEditorOpen) RefreshTeamEditor(); // reflect joins/leaves while open
     }
@@ -103,9 +117,7 @@ public class HostMenu : MonoBehaviour
         teamPanel.SetActive(false);
         selectedColumn = selectedSlot = -1;
         InputGate.Blocked = value;
-        Cursor.lockState = value ? CursorLockMode.None : CursorLockMode.Locked;
-        Cursor.visible = value;
-        if (value) EnsureEventSystem();
+        if (value) GameCursor.Open(this, GameCursor.Use.Menu); else GameCursor.Close(this);
     }
 
     void RefreshMatchButtons()

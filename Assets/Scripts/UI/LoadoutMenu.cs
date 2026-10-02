@@ -55,7 +55,7 @@ public class LoadoutMenu : MonoBehaviour
         if (!open) return;
         NetGameManager gm = NetGameManager.Instance;
         if (PlayerLoadout.Local == null || gm != null && gm.InMatch) { SetOpen(false); return; } // out of games only
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) SetOpen(false);
+        if (input.GameControl.Cancel.WasPressedThisFrame()) SetOpen(false);
     }
 
     public void SetOpen(bool value)
@@ -66,10 +66,10 @@ public class LoadoutMenu : MonoBehaviour
         open = value;
         screen.SetActive(value);
         InputGate.Blocked = value;
-        Cursor.lockState = value ? CursorLockMode.None : CursorLockMode.Locked;
-        Cursor.visible = value;
-        if (!value) return;
-        HostMenu.EnsureEventSystem();
+        if (!value) { GameCursor.Close(this); return; }
+        PlayerLoadout loadout = PlayerLoadout.Local;
+        Button first = loadout != null && loadout.WeaponIndex < weaponButtons.Length ? weaponButtons[loadout.WeaponIndex] : null;
+        GameCursor.Open(this, GameCursor.Use.Menu, first != null ? first.gameObject : null);
         Refresh();
     }
 

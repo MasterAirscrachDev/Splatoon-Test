@@ -82,6 +82,7 @@ public static class MatchHUDBuilder
         BuildMatchFlow(root);
         BuildDeathPopup(root);
         BuildHostMenu(root, hud);
+        BuildPauseMenu(root);
         BuildMapScreen(root);
 
         Directory.CreateDirectory(Path.GetDirectoryName(PrefabPath));
@@ -271,6 +272,141 @@ public static class MatchHUDBuilder
         Debug.Log($"[MatchHUD] Added the death popup to {PrefabPath}");
     }
 
+    // Adds (or replaces) just the pause menu on the existing prefab, keeping the rest as it is.
+    [MenuItem("Tools/UI/Add Pause Menu To Match HUD")]
+    static void AddPauseMenu()
+    {
+        circle  = EnsureCircleSprite();
+        rounded = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        outline = AssetDatabase.LoadAssetAtPath<Material>(OutlineMat);
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            Transform old = root.transform.Find("PauseMenu");
+            if (old != null) Object.DestroyImmediate(old.gameObject);
+            BuildPauseMenu(root);
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Added the pause menu to {PrefabPath}");
+    }
+
+    // Esc / Select: Resume, Settings, Loadout, Leave lobby, Quit; and the settings panel (look
+    // sensitivities and gyro aiming). Its own canvas, over every other menu.
+    static void BuildPauseMenu(GameObject root)
+    {
+        RectTransform menuRoot = Rect("PauseMenu", root.transform, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        Stretch(menuRoot);
+        Canvas canvas = menuRoot.gameObject.AddComponent<Canvas>();
+        canvas.overrideSorting = true;
+        canvas.sortingOrder = 30; // over the host menu (20) and the loadout menu (25)
+        menuRoot.gameObject.AddComponent<GraphicRaycaster>();
+        menuRoot.gameObject.AddComponent<CanvasGroup>().ignoreParentGroups = true;
+
+        RectTransform screen = Rect("Screen", menuRoot, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        Stretch(screen);
+        RectTransform backdrop = Rect("Backdrop", screen, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        Stretch(backdrop);
+        Img(backdrop.gameObject, null, new Color(0.02f, 0.02f, 0.05f, 0.6f), sliced: false).raycastTarget = true;
+
+        RectTransform main = Panel("MainPanel", screen, new Vector2(440, 520));
+        Title(main, "PAUSED");
+        Button resume   = MenuButton("Resume",   main, "Resume",      new Vector2(0, -90),  new Vector2(360, 58), out _);
+        Button settings = MenuButton("Settings", main, "Settings",    new Vector2(0, -160), new Vector2(360, 58), out _);
+        Button loadout  = MenuButton("Loadout",  main, "Loadout",     new Vector2(0, -230), new Vector2(360, 58), out _);
+        Button leave    = MenuButton("Leave",    main, "Leave lobby", new Vector2(0, -300), new Vector2(360, 58), out _);
+        Button quit     = MenuButton("Quit",     main, "Quit game",   new Vector2(0, -370), new Vector2(360, 58), out _);
+        TextMeshProUGUI mainHint = Text("Hint", main, "{GameControl/Pause} to resume", 16, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
+        Place(mainHint.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 14), new Vector2(380, 26));
+        Prompt(mainHint, "{GameControl/Pause} to resume");
+
+        RectTransform panel = Panel("SettingsPanel", screen, new Vector2(720, 560));
+        Title(panel, "SETTINGS");
+        Slider mouse = SettingRow(panel, "Mouse sensitivity", -100, out TextMeshProUGUI mouseValue);
+        Slider stick = SettingRow(panel, "Controller sensitivity", -170, out TextMeshProUGUI stickValue);
+        Slider gyroX = SettingRow(panel, "Gyro sensitivity: turning", -240, out TextMeshProUGUI gyroXValue);
+        Slider gyroY = SettingRow(panel, "Gyro sensitivity: up / down", -310, out TextMeshProUGUI gyroYValue);
+        Toggle gyro = ToggleRow(panel, "Gyro aiming (needs a gyro controller)", -380);
+        Button back = MenuButton("Back", panel, "Back", new Vector2(0, -460), new Vector2(200, 50), out _);
+        TextMeshProUGUI settingsHint = Text("Hint", panel, "{GameControl/Cancel} back", 16, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
+        Place(settingsHint.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 14), new Vector2(380, 26));
+        Prompt(settingsHint, "{GameControl/Cancel} back");
+        panel.gameObject.SetActive(false);
+
+        PauseMenu menu = menuRoot.gameObject.AddComponent<PauseMenu>();
+        var so = new SerializedObject(menu);
+        so.FindProperty("screen").objectReferenceValue = screen.gameObject;
+        so.FindProperty("mainPanel").objectReferenceValue = main.gameObject;
+        so.FindProperty("settingsPanel").objectReferenceValue = panel.gameObject;
+        so.FindProperty("resumeButton").objectReferenceValue = resume;
+        so.FindProperty("settingsButton").objectReferenceValue = settings;
+        so.FindProperty("loadoutButton").objectReferenceValue = loadout;
+        so.FindProperty("leaveButton").objectReferenceValue = leave;
+        so.FindProperty("quitButton").objectReferenceValue = quit;
+        so.FindProperty("backButton").objectReferenceValue = back;
+        so.FindProperty("mouseSlider").objectReferenceValue = mouse;
+        so.FindProperty("stickSlider").objectReferenceValue = stick;
+        so.FindProperty("gyroXSlider").objectReferenceValue = gyroX;
+        so.FindProperty("gyroYSlider").objectReferenceValue = gyroY;
+        so.FindProperty("mouseValue").objectReferenceValue = mouseValue;
+        so.FindProperty("stickValue").objectReferenceValue = stickValue;
+        so.FindProperty("gyroXValue").objectReferenceValue = gyroXValue;
+        so.FindProperty("gyroYValue").objectReferenceValue = gyroYValue;
+        so.FindProperty("gyroToggle").objectReferenceValue = gyro;
+        so.ApplyModifiedPropertiesWithoutUndo();
+        screen.gameObject.SetActive(false);
+    }
+
+    // "Label   [====o----]   1.00x" across the panel.
+    static Slider SettingRow(RectTransform panel, string label, float y, out TextMeshProUGUI value)
+    {
+        TextMeshProUGUI name = Text(label, panel, label, 20, Color.white, TextAlignmentOptions.Left, false, useOutline: false);
+        Place(name.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, 0.5f), new Vector2(-330, y), new Vector2(300, 40));
+        RectTransform sliderRt = Rect(label + " Slider", panel, new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f), new Vector2(110, y), new Vector2(240, 30));
+        Slider slider = sliderRt.gameObject.AddComponent<Slider>();
+        RectTransform track = Rect("Track", sliderRt, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        track.anchorMin = new Vector2(0f, 0.35f); track.anchorMax = new Vector2(1f, 0.65f); track.sizeDelta = Vector2.zero;
+        Img(track.gameObject, rounded, new Color(0f, 0f, 0f, 0.45f), sliced: true);
+        RectTransform fillArea = Rect("Fill Area", sliderRt, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        fillArea.anchorMin = new Vector2(0f, 0.35f); fillArea.anchorMax = new Vector2(1f, 0.65f); fillArea.sizeDelta = Vector2.zero;
+        RectTransform fill = Rect("Fill", fillArea, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        fill.sizeDelta = Vector2.zero;
+        Img(fill.gameObject, rounded, new Color(0.96f, 0.78f, 0.25f), sliced: true);
+        RectTransform handleArea = Rect("Handle Slide Area", sliderRt, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        Stretch(handleArea);
+        RectTransform handle = Rect("Handle", handleArea, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(28, 0));
+        handle.anchorMin = new Vector2(0f, 0f); handle.anchorMax = new Vector2(0f, 1f);
+        Image knob = Img(handle.gameObject, circle, Color.white, sliced: false);
+        knob.raycastTarget = true;
+        slider.fillRect = fill;
+        slider.handleRect = handle;
+        slider.targetGraphic = knob;
+        slider.direction = Slider.Direction.LeftToRight;
+        value = Text("Value", panel, "1.00×", 20, Color.white, TextAlignmentOptions.Right, true, useOutline: false);
+        Place(value.rectTransform, new Vector2(0.5f, 1f), new Vector2(1f, 0.5f), new Vector2(330, y), new Vector2(100, 40));
+        return slider;
+    }
+
+    static Toggle ToggleRow(RectTransform panel, string label, float y)
+    {
+        TextMeshProUGUI name = Text(label, panel, label, 20, Color.white, TextAlignmentOptions.Left, false, useOutline: false);
+        Place(name.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, 0.5f), new Vector2(-330, y), new Vector2(520, 40));
+        RectTransform box = Rect(label + " Toggle", panel, new Vector2(0.5f, 1f), new Vector2(1f, 0.5f), new Vector2(330, y), new Vector2(40, 40));
+        Image background = Img(box.gameObject, rounded, new Color(0f, 0f, 0f, 0.45f), sliced: true);
+        background.raycastTarget = true;
+        RectTransform check = Rect("Check", box, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        StretchInset(check, 8);
+        Image tick = Img(check.gameObject, rounded, new Color(0.96f, 0.78f, 0.25f), sliced: true);
+        Toggle toggle = box.gameObject.AddComponent<Toggle>();
+        toggle.targetGraphic = background;
+        toggle.graphic = tick;
+        toggle.isOn = true;
+        return toggle;
+    }
+
     // Below the middle of the screen while splatted: who did it and with what, and a countdown.
     static void BuildDeathPopup(GameObject root)
     {
@@ -375,6 +511,7 @@ public static class MatchHUDBuilder
         specialIcon.fontSizeMin = 10;
         specialIcon.fontSizeMax = 17;
         TextMeshProUGUI specialKey = Text("Key", specialFrame, "[Q]", 17, Color.white, TextAlignmentOptions.Center, true);
+        Prompt(specialKey, "{Weapon/Special}");
         Place(specialKey.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(-61.2f, 19.2f), new Vector2(33.25f, 24));
 
         // Sub: smaller, overlapping the special's lower right, with a line at the ink it costs.
@@ -382,6 +519,7 @@ public static class MatchHUDBuilder
         RectTransform mark = Rect("CostMark", subFill.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(64, 3));
         Img(mark.gameObject, null, new Color(1f, 1f, 1f, 0.85f), sliced: false);
         TextMeshProUGUI subKey = Text("Key", subFrame, "[E]", 15, Color.white, TextAlignmentOptions.Center, true);
+        Prompt(subKey, "{Weapon/Sub}");
         Place(subKey.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(32.4f, 19.2f), new Vector2(34.6f, 22));
         TextMeshProUGUI subIcon = Text("Icon", subFrame, "BEACON", 15, Color.white, TextAlignmentOptions.Center, true);
         Place(subIcon.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(3.1f, 56.5f), new Vector2(74.8f, 22));
@@ -439,6 +577,7 @@ public static class MatchHUDBuilder
         Button start   = MenuButton("StartGame",   main, "Start game",       new Vector2(0, -380), new Vector2(360, 58), out TextMeshProUGUI startLabel);
         Button close   = MenuButton("Close",       main, "Close",            new Vector2(0, -462), new Vector2(180, 46), out _);
         TextMeshProUGUI hint = Text("Hint", main, "G / Esc to close", 16, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
+        Prompt(hint, "{GameControl/GameStart} / {GameControl/Cancel} to close");
         Place(hint.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(300, 24));
 
         // Team editor.
@@ -519,6 +658,7 @@ public static class MatchHUDBuilder
         mapImage.raycastTarget = false;
         TextMeshProUGUI hint = Text("Hint", screen, "Click a teammate, beacon or spawn to Super Jump   ·   release TAB to close", 18,
                                     new Color(1f, 1f, 1f, 0.6f), TextAlignmentOptions.Center, false, useOutline: false);
+        Prompt(hint, "Click a teammate, beacon or spawn to Super Jump   ·   release {GameControl/Map} to close");
         Place(hint.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(MapX, 12), new Vector2(MapWidth, 26));
 
         RectTransform lines = Rect("Lines", screen, Vector2.zero, centre, Vector2.zero, Vector2.zero);
@@ -760,6 +900,14 @@ public static class MatchHUDBuilder
         img.color = colour;
         img.raycastTarget = false;
         return img;
+    }
+
+    // Shows the controls named in the template ({Map/Action}) as icons for the current input.
+    internal static void Prompt(TMP_Text text, string template)
+    {
+        var so = new SerializedObject(text.gameObject.AddComponent<ControlPrompt>());
+        so.FindProperty("template").stringValue = template;
+        so.ApplyModifiedPropertiesWithoutUndo();
     }
 
     internal static TextMeshProUGUI Text(string name, Transform parent, string text, float size, Color colour,

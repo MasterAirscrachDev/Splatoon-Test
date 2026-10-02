@@ -62,7 +62,8 @@ public class WeaponShooter : Weapon
     {
         PlayerController player = Owner;
         if (player == null) return;
-        bool hardware = !player.IsTestPlayer && !InputGate.Blocked && input.Weapon.Attack.ReadValue<float>() != 0;
+        // Real controls only when nothing's scripting the player (tests drive it through ScriptedFire).
+        bool hardware = !player.IsTestPlayer && player.ScriptedInput == null && !InputGate.Blocked && input.Weapon.Attack.ReadValue<float>() != 0;
         bool firing = !InputGate.MatchLocked && (ScriptedFire || hardware);
         // Still shooting (not out of ink or in swim form): a shot went out within the last cycle.
         bool shooting = firing && lastShotTime >= 0f && Time.time - lastShotTime <= fireRate + 0.05f;

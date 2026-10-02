@@ -51,6 +51,7 @@ public static class LoadoutMenuBuilder
 
         Button close = MenuButton("Close", panel, "Close", new Vector2(0, CloseY), new Vector2(180, 46), out _);
         TextMeshProUGUI hint = Text("Hint", panel, "L / Esc to close", 16, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
+        Prompt(hint, "{GameControl/Loadout} / {GameControl/Cancel} to close");
         Place(hint.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(300, 24));
 
         LoadoutMenu menu = root.AddComponent<LoadoutMenu>();

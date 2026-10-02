@@ -5,9 +5,10 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
-// Hold Tab: live view of the level from a raised, rotated angle, with your team and your spawn
+// Hold Tab (or toggle with the gamepad's west button): live view of the level from a raised, rotated angle, with your team and your spawn
 // listed on the left and a line from each entry to its marker, plus your team's beacons. Clicking
-// a teammate, the spawn (entry or marker) or a beacon Super Jumps there. Specials can also open it
+// a teammate, the spawn (entry or marker) or a beacon Super Jumps there; on a gamepad the d-pad
+// jumps straight to a teammate (up, left, right, in list order) or base (down). Specials can also open it
 // to pick a spot (BeginTargeting): a reticle sized to the area follows the pointer.
 public class MapScreen : MonoBehaviour
 {
@@ -59,7 +60,7 @@ public class MapScreen : MonoBehaviour
     ControlLayer input;
     Camera mapCamera;
     RenderTexture mapTexture;
-    bool open, waitForRelease;
+    bool open, waitForRelease, toggled; // toggled: opened by a gamepad, stays until pressed again
     float nextRender;
     readonly List<PlayerController> team = new List<PlayerController>();
     readonly PlayerController[] shown = new PlayerController[4];
@@ -73,7 +74,22 @@ public class MapScreen : MonoBehaviour
     System.Action<Vector3> onTargetPicked;
     System.Action onTargetCancelled;
     float targetRadius;
-    string normalHint;
+    const string MouseHint = "{GameControl/Click} a teammate, beacon or spawn to Super Jump   ·   release {GameControl/Map} to close";
+    const string PadHint = "Point and {GameControl/Click}, or {GameControl/QuickJumpUp}{GameControl/QuickJumpLeft}{GameControl/QuickJumpRight} a teammate / {GameControl/QuickJumpBase} base, to Super Jump   ·   {GameControl/Map} to close";
+    const string TargetHint = "{GameControl/Click} where to strike   ·   {GameControl/Cancel} to cancel";
+    static string NormalHint => InputMode.Scheme == ControlScheme.Gamepad ? PadHint : MouseHint;
+
+    void OnInputChanged()
+    {
+        if (!IsTargeting) SetHint(NormalHint);
+    }
+    ControlPrompt hintPrompt; // shows the controls in the hint for the current input
+
+    void SetHint(string template)
+    {
+        if (hintPrompt != null) hintPrompt.Template = template;
+        else hint.text = ControlPrompt.Format(template);
+    }
 
     void Awake()
     {
@@ -88,12 +104,19 @@ public class MapScreen : MonoBehaviour
         spawnEntry.button.onClick.AddListener(RequestSpawnJump);
         spawnEntry.marker.onClick.AddListener(RequestSpawnJump);
         targetCatcher.Clicked += OnMapClicked;
-        normalHint = hint.text;
+        hintPrompt = hint.GetComponent<ControlPrompt>();
+        ControlGlyphs glyphs = ControlGlyphs.Instance; // entries show the d-pad's quick jumps
+        if (glyphs != null)
+            foreach (Entry e in entries) e.status.spriteAsset = glyphs.SpriteAsset;
+        if (glyphs != null) spawnEntry.status.spriteAsset = glyphs.SpriteAsset;
+        SetHint(NormalHint);
+        InputMode.Changed += OnInputChanged;
         screen.SetActive(false);
     }
 
     void OnDestroy()
     {
+        InputMode.Changed -= OnInputChanged;
         input?.Disable();
         input?.Dispose();
         if (mapTexture != null) { mapTexture.Release(); Destroy(mapTexture); }
@@ -103,11 +126,23 @@ public class MapScreen : MonoBehaviour
     void Update()
     {
         if (IsTargeting) { UpdateTargeting(); return; }
-        bool held = ScriptedHold || input.GameControl.Map.IsPressed();
-        if (!held) waitForRelease = false;
-        if (held && !open && !waitForRelease) TryOpen();
-        else if (!held && open) SetOpen(false);
+        InputAction map = input.GameControl.Map;
+        bool fromPad = map.activeControl != null && map.activeControl.device is Gamepad;
+        if (fromPad && map.WasPressedThisFrame())   // a gamepad toggles it
+        {
+            if (open) SetOpen(false);
+            else { TryOpen(); toggled = open; }
+        }
+        else if (!toggled)                          // the keyboard holds it open
+        {
+            bool held = ScriptedHold || !fromPad && map.IsPressed();
+            if (!held) waitForRelease = false;
+            if (held && !open && !waitForRelease) TryOpen();
+            else if (!held && open) SetOpen(false);
+        }
         if (!open) return;
+        if (toggled && input.GameControl.Cancel.WasPressedThisFrame()) { SetOpen(false); return; }
+        if (QuickJump()) return;
 
         if (Time.unscaledTime >= nextRender) RenderMap();
         RefreshTeam();
@@ -127,16 +162,37 @@ public class MapScreen : MonoBehaviour
     {
         if (!value && IsTargeting) { CancelTargeting(); return; }
         open = value;
+        if (!value) toggled = false;
         screen.SetActive(value);
         InputGate.Blocked = value;
-        Cursor.lockState = value ? CursorLockMode.None : CursorLockMode.Locked;
-        Cursor.visible = value;
+        if (value) GameCursor.Open(this, GameCursor.Use.Map); else GameCursor.Close(this);
         if (!value) return;
         HostMenu.EnsureEventSystem();
         EnsureMapCamera();
         RenderMap();
         RefreshTeam();
     }
+
+    // The d-pad: teammates (up, left, right, in list order) or base (down). True if one started.
+    bool QuickJump()
+    {
+        var g = input.GameControl;
+        if (g.QuickJumpBase.WasPressedThisFrame()) { RequestSpawnJump(); return !open; }
+        int n = g.QuickJumpUp.WasPressedThisFrame() ? 0 : g.QuickJumpLeft.WasPressedThisFrame() ? 1 : g.QuickJumpRight.WasPressedThisFrame() ? 2 : -1;
+        PlayerController mate = n >= 0 ? Teammate(n) : null;
+        if (mate != null && !mate.IsDead) TryJump(mate);
+        return !open;
+    }
+
+    // The nth teammate in the list (not counting us).
+    PlayerController Teammate(int n)
+    {
+        foreach (PlayerController p in shown)
+            if (p != null && !p.IsLocalPlayer && n-- == 0) return p;
+        return null;
+    }
+
+    static readonly string[] QuickJumpActions = { "{GameControl/QuickJumpUp}", "{GameControl/QuickJumpLeft}", "{GameControl/QuickJumpRight}" };
 
     void RequestJump(int index)
     {
@@ -178,7 +234,7 @@ public class MapScreen : MonoBehaviour
         SetOpen(true);
         targetCatcher.gameObject.SetActive(true);
         reticle.gameObject.SetActive(true);
-        hint.text = "Click where to strike   ·   Esc or right-click to cancel";
+        SetHint(TargetHint);
         return true;
     }
 
@@ -207,22 +263,22 @@ public class MapScreen : MonoBehaviour
         onTargetCancelled = null;
         targetCatcher.gameObject.SetActive(false);
         reticle.gameObject.SetActive(false);
-        hint.text = normalHint;
+        SetHint(NormalHint);
         SetOpen(false);
         if (picked) onPicked?.Invoke(world); else onCancelled?.Invoke();
     }
 
-    // The reticle follows the pointer, as big as the area would look there.
+    // The reticle follows the cursor, as big as the area would look there.
     void UpdateTargeting()
     {
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame || Mouse.current != null && Mouse.current.rightButton.wasPressedThisFrame)
+        if (input.GameControl.Cancel.WasPressedThisFrame())
         {
             CancelTargeting();
             return;
         }
         if (Time.unscaledTime >= nextRender) RenderMap();
         RefreshTeam();
-        if (Mouse.current != null && RectTransformUtility.ScreenPointToLocalPointInRectangle(markerArea, Mouse.current.position.ReadValue(), null, out Vector2 local))
+        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(markerArea, GameCursor.Position, null, out Vector2 local))
             reticle.anchoredPosition = local;
         float pixelsPerMetre = markerArea.rect.height / (2f * mapCamera.orthographicSize);
         float across = targetRadius * 2f * pixelsPerMetre;
@@ -278,6 +334,9 @@ public class MapScreen : MonoBehaviour
         return new Vector2((v.x - 0.5f) * r.width, (v.y - 0.5f) * r.height);
     }
 
+    // World position -> where it shows on screen (tests).
+    public Vector2 ScreenPoint(Vector3 world) => RectTransformUtility.WorldToScreenPoint(null, markerArea.TransformPoint(MapPosition(world, false)));
+
     // ── Team list, markers and lines ───────────────────────────────────────
 
     void RefreshTeam()
@@ -318,7 +377,7 @@ public class MapScreen : MonoBehaviour
             string name = string.IsNullOrEmpty(p.DisplayName) ? "?" : p.DisplayName;
             SetText(e.initial, name.Substring(0, 1).ToUpperInvariant());
             SetText(e.playerName, name);
-            SetText(e.status, p.IsLocalPlayer ? "You" : p.IsDead ? "Splatted" : "Super Jump");
+            SetText(e.status, p.IsLocalPlayer ? "You" : p.IsDead ? "Splatted" : PadPrompt(QuickJumpSlot(p)) + "Super Jump");
             e.status.color = jumpable ? colour : new Color(1f, 1f, 1f, 0.5f);
             e.icon.color = c;
             e.button.interactable = jumpable;
@@ -351,9 +410,33 @@ public class MapScreen : MonoBehaviour
         e.icon.color = colour;
         e.markerIcon.color = colour;
         e.status.color = colour;
+        if (spawnStatus == null) spawnStatus = e.status.text;
+        SetText(e.status, PadPrompt("{GameControl/QuickJumpBase}") + spawnStatus);
         bool hovered = e.entryHover.Hovered || e.markerHover.Hovered;
         m.localScale = Vector3.one * (hovered ? hoverMarkerScale : 1f);
         UpdateLine(e, m, colour, hovered, true);
+    }
+
+    string spawnStatus;
+
+    // A teammate's d-pad direction, as a prompt token.
+    string QuickJumpSlot(PlayerController mate)
+    {
+        int n = 0;
+        foreach (PlayerController p in shown)
+        {
+            if (p == null || p.IsLocalPlayer) continue;
+            if (p == mate) return n < QuickJumpActions.Length ? QuickJumpActions[n] : null;
+            n++;
+        }
+        return null;
+    }
+
+    // The icon for a gamepad quick jump, ahead of an entry's status (nothing on keyboard/mouse).
+    string PadPrompt(string token)
+    {
+        if (token == null || InputMode.Scheme != ControlScheme.Gamepad) return "";
+        return ControlPrompt.Format(token, 1.1f) + " ";
     }
 
     // Line from the entry to its marker, in the line layer's space.

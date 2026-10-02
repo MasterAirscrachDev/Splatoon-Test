@@ -6,12 +6,23 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     [SerializeField] Transform playerCamera = null;
     [SerializeField] int team = 0;
     public int Team => team;
-    [SerializeField] float mouseSensitivity = 3.5f;
+    [Header("Look")]
+    [SerializeField] float mouseSensitivity = 3.5f;  // degrees per mouse count
+    [SerializeField][Range(0.0f, 0.5f)] float mouseSmoothTime = 0.03f;
+    [SerializeField] Vector2 stickSpeed = new Vector2(180f, 120f); // right stick at full tilt: degrees per second (turn, up/down)
+    [SerializeField] float stickCurve = 1.8f;        // response: gentle near the middle for fine aim, full speed at the edge
+    [SerializeField] float stickBoost = 1.6f;        // turning speeds up to this many times faster while held at the edge...
+    [SerializeField] float stickBoostTime = 0.35f;   // ...over this long
+    [SerializeField] bool invertY;
+    [SerializeField] float gyroSensitivity = 1.5f;  // camera degrees per degree the controller turns (Steam Input gyro)
+    [SerializeField] bool gyroInvertY;
+    const float RecenterSpeed = 600f;                // degrees per second back to level
+    const float StickEdge = 0.9f;                    // tilt that counts as "at the edge" for the boost
+
     [Header("Movement Settings")]
     [SerializeField] float gravity = -13.0f;
     [SerializeField] float jump = 8.0f;
     [SerializeField][Range(0.0f, 0.5f)] float moveSmoothTime = 0.3f;
-    [SerializeField][Range(0.0f, 0.5f)] float mouseSmoothTime = 0.03f;
     [SerializeField] float moveSpeed = 6.0f;
     [SerializeField] float swimSpeed = 10.0f;
     [SerializeField] bool lockCursor = true;
@@ -110,7 +121,8 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     Color teamColor;
 
     int surfaceTeam;
-    bool swimMode, isDead, deathCam;
+    bool swimMode, isDead, deathCam, recentering;
+    float stickEdgeTime;
     Vector3 deathSpot, lastGroundPos;
     float deathCamYaw, respawnAt, respawnHoldUntil = -1f;
     float inkLevel = 1f;
@@ -242,7 +254,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     {
         if (playerMode == PlayerMode.Client)
         {
-            if (deathCam) UpdateDeathCamera(); else UpdateMouseLook();
+            if (deathCam) UpdateDeathCamera(); else UpdateLook();
             UpdateMovement();
             if (!deathCam) UpdateCameraFormOffset();
             Camera view = Camera.main;
@@ -283,16 +295,53 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         playerCamera.localPosition = cameraBaseLocalPos + cameraFormOffset;
     }
 
-    void UpdateMouseLook()
+    // The mouse moves the view by how far it moved (degrees per count, lightly smoothed); the right
+    // stick turns it at a rate (degrees per second, shaped for fine aim and sped up at the edge), so
+    // neither depends on the frame rate. Each is scaled by the player's settings. Recenter levels the
+    // view (only the mouse or stick looking up or down cuts it short; the gyro rides on top).
+    void UpdateLook()
     {
-        Vector2 targetMouseDelta = ScriptedInput != null ? ScriptedInput.look
-                                 : InputGate.Blocked ? Vector2.zero : input.Movement.Look.ReadValue<Vector2>();
-        currentMouseDelta = Vector2.SmoothDamp(currentMouseDelta, targetMouseDelta, ref currentMouseDeltaVelocity, mouseSmoothTime);
-        cameraPitch -= currentMouseDelta.y * mouseSensitivity;
+        bool hardware = ScriptedInput == null && !InputGate.Blocked;
+        Vector2 delta = ScriptedInput != null ? ScriptedInput.look : hardware ? input.Movement.LookDelta.ReadValue<Vector2>() : Vector2.zero;
+        Vector2 stick = ScriptedInput != null ? ScriptedInput.lookStick : hardware ? input.Movement.LookStick.ReadValue<Vector2>() : Vector2.zero;
+        // Gyro (on a gamepad): moves the view directly; with one, the stick only turns (Splatoon-style).
+        bool gyroAiming = hardware && InputMode.Scheme == ControlScheme.Gamepad && SteamGyro.Enabled && SteamGyro.HasGyro;
+        Vector2 gyro = gyroAiming ? Vector2.Scale(SteamGyro.Rate, new Vector2(GameSettings.GyroSensitivityX, GameSettings.GyroSensitivityY)) * gyroSensitivity : Vector2.zero;
+        if (gyroInvertY) gyro.y = -gyro.y;
+        if (gyroAiming) stick.y = 0f;
+        if (ScriptedInput != null ? ScriptedInput.recenter : hardware && input.Movement.Recenter.WasPressedThisFrame()) recentering = true;
+
+        currentMouseDelta = Vector2.SmoothDamp(currentMouseDelta, delta, ref currentMouseDeltaVelocity, mouseSmoothTime);
+        Vector2 aim = currentMouseDelta * (mouseSensitivity * GameSettings.MouseSensitivity)
+                    + StickTurn(stick) * (GameSettings.StickSensitivity * Time.deltaTime); // degrees this frame
+        if (invertY) aim.y = -aim.y;
+        if (Mathf.Abs(aim.y) > 0.01f) recentering = false; // looking up or down takes over again
+        Vector2 turn = aim + gyro * Time.deltaTime;
+        cameraPitch -= turn.y;
+        if (recentering)
+        {
+            cameraPitch = Mathf.MoveTowards(cameraPitch, 0f, RecenterSpeed * Time.deltaTime);
+            recentering = cameraPitch != 0f;
+        }
         cameraPitch = Mathf.Clamp(cameraPitch, -70.0f, 80.0f);
         playerCamera.localEulerAngles = Vector3.right * cameraPitch;
-        transform.Rotate(Vector3.up * currentMouseDelta.x * mouseSensitivity);
+        transform.Rotate(Vector3.up * turn.x);
     }
+
+    // The right stick's turn rate, degrees per second.
+    Vector2 StickTurn(Vector2 stick)
+    {
+        float tilt = Mathf.Clamp01(stick.magnitude);
+        if (tilt < 1e-4f) { stickEdgeTime = 0f; return Vector2.zero; }
+        stickEdgeTime = tilt >= StickEdge ? stickEdgeTime + Time.deltaTime : 0f;
+        Vector2 shaped = stick / stick.magnitude * Mathf.Pow(tilt, stickCurve);
+        float boost = Mathf.Lerp(1f, stickBoost, Mathf.Clamp01(stickEdgeTime / stickBoostTime)); // turning only
+        return new Vector2(shaped.x * stickSpeed.x * boost, shaped.y * stickSpeed.y);
+    }
+
+    public float CameraPitch => cameraPitch; // tests
+    public Vector2 StickSpeed => stickSpeed;
+    public float GyroSensitivity => gyroSensitivity;
 
     void UpdateMovement()
     {
@@ -990,7 +1039,9 @@ public enum SuperJumpPhase
 // Input fed to a player in place of hardware (PlayerController.ScriptedInput).
 public class ScriptedPlayerInput
 {
-    public Vector2 move; // x = strafe, y = forward
-    public Vector2 look; // per-frame mouse delta
+    public Vector2 move;      // x = strafe, y = forward
+    public Vector2 look;      // per-frame mouse delta
+    public Vector2 lookStick; // right stick tilt
+    public bool recenter;     // the Recenter button, while true
     public bool swim;
 }

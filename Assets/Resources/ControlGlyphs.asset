@@ -1,0 +1,212 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: eff3e6b48d2f1214eb41870b41face7c, type: 3}
+  m_Name: ControlGlyphs
+  m_EditorClassIdentifier: Assembly-CSharp::ControlGlyphs
+  spriteAsset: {fileID: 11400000, guid: f8b0849b4aeae1e458b0f60279506e6a, type: 2}
+  glyphs:
+  - control: Keyboard/space
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 7279470582790939767, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/w
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 8479623608788841890, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/a
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -8344278084594186034, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/s
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 4918859818075357292, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/d
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 5337799985815785412, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/e
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -4272058756210404621, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/f
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 1955097495833815821, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/v
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -6231544320743009986, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/r
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -1025347733, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/q
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 1325190162, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/escape
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 7178427151153126247, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/leftShift
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 1812471530, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/rightShift
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 1812471530, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/shift
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 1812471530, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/enter
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -297495127, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/numpadEnter
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -297495127, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/tab
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 1786106775, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/l
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -1166623275, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Keyboard/g
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -802570525, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/start
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -975300445, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/select
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -50886954, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Mouse/leftButton
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -1693754126, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Mouse/rightButton
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 1701795138, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Mouse/middleButton
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 258161042, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Mouse/delta
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -482196639, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Mouse/position
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -482196639, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Mouse/scroll
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 258161042, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/leftStick
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -1087825095, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/leftStickPress
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -1087825095, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/rightStick
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -1830258241, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/rightStickPress
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -1830258241, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/dpad
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -179847314, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/dpad/up
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -1840738029, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/leftShoulder
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -1398673437, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/rightShoulder
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 1113659487, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/leftTrigger
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 861147815, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/rightTrigger
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -1396597085, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonSouth
+    anyFamily: 0
+    family: 0
+    sprite: {fileID: -413597716, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonEast
+    anyFamily: 0
+    family: 0
+    sprite: {fileID: -33801305, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonWest
+    anyFamily: 0
+    family: 0
+    sprite: {fileID: 855212254, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonNorth
+    anyFamily: 0
+    family: 0
+    sprite: {fileID: 9296567, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonSouth
+    anyFamily: 0
+    family: 1
+    sprite: {fileID: 1922365039, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonEast
+    anyFamily: 0
+    family: 1
+    sprite: {fileID: 672359067, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonWest
+    anyFamily: 0
+    family: 1
+    sprite: {fileID: 1322011194, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonNorth
+    anyFamily: 0
+    family: 1
+    sprite: {fileID: 1303736565, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonSouth
+    anyFamily: 0
+    family: 2
+    sprite: {fileID: -33801305, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonEast
+    anyFamily: 0
+    family: 2
+    sprite: {fileID: -413597716, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonWest
+    anyFamily: 0
+    family: 2
+    sprite: {fileID: 9296567, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/buttonNorth
+    anyFamily: 0
+    family: 2
+    sprite: {fileID: 855212254, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
