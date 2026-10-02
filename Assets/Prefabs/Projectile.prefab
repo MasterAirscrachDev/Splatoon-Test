@@ -10,8 +10,6 @@ GameObject:
   m_Component:
   - component: {fileID: 5979602811974540493}
   - component: {fileID: 5979602811974540495}
-  - component: {fileID: 5979602811974540494}
-  - component: {fileID: 4409617430215330287}
   m_Layer: 6
   m_Name: Projectile
   m_TagString: Projectile
@@ -47,56 +45,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 165ad060e337ede43ab80e2e592c6df7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  damage: 30
+  hitRadius: 0.12
   splashParticlesPrefab: {fileID: 7281054443066359860, guid: 18c5884bb54d6ee46ae2a5e7a69f61b7, type: 3}
---- !u!54 &5979602811974540494
-Rigidbody:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5979602811974540492}
-  serializedVersion: 5
-  m_Mass: 3
-  m_LinearDamping: 0
-  m_AngularDamping: 0.05
-  m_CenterOfMass: {x: 0, y: 0, z: 0}
-  m_InertiaTensor: {x: 1, y: 1, z: 1}
-  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ImplicitCom: 1
-  m_ImplicitTensor: 1
-  m_UseGravity: 1
-  m_IsKinematic: 0
-  m_Interpolate: 1
-  m_Constraints: 112
-  m_CollisionDetection: 2
---- !u!135 &4409617430215330287
-SphereCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5979602811974540492}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 1
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Radius: 0.12
-  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1 &5979602812218699910
 GameObject:
   m_ObjectHideFlags: 0

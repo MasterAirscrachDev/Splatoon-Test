@@ -15,16 +15,17 @@ public class PlayerLoadout : MonoBehaviour
     [SerializeField] Transform weaponMount;
 
     [Header("Sub: beacon")]
-    [SerializeField] Beacon beaconPrefab;
-    [SerializeField] float beaconInkCost = 0.7f;
+    [SerializeField] Beacon beaconPrefab;          // its ink cost, health and lifetime are on the prefab
     [SerializeField] int maxBeacons = 3;           // placing another breaks the oldest
     [SerializeField] float placeDistance = 1.5f;   // in front of the player
 
     [Header("Sub: sprinkler")]
-    [SerializeField] Sprinkler sprinklerPrefab;
-    [SerializeField] float sprinklerInkCost = 0.6f;
+    [SerializeField] Sprinkler sprinklerPrefab;    // as is the sprinkler's
     [SerializeField] float throwSpeed = 11f;       // along the aim, plus an upward lob
     [SerializeField] float throwLift = 4f;
+
+    [Header("Sub ready light")]
+    [SerializeField] Light subReadyLight;          // on the ink tank: lit while there's ink for the sub
 
     [Header("Special: Inkstrike")]
     [SerializeField] InkStrike inkStrikePrefab;
@@ -54,7 +55,12 @@ public class PlayerLoadout : MonoBehaviour
     public InkStrike InkStrikePrefab => inkStrikePrefab;
     public bool Targeting { get; private set; } // picking an Inkstrike spot on the map
     public float SubInkCost => InkCost(sub);
-    public float InkCost(SubType type) => type == SubType.Beacon ? beaconInkCost : sprinklerInkCost;
+    public Light SubReadyLight => subReadyLight;
+    public float InkCost(SubType type)
+    {
+        SubDevice prefab = type == SubType.Beacon ? beaconPrefab : sprinklerPrefab;
+        return prefab != null ? prefab.InkCost : 1f;
+    }
     public bool CanUseSub => player.InkLevel >= SubInkCost;
     public float SpecialPoints => specialPoints;
     public float SpecialCharge => Mathf.Clamp01(specialPoints / specialCost);
@@ -73,7 +79,7 @@ public class PlayerLoadout : MonoBehaviour
     readonly List<Beacon> ownBeacons = new List<Beacon>(); // oldest first
     Sprinkler ownSprinkler;                                // one at a time
     Vector3 shieldScale;
-    int shieldTintTeam = -1;
+    int shieldTintTeam = -1, shieldTintPair = -1;
 
     void Awake()
     {
@@ -106,6 +112,7 @@ public class PlayerLoadout : MonoBehaviour
     void OnDestroy()
     {
         if (Local == this) Local = null;
+        input?.Disable();
         input?.Dispose();
         SurfaceInkManager.OnTurfInked -= OnTurfInked;
     }
@@ -118,9 +125,11 @@ public class PlayerLoadout : MonoBehaviour
             wasDead = player.IsDead;
             player.Shielded = Time.time < shieldUntil && !player.IsDead;
             player.SpecialCharged = SpecialReady;
+            player.SubReady = CanUseSub && !player.IsDead;
         }
         else if (player.WeaponIndex != equippedIndex) Equip(player.WeaponIndex); // they switched
         UpdateShieldVisual();
+        if (subReadyLight != null && subReadyLight.enabled != player.SubReady) subReadyLight.enabled = player.SubReady;
     }
 
     // ── Choices (loadout menu) ─────────────────────────────────────────────
@@ -166,14 +175,14 @@ public class PlayerLoadout : MonoBehaviour
 
     public bool UseSub()
     {
-        if (!player.IsLocalPlayer || player.IsDead || player.IsSuperJumping || player.Team == 0 || InputGate.MatchLocked || !CanUseSub) return false;
+        if (!player.IsLocalPlayer || player.IsDead || player.IsRespawning || player.IsSuperJumping || player.Team == 0 || InputGate.MatchLocked || !CanUseSub) return false;
         return sub == SubType.Beacon ? PlaceBeacon() : ThrowSprinkler();
     }
 
     // On the ground in front of the player; needs a spot to stand it on.
     bool PlaceBeacon()
     {
-        if (beaconPrefab == null || !FindBeaconSpot(out Vector3 spot) || !player.ConsumeInk(beaconInkCost)) return false;
+        if (beaconPrefab == null || !FindBeaconSpot(out Vector3 spot) || !player.ConsumeInk(InkCost(SubType.Beacon))) return false;
 
         ownBeacons.RemoveAll(b => b == null);
         if (ownBeacons.Count >= maxBeacons) { ownBeacons[0].Break(); ownBeacons.RemoveAt(0); }
@@ -188,7 +197,7 @@ public class PlayerLoadout : MonoBehaviour
     // Lobbed along the camera's aim; a new one replaces the last.
     bool ThrowSprinkler()
     {
-        if (sprinklerPrefab == null || !player.ConsumeInk(sprinklerInkCost)) return false;
+        if (sprinklerPrefab == null || !player.ConsumeInk(InkCost(SubType.Sprinkler))) return false;
         if (ownSprinkler != null) ownSprinkler.Break();
 
         Transform aim = player.CameraRig != null ? player.CameraRig : player.transform;
@@ -240,7 +249,7 @@ public class PlayerLoadout : MonoBehaviour
 
     public bool UseSpecial()
     {
-        if (!player.IsLocalPlayer || player.IsDead || player.Team == 0 || !SpecialReady || InputGate.MatchLocked) return false;
+        if (!player.IsLocalPlayer || player.IsDead || player.IsRespawning || player.Team == 0 || !SpecialReady || InputGate.MatchLocked) return false;
         if (special == SpecialType.InkStrike) return BeginInkStrike();
         specialPoints = 0f;
         player.RefillInk();
@@ -312,7 +321,7 @@ public class PlayerLoadout : MonoBehaviour
     {
         if (shieldVisual == null) return;
         bool on = player.Shielded && !player.IsDead;
-        if (on && shieldTintTeam != player.Team) TintShield();
+        if (on && (shieldTintTeam != player.Team || shieldTintPair != NetGameManager.Instance?.ColourPair)) TintShield();
         Vector3 target = on ? shieldScale : Vector3.zero;
         shieldVisual.localScale = Vector3.Lerp(shieldVisual.localScale, target, 1f - Mathf.Exp(-14f * Time.deltaTime));
         shieldVisual.gameObject.SetActive(on || shieldVisual.localScale.x > 0.02f);
@@ -323,6 +332,7 @@ public class PlayerLoadout : MonoBehaviour
         shieldTintTeam = player.Team;
         NetGameManager gm = NetGameManager.Instance;
         if (gm == null) return;
+        shieldTintPair = gm.ColourPair;
         var block = new MaterialPropertyBlock();
         block.SetColor("_Color", player.Team == 2 ? gm.BetaTeam : gm.AlphaTeam);
         foreach (Renderer r in shieldVisual.GetComponentsInChildren<Renderer>(true)) r.SetPropertyBlock(block);

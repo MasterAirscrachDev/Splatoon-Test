@@ -6,6 +6,7 @@ using UnityEngine;
 // forwarded to them. Anyone may break one (landing on a beacon does), so breaks are broadcast.
 public abstract class SubDevice : MonoBehaviour
 {
+    [SerializeField] protected float inkCost = 0.6f;  // share of the ink tank it takes to use
     [SerializeField] protected float maxHealth = 35f;
     [SerializeField] protected float lifetime = 30f;
     [SerializeField] protected Renderer[] teamTinted; // parts shown in the team colour
@@ -19,6 +20,7 @@ public abstract class SubDevice : MonoBehaviour
     public int Team { get; private set; }
     public float Health => health;
     public float MaxHealth => maxHealth;
+    public float InkCost => inkCost;
     public float Lifetime => lifetime;
     public float TimeLeft => Mathf.Max(0f, expiresAt - Time.time);
     public bool IsOwnedLocally => authoritative;

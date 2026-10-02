@@ -908,8 +908,28 @@ MonoBehaviour:
   finalStretchTime: 60
   timesUpTime: 2.5
   resultsTime: 15
-  alphaTeam: {r: 0, g: 1, b: 1, a: 1}
-  betaTeam: {r: 1, g: 0, b: 1, a: 1}
+  colourPairs:
+  - name: Cyan / Magenta
+    alpha: {r: 0, g: 1, b: 1, a: 1}
+    beta: {r: 1, g: 0, b: 1, a: 1}
+  - name: Orange / Blue
+    alpha: {r: 1, g: 0.5, b: 0.05, a: 1}
+    beta: {r: 0.15, g: 0.35, b: 1, a: 1}
+  - name: Lime / Purple
+    alpha: {r: 0.7, g: 1, b: 0.1, a: 1}
+    beta: {r: 0.55, g: 0.15, b: 0.95, a: 1}
+  - name: Yellow / Indigo
+    alpha: {r: 0.97558546, g: 1, b: 0, a: 1}
+    beta: {r: 0.3, g: 0.2, b: 0.9, a: 1}
+  - name: Pink / Green
+    alpha: {r: 1, g: 0.3, b: 0.6, a: 1}
+    beta: {r: 0.1, g: 0.85, b: 0.45, a: 1}
+  - name: Turquoise / Red
+    alpha: {r: 0.1, g: 0.9, b: 0.75, a: 1}
+    beta: {r: 1, g: 0.25, b: 0.15, a: 1}
+  - name: Sky / Gold
+    alpha: {r: 0.35, g: 0.75, b: 1, a: 1}
+    beta: {r: 1, g: 0.65, b: 0.1, a: 1}
 --- !u!1 &754722343
 GameObject:
   m_ObjectHideFlags: 0
@@ -1236,8 +1256,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 40}
-  m_SizeDelta: {x: 37.3, y: 80}
+  m_AnchoredPosition: {x: 0, y: 40.1132}
+  m_SizeDelta: {x: 42, y: 88.315}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1102052500
 MonoBehaviour:
@@ -1251,7 +1271,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
-  m_Material: {fileID: 0}
+  m_Material: {fileID: 2100000, guid: 9874aba11e6f2a341a84892b087cf4ea, type: 2}
   m_Color: {r: 0.5324364, g: 0, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
@@ -1285,15 +1305,31 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 397771995937406886, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
     - target: {fileID: 460138499627683973, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
       propertyPath: m_TextStyleHashCode
       value: -1183493901
       objectReference: {fileID: 0}
-    - target: {fileID: 648840124402051127, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+    - target: {fileID: 706891570243230379, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
       propertyPath: m_TextStyleHashCode
       value: -1183493901
       objectReference: {fileID: 0}
-    - target: {fileID: 1186813966245516768, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+    - target: {fileID: 748344471887325240, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 1778603050527115669, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 2124477490722453901, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 2268053405312856284, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
       propertyPath: m_TextStyleHashCode
       value: -1183493901
       objectReference: {fileID: 0}
@@ -1301,11 +1337,71 @@ PrefabInstance:
       propertyPath: m_AdditionalShaderChannelsFlag
       value: 25
       objectReference: {fileID: 0}
+    - target: {fileID: 4266652078163531259, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 4373081680882842118, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 4424174037552094048, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 4477934196416007427, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 4486650672481322227, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 5075690891732871427, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 5284730217769670380, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 5349777536683201190, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 5392792863146250146, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
     - target: {fileID: 5792354682704522364, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
       propertyPath: m_Name
       value: MatchHUD
       objectReference: {fileID: 0}
+    - target: {fileID: 6774109246046974910, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 7354080890949591335, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 7494866920678604251, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 8422203356278885446, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
     - target: {fileID: 8513178830048290595, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 8828679882984412270, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 9058171725652041839, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
       propertyPath: m_TextStyleHashCode
       value: -1183493901
       objectReference: {fileID: 0}
@@ -1551,6 +1647,15 @@ MonoBehaviour:
   SquidUI: {fileID: 923486491}
   InkTankScaler: {fileID: 1298872397}
   squidUISpeed: 8
+  inkTankMaterial: {fileID: 2100000, guid: 9874aba11e6f2a341a84892b087cf4ea, type: 2}
+  sloshPerFill: 0.5
+  sloshMax: 0.06
+  sloshDecay: 2.5
+  tiltPerTurn: 0.0012
+  tiltMax: 0.3
+  tiltSpring: 90
+  tiltDamping: 7
+  bubblesAtRefill: 0.25
 --- !u!1 &1233666022
 GameObject:
   m_ObjectHideFlags: 0
@@ -1787,7 +1892,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1290351214
 RectTransform:
   m_ObjectHideFlags: 0

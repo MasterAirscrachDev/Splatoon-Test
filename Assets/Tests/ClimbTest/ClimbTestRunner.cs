@@ -429,6 +429,7 @@ public class ClimbTestRunner : MonoBehaviour
 
         yield return S("Lobby: switching form glides the camera instead of snapping", Station.Lobby, CameraFormSwitch);
         yield return S("Lobby: pooled projectiles splat where they land and are reused", Station.Lobby, ProjectilePooling);
+        yield return S("Projectiles: speed/gravity curves retime a path without changing it; fast shots can't skip hitboxes", Station.Lobby, ProjectileBallistics);
         yield return S("FlatWall: climb up and over the top", Station.FlatWall, ClimbUpAndOver);
         yield return S("FlatWall: no input on the wall slides slowly without letting go", Station.FlatWall, HoldStillOnWall);
         yield return S("FlatWall: climb down to the floor and swim away", Station.FlatWall, ClimbDownAndAway);
@@ -446,7 +447,8 @@ public class ClimbTestRunner : MonoBehaviour
         yield return S("Ramp30: swims down a walkable slope without bouncing", Station.Ramp30, ShallowRampDown, "SpawnTop");
         yield return S("Ramp60: a steep slope is climbed", Station.Ramp60, SteepRamp);
         yield return S("Combat: replays are visual-only, hits route to the victim, damage kills and respawns", Station.Lobby, Combat);
-        yield return S("HostMenu: percentages toggle, team editor moves players between teams and the bench", Station.Lobby, HostMenuTeams);
+        yield return S("Death: the camera circles the spot while a popup says who and with what; back at spawn 4s later, held in swim form for 1s; falling out of bounds too", Station.Lobby, Death);
+        yield return S("HostMenu: percentages toggle, special fills, team editor moves players between teams and the bench", Station.Lobby, HostMenuTeams);
         yield return S("Map: holding opens it, lists our team with lines to markers, picking a teammate requests a Super Jump", Station.Lobby, MapTeam);
         yield return S("SuperJump: locked charge in swim form, high arc onto the teammate, unlocks on landing (swim kept only if held)", Station.Lobby, SuperJump);
         yield return S("SuperJump: the landing spot locks on click, only our death cancels, spawn is always a target", Station.Lobby, SuperJumpLocking);
@@ -457,6 +459,7 @@ public class ClimbTestRunner : MonoBehaviour
         yield return S("Special: half lost on death; charged state is synced and shown on the player bar", Station.Lobby, SpecialDeathAndSync);
         yield return S("Lobby: swimming is fastest in our ink, slower on bare ground, slowest in enemy ink", Station.Lobby, SwimSpeeds);
         yield return S("LobbyMenu: hidden in dev mode, lists lobbies as rows, a failed join reports and refreshes", Station.Lobby, LobbyMenuList);
+        yield return S("Colours: a random pair from the set each load, the host's pick reaches everyone and recolours ink, players and HUD", Station.Lobby, TeamColourPairs);
         yield return S("Match: countdown locks and resets everyone, final minute hides the bar (no banner), results fill to a suspense point then the real split", Station.Lobby, MatchFlow);
         yield return S("Match: a mid-match joiner spectates the rest of the round, then gets their team back", Station.Lobby, LateJoin);
         yield return S("Spectating: no player of our own means the overhead view", Station.Lobby, SpectatorView);
@@ -464,7 +467,7 @@ public class ClimbTestRunner : MonoBehaviour
         yield return S("Weapons: Inkshot fires slower, further and tighter than Airspray SE", Station.Lobby, WeaponVariety);
         yield return S("Weapons: prefabs swapped in our hands, synced to remote copies; jumping doesn't carry into shots", Station.Lobby, WeaponPrefabs);
         yield return S("LoadoutMenu: picks the weapon and sub, applies and remembers them, can't open mid-match", Station.Lobby, LoadoutMenuPicks);
-        yield return S("InkStrike: aimed on the map (cancel keeps the charge), marked, then inks the whole column; lethal core, non-fatal edge", Station.Lobby, InkStrikeSpecial);
+        yield return S("InkStrike: aimed on the map (cancel keeps the charge), marked, then inks the whole column down to the ground; lethal core, non-fatal edge", Station.Lobby, InkStrikeSpecial);
         yield return S("Sprinkler: thrown, sticks, sprays both ways and winds down; one at a time; 30 HP; remote copies follow the owner", Station.Lobby, SprinklerSub);
         yield return S("HUD: rosters, death marks, match timer and turf bar track the game", Station.Lobby, Hud);
     }
@@ -499,11 +502,9 @@ public class ClimbTestRunner : MonoBehaviour
     IEnumerator ProjectilePooling()
     {
         if (projectilePrefab == null) { Fail("runner has no projectile prefab assigned (rebuild the test scene)"); yield break; }
-        int CountAll()    => FindObjectsByType<ProjectileSystem>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length;
-        int CountActive() => FindObjectsByType<ProjectileSystem>(FindObjectsInactive.Exclude, FindObjectsSortMode.None).Length;
 
         // Three volleys of 6 team-2 shots straight down onto the floor, half with hidden visuals.
-        int before = CountAll(), afterFirst = 0;
+        int before = ProjectileManager.VisualsCreated, afterFirst = 0;
         var targets = new List<Vector3>();
         for (int volley = 0; volley < 3; volley++)
         {
@@ -511,19 +512,18 @@ public class ClimbTestRunner : MonoBehaviour
             {
                 Vector3 p = station.TransformPoint(new Vector3(-6f + i * 2.4f, 3f, 4f + volley * 2.5f));
                 targets.Add(new Vector3(p.x, station.position.y, p.z));
-                ProjectilePool.Get(projectilePrefab, p, Quaternion.LookRotation(Vector3.down))
-                              .Setup(Vector3.down * 8f, 10, 2, visible: i % 2 == 0);
+                ProjectileManager.Fire(projectilePrefab, p, Vector3.down * 8f, 10, 2, visible: i % 2 == 0);
             }
             yield return Hold(Still, false, 0.6f, "volley");
-            if (volley == 0) afterFirst = CountAll() - before;
+            if (volley == 0) afterFirst = ProjectileManager.VisualsCreated - before;
         }
         yield return Hold(Still, false, 0.3f, "settle");
 
-        int created = CountAll() - before, stillActive = CountActive();
-        Note($"{targets.Count} shots used {created} instances");
-        if (afterFirst == 0) Fail("no projectile instances were created");
-        if (created > afterFirst) Fail($"pool didn't reuse instances ({afterFirst} after the first volley, {created} after three)");
-        if (stillActive > 0) Fail($"{stillActive} projectile(s) never returned to the pool");
+        int created = ProjectileManager.VisualsCreated - before, stillFlying = ProjectileManager.LiveCount;
+        Note($"{targets.Count} shots used {created} visuals");
+        if (afterFirst == 0 || afterFirst > 3) Fail($"expected a visual per visible shot of the first volley, got {afterFirst}");
+        if (created > afterFirst) Fail($"visuals weren't reused ({afterFirst} after the first volley, {created} after three)");
+        if (stillFlying > 0) Fail($"{stillFlying} shot(s) never finished");
 
         int painted = 0;
         foreach (Vector3 t in targets)
@@ -531,6 +531,169 @@ public class ClimbTestRunner : MonoBehaviour
                 && hit.collider.TryGetComponent(out SurfaceInkManager ink) && ink.getSurfaceTeam(hit.textureCoord) == 2)
                 painted++;
         if (painted < targets.Count) Fail($"only {painted}/{targets.Count} shots painted where they landed");
+    }
+
+    IEnumerator TeamColourPairs()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        MatchHUD hud = FindFirstObjectByType<MatchHUD>();
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        Material ink = floor.GetComponent<Renderer>().material;
+        int start = gm.ColourPair;
+        Note($"{gm.ColourPairCount} colour pairs; this load picked {start} ({gm.ColourPairName})");
+        if (gm.ColourPairCount < 5) Fail("expected a set of colour pairs");
+        if (start < 0 || start >= gm.ColourPairCount) Fail("no colour pair picked on load");
+
+        // The host's roster carries its pick; everything recolours.
+        int other = (start + 1) % gm.ColourPairCount;
+        int changes = 0;
+        System.Action counted = () => changes++;
+        NetGameManager.TeamColoursChanged += counted;
+        gm.Receive(NetMsg.TeamAssign, new TeamAssignData { ids = new ulong[0], roles = new int[0], colourPair = other }, 0);
+        yield return Hold(Still, false, 0.2f, "colours");
+        NetGameManager.TeamColoursChanged -= counted;
+        bool inkOk = ink.GetColor("_AlphaColor") == gm.AlphaTeam && ink.GetColor("_BetaColor") == gm.BetaTeam;
+        Color own = player.Team == 2 ? gm.BetaTeam : gm.AlphaTeam;
+        bool hudOk = hud == null || hud.AlphaBarColour == gm.AlphaTeam;
+        Note($"after the host's roster: pair {gm.ColourPair} ({gm.ColourPairName}), {changes} change event(s); ink {(inkOk ? "recoloured" : "stale")}, HUD bar {(hudOk ? "recoloured" : "stale")}, our colour {own}");
+        if (gm.ColourPair != other || changes != 1) Fail("the host's colour pick wasn't applied (once)");
+        if (!inkOk) Fail("ink surfaces kept the old colours");
+        if (!hudOk) Fail("the turf bar kept the old colours");
+        if (player.TeamColour != own) Fail("our player kept the old colour");
+
+        gm.SetColourPair(start);
+        yield return Hold(Still, false, 0.1f, "colours");
+    }
+
+    IEnumerator Death()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        DeathPopup popup = FindFirstObjectByType<DeathPopup>(FindObjectsInactive.Include);
+        Camera view = player.CameraRig != null ? player.CameraRig.GetComponentInChildren<Camera>(true) : null;
+        if (popup == null || view == null) { Fail("no DeathPopup in the HUD (or no player camera)"); yield break; }
+        Transform cam = view.transform;
+        const ulong FoeId = 3070;
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        SpawnRemote(FoeId, enemyTeam, station.TransformPoint(new Vector3(8f, 0.05f, 8f)), "Splatterer");
+        player.Hitbox.ResetHealth();
+        yield return Hold(Still, false, 0.3f, "stand");
+
+        // Splatted by them: the camera circles where it happened, the popup says who and with what.
+        Vector3 spot = player.transform.position;
+        gm.Receive(NetMsg.Damage, new DamageData { targetSteamId = player.OwnerId, attackerSteamId = FoeId, amount = 250f, fromTeam = enemyTeam, source = "Inkshot" }, FoeId);
+        yield return HoldUntil(Still, false, 0.5f, "dead", f => f.dead);
+        float diedAt = Time.time;
+        yield return null;
+        Note($"popup: \"{popup.Message}\"");
+        if (!player.IsDead || player.KilledBy != FoeId || player.KilledWith != "Inkshot") Fail("the hit didn't splat us (or lost who and what did it)");
+        if (!popup.Shown || !popup.Message.Contains("Splatterer") || !popup.Message.Contains("Inkshot")) Fail("the popup doesn't say who splatted us and with what");
+        float Bearing() { Vector3 d = cam.position - player.DeathSpot; return Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg; }
+        float startBearing = Bearing();
+        yield return Hold(Still, false, 1f, "dead");
+        Vector3 offset = cam.position - player.DeathSpot;
+        float turned = Mathf.Abs(Mathf.DeltaAngle(startBearing, Bearing()));
+        Note($"death camera {new Vector2(offset.x, offset.z).magnitude:F1}m out and {offset.y:F1}m up, turned {turned:F0}° in 1s");
+        if (Vector3.Distance(player.DeathSpot, spot) > 0.5f) Fail("the death camera isn't over where we were splatted");
+        if (!player.DeathCamera || new Vector2(offset.x, offset.z).magnitude < 3f || offset.y < 1f || turned < 20f) Fail("the camera isn't circling over the spot");
+
+        // Back at a spawn after 4s, in swim form and held still (even pushing forward) for a second.
+        yield return HoldUntil(Fwd, false, 4.5f, "dead", f => !f.dead);
+        float respawnAfter = Time.time - diedAt;
+        frames.Clear(); // the respawn is a teleport
+        Vector3 at = player.transform.position;
+        float toSpawn = GameObject.FindGameObjectsWithTag(player.Team == 1 ? "AlphaSpawn" : "BetaSpawn")
+            .Select(g => Vector3.Distance(g.transform.position, at)).DefaultIfEmpty(Vector3.Distance(player.SpawnPosition, at)).Min();
+        if (Mathf.Abs(respawnAfter - 4f) > 0.15f) Fail($"respawned {respawnAfter:F2}s after dying, not 4s");
+        if (toSpawn > 1.5f) Fail($"respawned {toSpawn:F1}m from the nearest spawn");
+        yield return Hold(Fwd, false, 0.6f, "held");
+        float drift = Vector3.ProjectOnPlane(player.transform.position - at, Vector3.up).magnitude;
+        bool heldSquid = player.IsSquid, holding = player.IsRespawning, popupGone = !popup.Shown;
+        yield return Hold(Fwd, false, 0.8f, "free");
+        float moved = Vector3.ProjectOnPlane(player.transform.position - at, Vector3.up).magnitude;
+        Note($"respawned {respawnAfter:F2}s after dying; held {(heldSquid ? "in swim form" : "standing")}, drifted {drift:F2}m in 0.6s; then moved {moved:F1}m");
+        if (!holding || !heldSquid || drift > 0.1f) Fail("not held still in swim form just after respawning");
+        if (!popupGone) Fail("the popup is still up after respawning");
+        if (player.IsRespawning || moved < 0.5f) Fail("didn't get control back after the hold");
+
+        // Falling out of the world: the same, the camera over the last ground we stood on.
+        player.PlaceAt(station.TransformPoint(new Vector3(-6f, 0.1f, -6f)), player.transform.eulerAngles.y);
+        yield return Hold(Still, false, 0.3f, "ground");
+        Vector3 ground = player.transform.position;
+        player.transform.position = new Vector3(ground.x, PlayerController.KillHeight - 2f, ground.z);
+        Physics.SyncTransforms();
+        yield return HoldUntil(Still, false, 0.5f, "fall", f => f.dead);
+        frames.Clear(); // the drop is a teleport
+        yield return null;
+        Note($"fell: \"{popup.Message}\", camera over a spot {Vector3.Distance(player.DeathSpot, ground):F2}m from the last ground");
+        if (!player.IsDead || player.KilledBy != 0 || player.KilledWith != PlayerController.FellCause) Fail("falling out of bounds didn't splat us");
+        if (!popup.Shown || !popup.Message.Contains(PlayerController.FellCause)) Fail("the popup doesn't say we fell");
+        if (Vector3.Distance(player.DeathSpot, ground) > 0.5f) Fail("the death camera isn't over where we fell from");
+        player.Respawn();
+        yield return Hold(Still, false, 0.2f, "settle");
+        frames.Clear();
+        if (player.DeathCamera || player.IsDead) Fail("still splatted after respawning");
+
+        Despawn(FoeId);
+        yield return Hold(Still, false, 0.1f, "cleanup");
+    }
+
+    IEnumerator ProjectileBallistics()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        CaptureSends();
+        const ulong FoeId = 3060;
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+
+        // Speed Ã—2 with gravity Ã—4 follows the same path in half the time.
+        var landed = new Dictionary<ProjectileManager.Shot, (Vector3 point, float age)>();
+        Action<ProjectileManager.Shot, Vector3> onImpact = (shot, point) => landed[shot] = (point, shot.age);
+        ProjectileManager.Impact += onImpact;
+        Vector3 from = station.TransformPoint(new Vector3(-8f, 2.5f, -8f));
+        Vector3 launch = station.TransformDirection(new Vector3(0f, 0.3f, 1f)).normalized * 8f;
+        var doubled = new Ballistics { velocityOverTime = AnimationCurve.Constant(0f, 1f, 2f), gravityOverTime = AnimationCurve.Constant(0f, 1f, 4f) };
+        ProjectileManager.Shot plain = ProjectileManager.Fire(projectilePrefab, from, launch, 10, player.Team, ownerId: player.OwnerId);
+        ProjectileManager.Shot quick = ProjectileManager.Fire(projectilePrefab, from + station.TransformDirection(Vector3.right) * 3f, launch, 10, player.Team, ownerId: player.OwnerId, ballistics: doubled);
+        yield return HoldUntil(Still, false, 3f, "fly", f => landed.ContainsKey(plain) && landed.ContainsKey(quick));
+        ProjectileManager.Impact -= onImpact;
+        if (!landed.ContainsKey(plain) || !landed.ContainsKey(quick)) { Fail("shots didn't land"); NetGameManager.SendOverride = null; yield break; }
+        Vector3 offset = station.TransformDirection(Vector3.right) * 3f;
+        float pathError = Vector3.Distance(landed[plain].point + offset, landed[quick].point);
+        Note($"plain landed after {landed[plain].age:F2}s, doubled after {landed[quick].age:F2}s, {pathError:F2}m apart (same path)");
+        if (pathError > 0.25f) Fail("doubling speed and quadrupling gravity changed the path");
+        if (Mathf.Abs(landed[quick].age / landed[plain].age - 0.5f) > 0.05f) Fail("doubled shot didn't take half the time");
+
+        // A very fast shot still can't skip past a hitbox between frames.
+        SpawnRemote(FoeId, enemyTeam, station.TransformPoint(new Vector3(8f, 0.05f, 8f)), "Foe");
+        yield return Hold(Still, false, 0.2f, "fast");
+        PlayerController foe = gm.GetPlayer(FoeId);
+        sent.Clear();
+        Vector3 across = station.TransformDirection(Vector3.right);
+        ProjectileManager.Fire(projectilePrefab, foe.BodyCenter - across * 12f, across * 150f, 10, player.Team, ownerId: player.OwnerId,
+                               ballistics: new Ballistics { gravityOverTime = AnimationCurve.Constant(0f, 1f, 0f) });
+        yield return Hold(Still, false, 0.3f, "fast");
+        Note($"150 m/s shot: {(sent.Any(m => m.id == NetMsg.Damage && m.to == FoeId) ? "hit" : "missed")} (moves 2m per frame)");
+        if (!sent.Any(m => m.id == NetMsg.Damage && m.to == FoeId)) Fail("a 150 m/s shot passed through the hitbox");
+
+        // Grates let ink through (the Projectile layer ignores MapGrate in the physics matrix).
+        GameObject grate = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        grate.layer = LayerMask.NameToLayer("MapGrate");
+        Vector3 under = station.TransformPoint(new Vector3(-8f, 0f, 4f));
+        grate.transform.position = under + Vector3.up * 1.5f;
+        grate.transform.localScale = new Vector3(3f, 0.1f, 3f);
+        Physics.SyncTransforms();
+        Vector3? throughGrate = null;
+        Action<ProjectileManager.Shot, Vector3> onGrate = (shot, point) => throughGrate = point;
+        ProjectileManager.Impact += onGrate;
+        ProjectileManager.Fire(projectilePrefab, under + Vector3.up * 3f, Vector3.down * 8f, 10, player.Team, ownerId: player.OwnerId);
+        yield return HoldUntil(Still, false, 1f, "grate", f => throughGrate.HasValue);
+        ProjectileManager.Impact -= onGrate;
+        Destroy(grate);
+        Note($"shot dropped through a grate 1.5m up: {(throughGrate.HasValue ? $"landed {throughGrate.Value.y - under.y:F2}m above the floor" : "never landed")}");
+        if (!throughGrate.HasValue || throughGrate.Value.y > under.y + 0.5f) Fail("a shot stopped on a grate instead of going through");
+
+        Despawn(FoeId);
+        yield return Hold(Still, false, 0.1f, "fast");
+        NetGameManager.SendOverride = null;
     }
 
     IEnumerator ClimbUpAndOver()
@@ -912,7 +1075,7 @@ public class ClimbTestRunner : MonoBehaviour
         // 1. Replayed enemy shots (one onto us, one onto the floor) are visual only.
         Vector3 floorSpot = station.TransformPoint(new Vector3(-8f, 0f, -6f));
         int floorTeam = TeamAt(floorSpot);
-        int activeBefore = FindObjectsByType<ProjectileSystem>(FindObjectsInactive.Exclude, FindObjectsSortMode.None).Length;
+        int activeBefore = ProjectileManager.LiveCount;
         gm.Receive(NetMsg.ProjectileSpawn, new ProjectileSpawnData
         {
             shooterSteamId = RemoteId, team = enemyTeam, origin = player.BodyCenter + Vector3.up * 3f,
@@ -924,7 +1087,7 @@ public class ClimbTestRunner : MonoBehaviour
             velocities = new float[] { 0f, -8f, 0f }, splashSizes = new[] { 10 }, visible = new[] { false }
         }, RemoteId);
         yield return Hold(Still, false, 1f / 30f, "replay");
-        int replays = FindObjectsByType<ProjectileSystem>(FindObjectsInactive.Exclude, FindObjectsSortMode.None).Length - activeBefore;
+        int replays = ProjectileManager.LiveCount - activeBefore;
         yield return Hold(Still, false, 0.8f, "replay");
 
         if (replays != 2) Fail($"expected 2 replayed projectiles, saw {replays}");
@@ -936,8 +1099,7 @@ public class ClimbTestRunner : MonoBehaviour
         sent.Clear();
         for (int i = 0; i < 3; i++)
         {
-            ProjectilePool.Get(projectilePrefab, remote.BodyCenter + Vector3.up * 3f, Quaternion.LookRotation(Vector3.down))
-                          .Setup(Vector3.down * 8f, 10, player.Team, true, authoritative: true, ownerId: player.OwnerId);
+            ProjectileManager.Fire(projectilePrefab, remote.BodyCenter + Vector3.up * 3f, Vector3.down * 8f, 10, player.Team, true, authoritative: true, ownerId: player.OwnerId);
             yield return Hold(Still, false, 0.25f, "shoot");
         }
         yield return Hold(Still, false, 0.5f, "shoot");
@@ -1042,6 +1204,13 @@ public class ClimbTestRunner : MonoBehaviour
         if (!hud.ShowPercentages) Fail("Toggle percentages didn't show them");
         menu.PercentButton.onClick.Invoke();
         if (hud.ShowPercentages) Fail("Toggle percentages didn't hide them again");
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        loadout.SetSpecialPoints(0f);
+        menu.FillSpecialButton.onClick.Invoke();
+        if (!loadout.SpecialReady) Fail("Fill special didn't fill it");
+        if (menu.IsOpen) Fail("menu stayed open after filling the special");
+        loadout.SetSpecialPoints(0f);
+        menu.SetOpen(true); // carry on with the rest of the menu
 
         menu.TeamsButton.onClick.Invoke();
         yield return Hold(Still, false, 0.05f, "menu");
@@ -1357,8 +1526,7 @@ public class ClimbTestRunner : MonoBehaviour
     void Despawn(ulong id) => NetGameManager.Instance.Receive(NetMsg.PlayerDespawn, new PlayerSpawnData { steamId = id }, id);
 
     void Shoot(Vector3 above, int team, ulong ownerId) =>
-        ProjectilePool.Get(projectilePrefab, above, Quaternion.LookRotation(Vector3.down))
-                      .Setup(Vector3.down * 10f, 10, team, true, authoritative: true, ownerId: ownerId);
+        ProjectileManager.Fire(projectilePrefab, above, Vector3.down * 10f, 10, team, true, authoritative: true, ownerId: ownerId);
 
     IEnumerator SubBeacon()
     {
@@ -1366,7 +1534,9 @@ public class ClimbTestRunner : MonoBehaviour
         PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
         MapScreen map = FindFirstObjectByType<MapScreen>();
         if (loadout == null || map == null) { Fail("player has no PlayerLoadout (or no MapScreen)"); yield break; }
+        if (loadout.SubReadyLight == null) Fail("the ink tank's sub light isn't hooked up");
         loadout.SetSub(SubType.Beacon);
+        if (Mathf.Abs(loadout.SubInkCost - loadout.BeaconPrefab.InkCost) > 0.001f) Fail("the sub's cost doesn't come from its prefab");
         CaptureSends();
         SubDevice.RemoveAll();
         const ulong FoeId = 3011;
@@ -1375,6 +1545,8 @@ public class ClimbTestRunner : MonoBehaviour
         // Costs the sub's share of ink; with less than that, nothing happens.
         player.RefillInk();
         yield return Hold(Still, false, 0.2f, "stand");
+        PlayerStateData full = player.GetNetState(player.OwnerId, 0);
+        bool litFull = loadout.SubReadyLight != null && loadout.SubReadyLight.enabled;
         if (!loadout.UseSub()) { Fail("couldn't place a beacon with a full tank"); NetGameManager.SendOverride = null; yield break; }
         Beacon beacon = SubDevice.All.OfType<Beacon>().First(b => b.OwnerId == player.OwnerId);
         Vector3 beaconPos = beacon.transform.position;
@@ -1384,10 +1556,31 @@ public class ClimbTestRunner : MonoBehaviour
         if (ahead < 0.5f) Fail("beacon isn't in front of the player");
         if (!sent.Any(m => m.id == NetMsg.SubSpawn)) Fail("beacon wasn't broadcast");
         if (loadout.UseSub() || SubDevice.All.Count != 1) Fail("placed a beacon with only 30% ink");
+        yield return null;
+        PlayerStateData low = player.GetNetState(player.OwnerId, 0);
+        bool litLow = loadout.SubReadyLight != null && loadout.SubReadyLight.enabled;
+        Note($"tank light {(litFull ? "on" : "off")} when full, {(litLow ? "on" : "off")} at {player.InkLevel:F2}; sent ink {full.ink:F2}/{low.ink:F2}, ready {full.subReady}/{low.subReady}");
+        if (!litFull || litLow) Fail("the tank light should be on only with enough ink for the sub");
+        if (!full.subReady || low.subReady || Mathf.Abs(low.ink - player.InkLevel) > 0.01f) Fail("ink level and sub readiness aren't in our state updates");
 
         // An enemy beacon arrives from its owner; only ours shows on our map.
         SpawnRemote(FoeId, enemyTeam, station.TransformPoint(new Vector3(-9f, 0.05f, 8f)), "Foe");
         yield return Hold(Still, false, 0.1f, "stand");
+
+        // Their tank shows their ink, and its light whether they can use their sub.
+        PlayerController foe = gm.GetPlayer(FoeId);
+        PlayerLoadout foeLoadout = foe != null ? foe.GetComponent<PlayerLoadout>() : null;
+        foreach (bool ready in new[] { true, false })
+        {
+            PlayerStateData state = foe.GetNetState(FoeId, 0);
+            state.subReady = ready;
+            state.ink = ready ? 0.8f : 0.2f;
+            foe.ApplyNetState(state);
+            yield return null;
+            if (foeLoadout == null || foeLoadout.SubReadyLight == null || foeLoadout.SubReadyLight.enabled != ready) Fail($"their tank light didn't follow their state (ready {ready})");
+            if (Mathf.Abs(foe.InkLevel - state.ink) > 0.001f) Fail("their ink level didn't follow their state");
+        }
+
         gm.Receive(NetMsg.SubSpawn, new SubData { ownerId = FoeId, subId = 1, team = enemyTeam, subType = (int)SubType.Beacon, landed = true, normal = Vector3.up, position = station.TransformPoint(new Vector3(-8f, 0f, 8f)) }, FoeId);
         yield return Hold(Still, false, 0.1f, "stand");
         if (SubDevice.Find(FoeId, 1) == null) Fail("enemy beacon wasn't created from its message");
@@ -1519,11 +1712,11 @@ public class ClimbTestRunner : MonoBehaviour
         if (foe == null) { Fail("enemy didn't spawn"); NetGameManager.SendOverride = null; yield break; }
         float before = loadout.SpecialPoints;
         foe.Hitbox.TakeDamage(30f, player.Team, player.OwnerId);
-        float ours = loadout.SpecialPoints - before;
+        float ours = loadout.SpecialPoints - before, afterOurs = loadout.SpecialPoints;
         foe.Hitbox.TakeDamage(30f, player.Team, 99999);
-        float theirs = loadout.SpecialPoints - before - ours;
-        Note($"special +{ours:F0}p for our 30 damage, +{theirs:F0}p for someone else's");
-        if (Mathf.Abs(ours - 30f) > 0.01f || theirs != 0f) Fail("damage dealt didn't charge 1p per damage (ours only)");
+        float theirs = loadout.SpecialPoints - afterOurs;
+        Note($"special +{ours:F2}p for our 30 damage, +{theirs:F2}p for someone else's");
+        if (Mathf.Abs(ours - 30f) > 0.01f || Mathf.Abs(theirs) > 0.001f) Fail("damage dealt didn't charge 1p per damage (ours only)");
 
         // Full: ready. Using it refills ink, raises the shield (replicated) and spends the charge.
         loadout.SetSpecialPoints(1000f);
@@ -1653,11 +1846,15 @@ public class ClimbTestRunner : MonoBehaviour
         hud.ShowPercentages = true;
         yield return Hold(Still, false, 0.3f, "free");
 
-        // Start: everyone to their spawn, locked, map and loadout reset, host features off.
+        // Start: everyone to their spawn, locked, map and loadout reset, host features off; new colours.
+        int pairBefore = gm.ColourPair;
         gm.StartGame();
         frames.Clear(); // the respawn teleport
         Vector3 start = player.transform.position;
         if (gm.Phase != MatchPhase.Countdown || !Broadcast(MatchPhase.Countdown)) Fail("countdown didn't start (or wasn't broadcast)");
+        bool pairSent = sent.Any(m => m.id == NetMsg.MatchEvent && m.data is MatchEventData d && d.phase == MatchPhase.Countdown && d.colourPair == gm.ColourPair);
+        Note($"colours {pairBefore} -> {gm.ColourPair} ({gm.ColourPairName}) for the new game");
+        if (gm.ColourPair == pairBefore || !pairSent) Fail("a new game didn't pick (and send) new team colours");
         yield return Hold(Fwd, true, 0.5f, "countdown");
         Note($"countdown banner \"{flow.BannerText}\"");
         if (flow.BannerText != "1") Fail("countdown number not shown");
@@ -1942,7 +2139,7 @@ public class ClimbTestRunner : MonoBehaviour
         yield return null;
         if (loadout.Special != SpecialType.InkStrike || PlayerPrefs.GetInt("loadout.special", -1) != (int)SpecialType.InkStrike) Fail("picking InkStrike didn't select (and remember) it");
         if (loadout.WeaponIndex != 1 || loadout.CurrentWeapon == null || loadout.CurrentWeapon.DisplayName != "Inkshot") Fail("picking Inkshot didn't equip it");
-        if (loadout.Sub != SubType.Sprinkler || Mathf.Abs(loadout.SubInkCost - 0.6f) > 0.001f) Fail("picking the sprinkler didn't select it");
+        if (loadout.Sub != SubType.Sprinkler || Mathf.Abs(loadout.SubInkCost - loadout.SprinklerPrefab.InkCost) > 0.001f) Fail("picking the sprinkler didn't select it");
         if (PlayerPrefs.GetInt("loadout.weapon", -1) != 1 || PlayerPrefs.GetInt("loadout.sub", -1) != (int)SubType.Sprinkler) Fail("choices weren't remembered");
         menu.SetOpen(false);
         yield return Hold(Still, false, 0.1f, "menu");
@@ -2017,7 +2214,22 @@ public class ClimbTestRunner : MonoBehaviour
         yield return HoldUntil(Still, false, 3f, "strike", f => strike == null || strike.Struck);
         Note($"struck {Time.time - markedAt:F2}s after being marked");
         if (Mathf.Abs(Time.time - markedAt - loadout.InkStrikePrefab.Delay) > 0.1f) Fail("didn't strike after its delay");
-        yield return Hold(Still, false, 0.5f, "after");
+        float strikeWidth = strike.Width;
+
+        // It spreads out from the middle: halfway, the core is hit but the edge isn't yet.
+        yield return HoldUntil(Still, false, strike.AttackTime + 1f, "spread", f => strike == null || strike.Front >= radius * 0.5f);
+        bool coreHit = sent.Any(m => m.id == NetMsg.Damage && m.to == FoeIn), edgeHit = sent.Any(m => m.id == NetMsg.Damage && m.to == FoeEdge);
+        Note($"halfway out: core {(coreHit ? "hit" : "not hit")}, edge {(edgeHit ? "hit" : "not hit")}");
+        if (!coreHit || edgeHit) Fail("the damage didn't spread out from the middle");
+        float halfwayWidth = strike.Width;
+        yield return HoldUntil(Still, false, loadout.InkStrikePrefab.AttackTime + 0.3f, "after", f => strike.Front >= radius);
+        yield return Hold(Still, false, 0.2f, "after");
+        float fullWidth = strike.Width;
+        Note($"column radius {strikeWidth:F2}m as it strikes, {halfwayWidth:F2}m halfway out, {fullWidth:F2}m at full size (thin {strike.TightRadius:F2}, full {strike.FullWidth:F2})");
+        if (strikeWidth > strike.TightRadius * 0.5f) Fail("the column didn't grow out of nothing");
+        if (halfwayWidth <= strike.TightRadius || halfwayWidth >= strike.FullWidth) Fail("the column wasn't widening from thin to full");
+        if (Mathf.Abs(fullWidth - strike.FullWidth) > 0.05f) Fail("the column didn't reach its full size");
+        yield return Hold(Still, false, 0.3f, "after");
 
         // Inside is our ink; enemies inside got lethal damage, nobody else did.
         int inked = 0, probes = 0;
@@ -2038,26 +2250,50 @@ public class ClimbTestRunner : MonoBehaviour
         if (Hit(FoeEdge) == null || Hit(FoeEdge).amount <= 0f || Hit(FoeEdge).amount >= 100f) Fail("the enemy at the edge should be hit, but not fatally");
         if (Hit(FoeOut) != null || Hit(MateIn) != null) Fail("hit someone outside the area (or a teammate)");
 
-        // The whole column: next to a bare wall, it inks the wall all the way up.
+        // The whole column, even aimed at the top of something tall: down to the floor around a bare
+        // 10m block, its sides all the way down, and whoever stands beside it.
         Transform wallStation = GameObject.Find(Name(Station.NeutralWall)).transform;
         SurfaceInkManager wall = wallStation.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Wall");
         Bounds wb = wall.GetComponent<Renderer>().bounds;
-        Vector3 nearWall = new Vector3(wb.center.x, wb.min.y, wb.min.z - 2f);
-        if (Physics.Raycast(nearWall + Vector3.up, Vector3.down, out RaycastHit ground, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) nearWall = ground.point;
+        Vector3 onTop = new Vector3(wb.center.x, wb.max.y, wb.center.z);
+        Vector3 beside = new Vector3(wb.center.x, wb.min.y, wb.min.z - 1f);
+        if (Physics.Raycast(beside + Vector3.up, Vector3.down, out RaycastHit ground, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) beside = ground.point;
+        const ulong FoeBelow = 3055;
+        SpawnRemote(FoeBelow, enemyTeam, beside + Vector3.up * 0.05f, "FoeBelow");
+        yield return Hold(Still, false, 0.1f, "column");
+        sent.Clear();
         loadout.SetSpecialPoints(1000f);
-        loadout.LaunchInkStrike(nearWall);
-        yield return Hold(Still, false, loadout.InkStrikePrefab.Delay + 0.6f, "column");
+        loadout.LaunchInkStrike(onTop);
+        InkStrike tall = FindObjectsByType<InkStrike>(FindObjectsSortMode.None).FirstOrDefault(k => k.IsOwnedLocally && !k.Struck);
+        Note($"aimed at the block's top (y {onTop.y:0.0}); column bottom {(tall != null ? tall.Bottom : float.NaN):0.0}, floor {beside.y:0.0}");
+        if (tall == null || Mathf.Abs(tall.Bottom - beside.y) > 0.2f) Fail("the column doesn't reach down to the floor");
+        yield return Hold(Still, false, loadout.InkStrikePrefab.Delay + loadout.InkStrikePrefab.AttackTime + 0.6f, "column");
+        if (strike != null && strike.Width > 0.01f) Fail($"the first column didn't shrink back to nothing (radius {strike.Width:F2}m)");
         int wallInked = 0, wallProbes = 0;
         for (float h = 1f; h < wb.size.y; h += 2f)
         for (int side = -1; side <= 1; side++)
         {
-            Vector3 from = new Vector3(wb.center.x + side * 2f, nearWall.y + h, wb.min.z - 1f);
+            Vector3 from = new Vector3(wb.center.x + side * 2f, beside.y + h, wb.min.z - 1f);
             if (!Physics.Raycast(from, Vector3.forward, out RaycastHit hit, 2f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore) || hit.collider.GetComponent<SurfaceInkManager>() != wall) continue;
             wallProbes++;
             if (wall.getSurfaceTeam(wall.UVFromHit(hit)) == player.Team) wallInked++;
         }
-        Note($"{wallInked}/{wallProbes} points up the wall ({wb.size.y:0}m tall) are our ink");
-        if (wallProbes == 0 || wallInked < wallProbes) Fail("didn't ink the wall all the way up the column");
+        int floorInked = 0, floorProbes = 0;
+        foreach (Vector3 offset in new[] { Vector3.left, Vector3.right, Vector3.forward, Vector3.back })
+        {
+            Vector3 probe = onTop + offset * 5f; // between the block (4m out) and the column's edge
+            if (!Physics.Raycast(new Vector3(probe.x, beside.y + 1f, probe.z), Vector3.down, out RaycastHit hit, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) continue;
+            SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
+            if (ink == null) continue;
+            floorProbes++;
+            if (ink.getSurfaceTeam(ink.UVFromHit(hit)) == player.Team) floorInked++;
+        }
+        float belowHit = sent.Where(m => m.id == NetMsg.Damage && m.to == FoeBelow).Select(m => (m.data as DamageData).amount).FirstOrDefault();
+        Note($"{wallInked}/{wallProbes} points down the block's side and {floorInked}/{floorProbes} on the floor around it are our ink; the enemy beside it took {belowHit:0}");
+        if (wallProbes == 0 || wallInked < wallProbes) Fail("didn't ink the block's side all the way down");
+        if (floorProbes == 0 || floorInked < floorProbes) Fail("didn't ink the floor around the block");
+        if (belowHit <= 0f) Fail("didn't hit the enemy on the floor below");
+        Despawn(FoeBelow);
         foreach (SurfaceInkManager ink in wallStation.GetComponentsInChildren<SurfaceInkManager>()) // back as the scene set it up
         {
             ink.FillRegion(new Rect(0, 0, 1, 1), 0);
@@ -2071,7 +2307,7 @@ public class ClimbTestRunner : MonoBehaviour
         yield return Hold(Still, false, 0.1f, "remote");
         InkStrike theirs = FindObjectsByType<InkStrike>(FindObjectsSortMode.None).FirstOrDefault(k => !k.IsOwnedLocally);
         if (theirs == null) Fail("their strike wasn't shown");
-        yield return Hold(Still, false, 1.2f, "remote");
+        yield return Hold(Still, false, theirs != null ? theirs.Delay + theirs.AttackTime + 0.3f : 1.2f, "remote");
         if (sent.Any(m => m.id == NetMsg.Damage || m.id == NetMsg.Splat)) Fail("their strike was painted/damaged from here");
 
         foreach (ulong id in new[] { FoeIn, FoeOut, MateIn, FoeEdge, FoeHigh }) Despawn(id);
@@ -2100,7 +2336,7 @@ public class ClimbTestRunner : MonoBehaviour
         if (!loadout.UseSub()) { Fail("couldn't throw a sprinkler"); loadout.SetSub(SubType.Beacon); NetGameManager.SendOverride = null; yield break; }
         Sprinkler s = SubDevice.All.OfType<Sprinkler>().First(d => d.OwnerId == player.OwnerId);
         Note($"ink after throwing {player.InkLevel:F2}");
-        if (Mathf.Abs(player.InkLevel - 0.4f) > 0.01f) Fail("didn't cost 60% ink");
+        if (Mathf.Abs(player.InkLevel - (1f - loadout.SprinklerPrefab.InkCost)) > 0.01f) Fail($"didn't cost {loadout.SprinklerPrefab.InkCost * 100f:0}% ink");
         if (s.Landed) Fail("landed the moment it was thrown");
         if (!sent.Any(m => m.id == NetMsg.SubSpawn && m.data is SubData d && !d.landed && d.subType == (int)SubType.Sprinkler)) Fail("throw wasn't broadcast");
         yield return HoldUntil(Still, false, 3f, "throw", f => s == null || s.Landed);
@@ -2213,8 +2449,7 @@ public class ClimbTestRunner : MonoBehaviour
         for (int i = 0; i < 12; i++)
         {
             Vector3 p = station.TransformPoint(new Vector3(-9f + (i % 6) * 3.5f, 3f, -4f - (i / 6) * 3.5f));
-            ProjectilePool.Get(projectilePrefab, p, Quaternion.LookRotation(Vector3.down))
-                          .Setup(Vector3.down * 8f, 30, player.Team, true, authoritative: true, ownerId: player.OwnerId);
+            ProjectileManager.Fire(projectilePrefab, p, Vector3.down * 8f, 30, player.Team, true, authoritative: true, ownerId: player.OwnerId);
         }
         yield return Hold(Still, false, 2.5f, "turf");
         Note($"our coverage {ourShare():P2}, bar fill {(player.Team == 1 ? hud.ShownAlphaFill : 0f):F4}");

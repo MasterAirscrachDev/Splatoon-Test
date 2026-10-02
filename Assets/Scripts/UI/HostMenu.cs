@@ -6,7 +6,8 @@ using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
-// Host-only menu (G): reset the map, edit teams, toggle coverage percentages, start the game.
+// Host-only menu (G): reset the map, edit teams, toggle coverage percentages, fill our special
+// (for testing), start the game.
 // During a match only "End match" is available.
 public class HostMenu : MonoBehaviour
 {
@@ -20,7 +21,7 @@ public class HostMenu : MonoBehaviour
 
     [SerializeField] MatchHUD hud;
     [SerializeField] GameObject mainPanel, teamPanel;
-    [SerializeField] Button resetButton, teamsButton, percentButton, startButton, closeButton, teamsBackButton;
+    [SerializeField] Button resetButton, teamsButton, percentButton, fillSpecialButton, startButton, closeButton, teamsBackButton;
     [SerializeField] TMP_Text percentButtonLabel, startButtonLabel;
 
     [Header("Team editor columns")]
@@ -59,6 +60,11 @@ public class HostMenu : MonoBehaviour
         resetButton.onClick.AddListener(() => { NetGameManager.Instance?.ResetMap(); SetOpen(false); });
         teamsButton.onClick.AddListener(OpenTeamEditor);
         percentButton.onClick.AddListener(TogglePercentages);
+        fillSpecialButton.onClick.AddListener(() =>
+        {
+            if (PlayerLoadout.Local != null) PlayerLoadout.Local.SetSpecialPoints(float.MaxValue); // clamped to full
+            SetOpen(false);
+        });
         startButton.onClick.AddListener(() =>
         {
             NetGameManager gm = NetGameManager.Instance;
@@ -106,7 +112,7 @@ public class HostMenu : MonoBehaviour
     {
         NetGameManager gm = NetGameManager.Instance;
         bool inMatch = gm != null && gm.InMatch;
-        resetButton.interactable = teamsButton.interactable = percentButton.interactable = !inMatch;
+        resetButton.interactable = teamsButton.interactable = percentButton.interactable = fillSpecialButton.interactable = !inMatch;
         string start = inMatch ? "End match" : "Start game";
         if (startButtonLabel.text != start) startButtonLabel.text = start;
         if (inMatch && teamPanel.activeSelf) { teamPanel.SetActive(false); mainPanel.SetActive(true); }
@@ -214,6 +220,7 @@ public class HostMenu : MonoBehaviour
     public SlotButton[][] Columns => columns;
     public Button TeamsButton => teamsButton;
     public Button PercentButton => percentButton;
+    public Button FillSpecialButton => fillSpecialButton;
     public Button ResetButton => resetButton;
     public Button StartButton => startButton;
     public string StartButtonText => startButtonLabel.text;

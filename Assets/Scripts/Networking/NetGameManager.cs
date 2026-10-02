@@ -24,11 +24,56 @@ public class NetGameManager : MonoBehaviour
     [SerializeField] float timesUpTime = 2.5f;
     [SerializeField] float resultsTime = 15f;
 
+    // Team colours come in pairs; the host picks one at random when it loads and again for each
+    // game, and everyone follows its pick (roster and match messages carry it).
+    [System.Serializable]
+    public struct TeamColours
+    {
+        public string name;
+        public Color alpha, beta;
+        public TeamColours(string name, Color alpha, Color beta) { this.name = name; this.alpha = alpha; this.beta = beta; }
+    }
+
     [Header("Team Colours")]
-    [SerializeField] Color alphaTeam = Color.cyan;
-    [SerializeField] Color betaTeam  = Color.magenta;
-    public Color AlphaTeam => alphaTeam;
-    public Color BetaTeam  => betaTeam;
+    [SerializeField] TeamColours[] colourPairs =
+    {
+        new TeamColours("Cyan / Magenta",      new Color(0f, 1f, 1f),          new Color(1f, 0f, 1f)),
+        new TeamColours("Orange / Blue",       new Color(1f, 0.5f, 0.05f),     new Color(0.15f, 0.35f, 1f)),
+        new TeamColours("Lime / Purple",       new Color(0.7f, 1f, 0.1f),      new Color(0.55f, 0.15f, 0.95f)),
+        new TeamColours("Yellow / Indigo",     new Color(1f, 0.85f, 0.05f),    new Color(0.3f, 0.2f, 0.9f)),
+        new TeamColours("Pink / Green",        new Color(1f, 0.3f, 0.6f),      new Color(0.1f, 0.85f, 0.45f)),
+        new TeamColours("Turquoise / Red",     new Color(0.1f, 0.9f, 0.75f),   new Color(1f, 0.25f, 0.15f)),
+        new TeamColours("Sky / Gold",          new Color(0.35f, 0.75f, 1f),    new Color(1f, 0.65f, 0.1f)),
+    };
+    int colourPair = -1;
+
+    public Color AlphaTeam => Colours.alpha;
+    public Color BetaTeam  => Colours.beta;
+    public int ColourPair => colourPair;
+    public int ColourPairCount => colourPairs.Length;
+    public string ColourPairName => Colours.name;
+    TeamColours Colours => colourPairs.Length == 0 ? new TeamColours("Default", Color.cyan, Color.magenta)
+                                                   : colourPairs[Mathf.Clamp(colourPair, 0, colourPairs.Length - 1)];
+
+    // The team colours changed (a new pair): anything that applied them once should again.
+    public static event System.Action TeamColoursChanged;
+
+    public void SetColourPair(int index)
+    {
+        if (colourPairs.Length == 0) return;
+        index = Mathf.Clamp(index, 0, colourPairs.Length - 1);
+        if (index == colourPair) return;
+        colourPair = index;
+        TeamColoursChanged?.Invoke();
+    }
+
+    // A random pair, different from the current one when there's a choice.
+    int RandomColourPair()
+    {
+        if (colourPairs.Length <= 1) return 0;
+        int pick = UnityEngine.Random.Range(0, colourPairs.Length - 1);
+        return colourPair >= 0 && pick >= colourPair ? pick + 1 : pick;
+    }
 
     const string LobbyTag = "TestSplatoongame";
 
@@ -59,6 +104,7 @@ public class NetGameManager : MonoBehaviour
     void Awake()
     {
         Instance = this;
+        colourPair = RandomColourPair(); // this load's colours (joiners take the host's from its roster)
 
         var all = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None); // sorted by path so ids match on every client
         System.Array.Sort(all, (a, b) => HierarchyPath(a.transform).CompareTo(HierarchyPath(b.transform)));
@@ -93,6 +139,7 @@ public class NetGameManager : MonoBehaviour
     {
         if (Instance == this) { Instance = null; LocalPlayer = null; }
         if (steamNet != null) steamNet.onSteamSetup -= OnSteamSetup;
+        input?.Disable();
         input?.Dispose();
     }
 
@@ -254,6 +301,7 @@ public class NetGameManager : MonoBehaviour
     public void StartGame()
     {
         if (!IsHost || InMatch) return;
+        SetColourPair(RandomColourPair()); // new game, new colours (sent with the phase)
         BroadcastPhase(MatchPhase.Countdown, countdownTime);
     }
 
@@ -274,7 +322,8 @@ public class NetGameManager : MonoBehaviour
         var data = new MatchEventData
         {
             phase = phase, serverTime = Time.time, duration = duration,
-            alphaScore = result.x, betaScore = result.y, neutralScore = result.z
+            alphaScore = result.x, betaScore = result.y, neutralScore = result.z,
+            colourPair = colourPair
         };
         EnterPhase(data);
         Send(NetMsg.MatchEvent, data);
@@ -282,6 +331,7 @@ public class NetGameManager : MonoBehaviour
 
     void EnterPhase(MatchEventData d)
     {
+        SetColourPair(d.colourPair);
         Phase = d.phase;
         joinedLate = d.lateJoin || joinedLate && d.phase != MatchPhase.FreeRoam;
         phaseStartTime = Time.time;
@@ -316,7 +366,7 @@ public class NetGameManager : MonoBehaviour
         {
             phase = Phase, serverTime = Time.time, duration = PhaseTimeRemaining,
             alphaScore = MatchResult.x, betaScore = MatchResult.y, neutralScore = MatchResult.z,
-            lateJoin = true
+            lateJoin = true, colourPair = colourPair
         });
     }
 
@@ -640,7 +690,7 @@ public class NetGameManager : MonoBehaviour
         int[] r = new int[roles.Length];
         for (int i = 0; i < roles.Length; i++) r[i] = (int)roles[i];
         ApplyRoster(ids, r);
-        Send(NetMsg.TeamAssign, new TeamAssignData { ids = ids, roles = r });
+        Send(NetMsg.TeamAssign, new TeamAssignData { ids = ids, roles = r, colourPair = colourPair });
     }
 
     void BroadcastRoster()
@@ -667,6 +717,7 @@ public class NetGameManager : MonoBehaviour
             mainThread.Enqueue(() =>
             {
                 if (!devMode && from != SteamGlobal.hostID) return; // only the host assigns teams
+                SetColourPair(d.colourPair);
                 ApplyRoster(d.ids, d.roles);
             });
     }
@@ -680,24 +731,25 @@ public class NetGameManager : MonoBehaviour
         players.TryGetValue(steamId, out var pc) ? pc : null;
 
     // One message per volley; unreliable since the replay is purely visual.
-    public void BroadcastShots(PlayerController shooter, Vector3 origin, float[] velocities, int[] splashSizes, bool[] visible)
+    public void BroadcastShots(PlayerController shooter, Vector3 origin, Vector3 inherit, float[] velocities, int[] splashSizes, bool[] visible)
     {
         Send(NetMsg.ProjectileSpawn, new ProjectileSpawnData
         {
             shooterSteamId = shooter.OwnerId,
             team           = shooter.Team,
             origin         = origin,
+            inherit        = inherit,
             velocities     = velocities,
             splashSizes    = splashSizes,
             visible        = visible
         }, reliable: false);
     }
 
-    public void SendDamage(ulong target, float amount, int fromTeam, ulong attacker)
+    public void SendDamage(ulong target, float amount, int fromTeam, ulong attacker, string source = null)
     {
         SendTo(target, NetMsg.Damage, new DamageData
         {
-            targetSteamId = target, attackerSteamId = attacker, amount = amount, fromTeam = fromTeam
+            targetSteamId = target, attackerSteamId = attacker, amount = amount, fromTeam = fromTeam, source = source
         });
     }
 
@@ -706,22 +758,24 @@ public class NetGameManager : MonoBehaviour
         if (data is ProjectileSpawnData d) mainThread.Enqueue(() => SpawnRemoteShots(d));
     }
 
+    // Visual-only copies of their volley, flown with their equipped weapon's ballistics.
     void SpawnRemoteShots(ProjectileSpawnData d)
     {
         if (d.shooterSteamId == localId || d.splashSizes == null) return;
         PlayerController shooter = GetPlayer(d.shooterSteamId);
         if (shooter == null) return;
-        WeaponShooter weapon = shooter.GetComponentInChildren<WeaponShooter>(true);
+        PlayerLoadout loadout = shooter.GetComponent<PlayerLoadout>();
+        WeaponShooter weapon = loadout != null && loadout.CurrentWeapon is WeaponShooter held ? held : shooter.GetComponentInChildren<WeaponShooter>(true);
         if (weapon == null || weapon.ProjectilePrefab == null) return;
 
         Vector3 origin = d.origin;
+        Vector3 inherit = d.inherit != null ? (Vector3)d.inherit : Vector3.zero;
         int count = Mathf.Min(d.splashSizes.Length, d.visible.Length, d.velocities.Length / 3);
         for (int i = 0; i < count; i++)
         {
             Vector3 v = new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]);
-            Quaternion rot = v.sqrMagnitude > 0.0001f ? Quaternion.LookRotation(v) : Quaternion.identity;
-            ProjectilePool.Get(weapon.ProjectilePrefab, origin, rot)
-                          .Setup(v, d.splashSizes[i], d.team, d.visible[i], authoritative: false, ownerId: d.shooterSteamId);
+            ProjectileManager.Fire(weapon.ProjectilePrefab, origin, v, d.splashSizes[i], d.team, d.visible[i],
+                                   authoritative: false, ownerId: d.shooterSteamId, ballistics: weapon.Ballistics, inherit: inherit);
         }
     }
 
@@ -731,7 +785,7 @@ public class NetGameManager : MonoBehaviour
             mainThread.Enqueue(() =>
             {
                 if (d.targetSteamId != localId || localPlayer == null || localPlayer.Hitbox == null) return;
-                localPlayer.Hitbox.TakeDamage(d.amount, d.fromTeam, d.attackerSteamId);
+                localPlayer.Hitbox.TakeDamage(d.amount, d.fromTeam, d.attackerSteamId, d.source);
             });
     }
 

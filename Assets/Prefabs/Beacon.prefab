@@ -252,6 +252,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 483bab973241c054e9d2879ffbf8b100, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Beacon
+  inkCost: 0.7
   maxHealth: 35
   lifetime: 30
   teamTinted:

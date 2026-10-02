@@ -100,8 +100,7 @@ public class Sprinkler : SubDevice
             Vector3 along = head.forward * side;
             Vector3 dir = (along + transform.up * shotLift).normalized;
             Vector3 from = head.position + along * 0.25f;
-            ProjectilePool.Get(projectilePrefab, from, Quaternion.LookRotation(dir))
-                          .Setup(dir * ShotSpeed, splashSize, Team, true, authoritative, OwnerId, shotDamage);
+            ProjectileManager.Fire(projectilePrefab, from, dir * ShotSpeed, splashSize, Team, true, authoritative, OwnerId, shotDamage, source: "Sprinkler");
         }
         ShotsFired++;
     }

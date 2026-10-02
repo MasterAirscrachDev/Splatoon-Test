@@ -159,6 +159,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5df213879c015e3458ed4e37b953707a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Sprinkler
+  inkCost: 0.65
   maxHealth: 30
   lifetime: 12
   teamTinted:

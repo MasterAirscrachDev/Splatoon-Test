@@ -66,9 +66,17 @@ public class SurfaceInkManager : MonoBehaviour
         {
             rend.material.mainTexture = splatMapRenderTexture;
             rend.material.SetTexture("_BumpMap", normalMapRenderTexture);
-            rend.material.SetColor("_AlphaColor", gameManager.AlphaTeam);
-            rend.material.SetColor("_BetaColor", gameManager.BetaTeam);
+            ApplyTeamColours();
+            NetGameManager.TeamColoursChanged += ApplyTeamColours;
         }
+    }
+
+    void ApplyTeamColours()
+    {
+        Renderer rend = GetComponent<Renderer>();
+        if (rend == null || gameManager == null) return;
+        rend.material.SetColor("_AlphaColor", gameManager.AlphaTeam);
+        rend.material.SetColor("_BetaColor", gameManager.BetaTeam);
     }
 
     // Linear fit through splatScale 5 -> 0.025 and 1.5 -> 0.05, keeping bump grain proportional to splat size.
@@ -469,6 +477,7 @@ public class SurfaceInkManager : MonoBehaviour
     void OnDestroy()
     {
         teamMap = null; // makes in-flight readbacks no-ops
+        NetGameManager.TeamColoursChanged -= ApplyTeamColours;
         scoreBuffer?.Release();
         topScoreBuffer?.Release();
         if (topMaskTexture != null) Destroy(topMaskTexture);

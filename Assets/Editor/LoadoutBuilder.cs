@@ -8,6 +8,8 @@ using UnityEngine;
 public static class LoadoutBuilder
 {
     const string BeaconPath = "Assets/Prefabs/Beacon.prefab";
+    const string ColumnMeshPath = "Assets/Models/InkStrike.fbx";       // the InkStrike's central column
+    const string ColumnMaterialPath = "Assets/Materials/InkShape.mat";
     const string SprinklerPath = "Assets/Prefabs/Sprinkler.prefab";
     const string InkStrikePath = "Assets/Prefabs/InkStrike.prefab";
     const string ProjectilePath = "Assets/Prefabs/Projectile.prefab";
@@ -42,7 +44,7 @@ public static class LoadoutBuilder
         Renderer marker = Part(PrimitiveType.Cylinder, "Marker", root.transform, Vector3.zero, Vector3.one, shell);
         marker.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-        var projectile = AssetDatabase.LoadAssetAtPath<ProjectileSystem>(ProjectilePath);
+        var projectile = AssetDatabase.LoadAssetAtPath<ProjectileVisual>(ProjectilePath);
         var splash = new SerializedObject(projectile).FindProperty("splashParticlesPrefab").objectReferenceValue as GameObject;
         ParticleSystemRenderer look = splash.GetComponentInChildren<ParticleSystemRenderer>(true);
 
@@ -54,7 +56,7 @@ public static class LoadoutBuilder
         main.startSize = new ParticleSystem.MinMaxCurve(0.35f, 0.9f);
         main.maxParticles = 4000;
         var emission = tornado.emission;
-        emission.rateOverTime = 900f;
+        emission.rateOverTime = 180f; // around the column mesh, not making it
         var shape = tornado.shape;
         shape.shapeType = ParticleSystemShapeType.ConeVolume; // angle 0: a cylinder, filled
         shape.angle = 0f;
@@ -65,7 +67,7 @@ public static class LoadoutBuilder
         swirl.x = swirl.z = 0f;
         swirl.y = 3f;        // rising
         swirl.orbitalY = 4f; // spinning about the column
-        swirl.radial = -1.5f; // and drawn in
+        swirl.radial = 0f;   // InkStrike sets its width
         var grow = tornado.sizeOverLifetime;
         grow.enabled = true;
         grow.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 0f), new Keyframe(0.2f, 1f), new Keyframe(1f, 0f)));
@@ -93,6 +95,17 @@ public static class LoadoutBuilder
         var so = new SerializedObject(strike);
         so.FindProperty("marker").objectReferenceValue = marker.transform;
         so.FindProperty("tornado").objectReferenceValue = tornado;
+        Mesh columnMesh = AssetDatabase.LoadAssetAtPath<Mesh>(ColumnMeshPath);
+        if (columnMesh != null)
+        {
+            var column = new GameObject("InkStrikeMesh");
+            column.transform.SetParent(root.transform, false);
+            column.AddComponent<MeshFilter>().sharedMesh = columnMesh;
+            var columnRenderer = column.AddComponent<MeshRenderer>();
+            columnRenderer.sharedMaterial = AssetDatabase.LoadAssetAtPath<Material>(ColumnMaterialPath);
+            columnRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            so.FindProperty("column").objectReferenceValue = column.transform;
+        }
         so.FindProperty("burst").objectReferenceValue = burst;
         so.ApplyModifiedPropertiesWithoutUndo();
 
@@ -131,7 +144,8 @@ public static class LoadoutBuilder
         so.FindProperty("displayName").stringValue = "Airspray SE";
         so.FindProperty("description").stringValue = "Fast, wide spray that covers the ground quickly up close.";
         so.FindProperty("fireRate").floatValue = 0.1f;
-        so.FindProperty("range").floatValue = 10f;
+        so.FindProperty("shotSpeed").floatValue = 10f;
+        so.FindProperty("fillerShots").intValue = 5;
         so.FindProperty("splashSize").intValue = 11;
         so.FindProperty("damage").floatValue = 30f;
         so.FindProperty("inkCostPerShot").floatValue = 16f;
@@ -160,7 +174,10 @@ public static class LoadoutBuilder
             so.FindProperty("displayName").stringValue = "Inkshot";
             so.FindProperty("description").stringValue = "Narrow stream with more reach, at a slower rate of fire.";
             so.FindProperty("fireRate").floatValue = 0.18f;
-            so.FindProperty("range").floatValue = 15f;
+            so.FindProperty("shotSpeed").floatValue = 18.75f;
+            so.FindProperty("fillerShots").intValue = 7;
+            // 1.25x as fast as a plain throw at 15 m/s, on the same path: gravity x1.25^2.
+            so.FindProperty("ballistics.gravityOverTime").animationCurveValue = AnimationCurve.Constant(0f, 1f, 1.5625f);
             so.FindProperty("yawSpread").floatValue = 3f;
             so.FindProperty("pitchSpread").floatValue = 0.5f;
             so.FindProperty("fillerSpread").floatValue = 3f;
@@ -204,6 +221,7 @@ public static class LoadoutBuilder
 
         Sprinkler sprinkler = root.AddComponent<Sprinkler>();
         var so = new SerializedObject(sprinkler);
+        so.FindProperty("inkCost").floatValue = 0.6f;
         so.FindProperty("maxHealth").floatValue = 30f;
         so.FindProperty("lifetime").floatValue = 8f;
         SerializedProperty tinted = so.FindProperty("teamTinted");
@@ -257,6 +275,7 @@ public static class LoadoutBuilder
         tinted.arraySize = parts.Length;
         for (int i = 0; i < parts.Length; i++) tinted.GetArrayElementAtIndex(i).objectReferenceValue = parts[i];
         so.FindProperty("spinner").objectReferenceValue = spinner;
+        so.FindProperty("inkCost").floatValue = 0.7f;
         so.ApplyModifiedPropertiesWithoutUndo();
 
         Directory.CreateDirectory(Path.GetDirectoryName(BeaconPath));
@@ -311,6 +330,8 @@ public static class LoadoutBuilder
             for (int i = 0; i < weapons.Length; i++) list.GetArrayElementAtIndex(i).objectReferenceValue = weapons[i];
             so.FindProperty("weaponMount").objectReferenceValue = mount;
             so.FindProperty("shieldVisual").objectReferenceValue = bubble;
+            Transform subLight = pc.transform.Find("ViewmodelPlayer/InkTank/Sub Light");
+            if (subLight != null) so.FindProperty("subReadyLight").objectReferenceValue = subLight.GetComponent<Light>();
             so.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(contents, PlayerPath);

@@ -47,6 +47,11 @@ public class MatchHUD : MonoBehaviour
     int shownSeconds = -1;
     int shownAlphaTenths = -1, shownBetaTenths = -1, shownNeutralTenths = -1;
     bool coloursApplied;
+
+    void OnEnable() => NetGameManager.TeamColoursChanged += RecolourLater;
+    void OnDisable() => NetGameManager.TeamColoursChanged -= RecolourLater;
+    void RecolourLater() => coloursApplied = false;
+    public Color AlphaBarColour => alphaFill.GetComponent<Image>().color; // tests
     Rect alphaWaveUV, betaWaveUV;
 
     void Awake()

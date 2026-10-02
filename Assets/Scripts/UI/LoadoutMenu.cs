@@ -48,7 +48,7 @@ public class LoadoutMenu : MonoBehaviour
         screen.SetActive(false);
     }
 
-    void OnDestroy() => input?.Dispose();
+    void OnDestroy() { input?.Disable(); input?.Dispose(); }
 
     void Update()
     {

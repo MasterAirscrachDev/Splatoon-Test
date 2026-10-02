@@ -80,6 +80,7 @@ public static class MatchHUDBuilder
         MatchHUD hud = BuildHud(root);
         BuildLoadoutHud(root);
         BuildMatchFlow(root);
+        BuildDeathPopup(root);
         BuildHostMenu(root, hud);
         BuildMapScreen(root);
 
@@ -247,6 +248,62 @@ public static class MatchHUDBuilder
         so.ApplyModifiedPropertiesWithoutUndo();
     }
 
+    // Adds (or replaces) just the death popup on the existing prefab, keeping everything else (and
+    // the scene's overrides of it) as it is.
+    [MenuItem("Tools/UI/Add Death Popup To Match HUD")]
+    static void AddDeathPopup()
+    {
+        circle  = EnsureCircleSprite();
+        rounded = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        outline = AssetDatabase.LoadAssetAtPath<Material>(OutlineMat);
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            Transform old = root.transform.Find("DeathPopup");
+            if (old != null) Object.DestroyImmediate(old.gameObject);
+            BuildDeathPopup(root);
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Added the death popup to {PrefabPath}");
+    }
+
+    // Below the middle of the screen while splatted: who did it and with what, and a countdown.
+    static void BuildDeathPopup(GameObject root)
+    {
+        Vector2 centre = new Vector2(0.5f, 0.5f);
+        RectTransform panel = Rect("DeathPopup", root.transform, centre, centre, new Vector2(0, -190), new Vector2(720, 210));
+        Img(panel.gameObject, rounded, new Color(0.08f, 0.08f, 0.11f, 0.78f), sliced: true);
+        CanvasGroup group = panel.gameObject.AddComponent<CanvasGroup>();
+        group.alpha = 0f;
+
+        RectTransform accent = Rect("Accent", panel, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -12), new Vector2(640, 6));
+        Image accentImg = Img(accent.gameObject, rounded, Color.white, sliced: true);
+        TextMeshProUGUI header = Text("Header", panel, "SPLATTED BY", 26, new Color(1f, 1f, 1f, 0.75f), TextAlignmentOptions.Center, true);
+        Place(header.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -24), new Vector2(680, 34));
+        TextMeshProUGUI killer = Text("Killer", panel, "", 60, Color.white, TextAlignmentOptions.Center, true);
+        Place(killer.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -56), new Vector2(680, 72));
+        killer.textWrappingMode = TextWrappingModes.NoWrap;
+        killer.overflowMode = TextOverflowModes.Ellipsis;
+        TextMeshProUGUI cause = Text("Cause", panel, "", 30, Color.white, TextAlignmentOptions.Center, false);
+        Place(cause.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 44), new Vector2(680, 40));
+        TextMeshProUGUI countdown = Text("Countdown", panel, "", 20, new Color(1f, 1f, 1f, 0.6f), TextAlignmentOptions.Center, false, useOutline: false);
+        Place(countdown.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 12), new Vector2(680, 28));
+
+        DeathPopup popup = panel.gameObject.AddComponent<DeathPopup>();
+        var so = new SerializedObject(popup);
+        so.FindProperty("group").objectReferenceValue = group;
+        so.FindProperty("header").objectReferenceValue = header;
+        so.FindProperty("killer").objectReferenceValue = killer;
+        so.FindProperty("cause").objectReferenceValue = cause;
+        so.FindProperty("countdown").objectReferenceValue = countdown;
+        so.FindProperty("accent").objectReferenceValue = accentImg;
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
     static MatchHUD.PlayerSlot HudSlot(string name, RectTransform team, int index)
     {
         RectTransform slotRect = Rect(name, team, new Vector2(0f, 0.5f), new Vector2(0.5f, 0.5f),
@@ -373,13 +430,14 @@ public static class MatchHUDBuilder
         menuGroup.ignoreParentGroups = true;
 
         // Main panel.
-        RectTransform main = Panel("MainPanel", menuRoot, new Vector2(440, 480));
+        RectTransform main = Panel("MainPanel", menuRoot, new Vector2(440, 550));
         Title(main, "HOST MENU");
         Button reset   = MenuButton("ResetMap",    main, "Reset map",        new Vector2(0, -100), new Vector2(360, 58), out _);
         Button teams   = MenuButton("EditTeams",   main, "Edit teams",       new Vector2(0, -170), new Vector2(360, 58), out _);
         Button percent = MenuButton("Percentages", main, "Show percentages", new Vector2(0, -240), new Vector2(360, 58), out TextMeshProUGUI percentLabel);
-        Button start   = MenuButton("StartGame",   main, "Start game",       new Vector2(0, -310), new Vector2(360, 58), out TextMeshProUGUI startLabel);
-        Button close   = MenuButton("Close",       main, "Close",            new Vector2(0, -392), new Vector2(180, 46), out _);
+        Button fill    = MenuButton("FillSpecial", main, "Fill special",     new Vector2(0, -310), new Vector2(360, 58), out _);
+        Button start   = MenuButton("StartGame",   main, "Start game",       new Vector2(0, -380), new Vector2(360, 58), out TextMeshProUGUI startLabel);
+        Button close   = MenuButton("Close",       main, "Close",            new Vector2(0, -462), new Vector2(180, 46), out _);
         TextMeshProUGUI hint = Text("Hint", main, "G / Esc to close", 16, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
         Place(hint.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(300, 24));
 
@@ -419,6 +477,7 @@ public static class MatchHUDBuilder
         so.FindProperty("teamsButton").objectReferenceValue = teams;
         so.FindProperty("percentButton").objectReferenceValue = percent;
         so.FindProperty("startButton").objectReferenceValue = start;
+        so.FindProperty("fillSpecialButton").objectReferenceValue = fill;
         so.FindProperty("closeButton").objectReferenceValue = close;
         so.FindProperty("teamsBackButton").objectReferenceValue = back;
         so.FindProperty("percentButtonLabel").objectReferenceValue = percentLabel;

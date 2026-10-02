@@ -1,13 +1,18 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 // Gun-type weapon: a main shot with random spread, shorter filler shots covering the ground in
-// between, and ink dropped at the shooter's feet while firing. Stats live on each weapon prefab.
+// between, and ink dropped at the shooter's feet while firing. Stats live on each weapon prefab;
+// shots fly by ProjectileManager, shaped by this weapon's Ballistics curves.
 public class WeaponShooter : Weapon
 {
     [Header("Shots")]
     [SerializeField] float fireRate = 0.1f;      // seconds between shots
-    [SerializeField] float range = 10f;          // main shot speed; the shot lands about this far out
+    [SerializeField, FormerlySerializedAs("range")]
+    float shotSpeed = 10f;                       // main shot's starting speed (fillers start slower)
+    [SerializeField] int fillerShots = 5;        // shorter shots per volley, spaced between us and the main shot
+    [SerializeField] Ballistics ballistics = new Ballistics(); // its speed and gravity over its flight
     [SerializeField] int splashSize = 11;
     [SerializeField] float damage = 30f;
     [SerializeField] float inkCostPerShot = 16f; // x0.001 of a full tank
@@ -35,7 +40,8 @@ public class WeaponShooter : Weapon
 
     public GameObject ProjectilePrefab => projectile;
     public float FireRate => fireRate;
-    public float Range => range;
+    public float ShotSpeed => shotSpeed;
+    public Ballistics Ballistics => ballistics;
     public bool ScriptedFire { get; set; } // tests: hold the trigger
     public int FeetShots { get; private set; }
     public int MainShots { get; private set; }
@@ -50,7 +56,7 @@ public class WeaponShooter : Weapon
         if (Owner != null) playerController = Owner.GetComponent<CharacterController>();
     }
 
-    void OnDestroy() => input?.Dispose();
+    void OnDestroy() { input?.Disable(); input?.Dispose(); }
 
     void Update()
     {
@@ -80,14 +86,13 @@ public class WeaponShooter : Weapon
             volleySizes.Clear();
             volleyVisible.Clear();
 
-            Vector3 main = SpawnShot(player, rot, range, inherit, splashSize, true);
-            MainShotFired?.Invoke(main - inherit, muzzle.rotation);
+            Vector3 main = SpawnShot(player, rot, shotSpeed, inherit, splashSize, true);
+            MainShotFired?.Invoke(main, muzzle.rotation);
 
             // Shorter filler shots cover the floor between the shooter and the main shot.
-            int extras = Mathf.FloorToInt(range / 2f);
-            for (int i = 1; i <= extras; i++)
+            for (int i = 1; i <= fillerShots; i++)
             {
-                float r = range * i / (extras + 1f);
+                float r = shotSpeed * i / (fillerShots + 1f);
                 Quaternion noisyRot = rot * Quaternion.Euler(
                     Random.Range(-fillerSpread, fillerSpread),
                     Random.Range(-fillerSpread, fillerSpread),
@@ -95,7 +100,7 @@ public class WeaponShooter : Weapon
                 SpawnShot(player, noisyRot, r + Random.Range(-0.1f, 0.1f), inherit, Mathf.RoundToInt(splashSize * 0.7f), Random.value < 0.1f);
             }
 
-            NetGameManager.Instance?.BroadcastShots(player, muzzle.position,
+            NetGameManager.Instance?.BroadcastShots(player, muzzle.position, inherit,
                 volleyVelocities.ToArray(), volleySizes.ToArray(), volleyVisible.ToArray());
         }
     }
@@ -107,20 +112,20 @@ public class WeaponShooter : Weapon
         nextFeetShot = Time.time + feetShotInterval;
         FeetShots++;
         Vector3 feet = player.transform.position + Vector3.up * 0.5f;
-        ProjectilePool.Get(projectile, feet, Quaternion.LookRotation(Vector3.down))
-                      .Setup(Vector3.down * feetShotDropSpeed, Random.Range(feetShotMinSize, feetShotMaxSize + 1), player.Team, false,
-                             authoritative: true, ownerId: player.OwnerId, damage: damage, impactParticles: false);
+        ProjectileManager.Fire(projectile, feet, Vector3.down * feetShotDropSpeed, Random.Range(feetShotMinSize, feetShotMaxSize + 1), player.Team,
+                               visible: false, ownerId: player.OwnerId, damage: damage, impactParticles: false, source: DisplayName);
     }
 
+    // Returns its launch velocity (without what the shooter carries into it).
     Vector3 SpawnShot(PlayerController player, Quaternion rotation, float speed, Vector3 inherit, int size, bool visible)
     {
-        Vector3 vel = inherit + rotation * Vector3.forward * speed;
-        ProjectilePool.Get(projectile, muzzle.position, rotation)
-                      .Setup(vel, size, player.Team, visible, authoritative: true, ownerId: player.OwnerId, damage: damage);
+        Vector3 launch = rotation * Vector3.forward * speed;
+        ProjectileManager.Fire(projectile, muzzle.position, launch, size, player.Team, visible,
+                               ownerId: player.OwnerId, damage: damage, ballistics: ballistics, inherit: inherit, source: DisplayName);
 
-        volleyVelocities.Add(vel.x); volleyVelocities.Add(vel.y); volleyVelocities.Add(vel.z);
+        volleyVelocities.Add(launch.x); volleyVelocities.Add(launch.y); volleyVelocities.Add(launch.z);
         volleySizes.Add(size);
         volleyVisible.Add(visible);
-        return vel;
+        return launch;
     }
 }

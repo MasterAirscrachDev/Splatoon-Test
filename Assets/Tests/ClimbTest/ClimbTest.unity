@@ -1863,8 +1863,28 @@ MonoBehaviour:
   finalStretchTime: 60
   timesUpTime: 2.5
   resultsTime: 15
-  alphaTeam: {r: 0, g: 1, b: 1, a: 1}
-  betaTeam: {r: 1, g: 0, b: 1, a: 1}
+  colourPairs:
+  - name: Cyan / Magenta
+    alpha: {r: 0, g: 1, b: 1, a: 1}
+    beta: {r: 1, g: 0, b: 1, a: 1}
+  - name: Orange / Blue
+    alpha: {r: 1, g: 0.5, b: 0.05, a: 1}
+    beta: {r: 0.15, g: 0.35, b: 1, a: 1}
+  - name: Lime / Purple
+    alpha: {r: 0.7, g: 1, b: 0.1, a: 1}
+    beta: {r: 0.55, g: 0.15, b: 0.95, a: 1}
+  - name: Yellow / Indigo
+    alpha: {r: 0.97558546, g: 1, b: 0, a: 1}
+    beta: {r: 0.3, g: 0.2, b: 0.9, a: 1}
+  - name: Pink / Green
+    alpha: {r: 1, g: 0.3, b: 0.6, a: 1}
+    beta: {r: 0.1, g: 0.85, b: 0.45, a: 1}
+  - name: Turquoise / Red
+    alpha: {r: 0.1, g: 0.9, b: 0.75, a: 1}
+    beta: {r: 1, g: 0.25, b: 0.15, a: 1}
+  - name: Sky / Gold
+    alpha: {r: 0.35, g: 0.75, b: 1, a: 1}
+    beta: {r: 1, g: 0.65, b: 0.1, a: 1}
 --- !u!4 &957487480
 Transform:
   m_ObjectHideFlags: 0
@@ -3437,6 +3457,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 4122012786879565852, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
+      propertyPath: m_AdditionalShaderChannelsFlag
+      value: 25
+      objectReference: {fileID: 0}
     - target: {fileID: 5792354682704522364, guid: a5e738beec933c841b54a0277e7854f4, type: 3}
       propertyPath: m_Name
       value: MatchHUD

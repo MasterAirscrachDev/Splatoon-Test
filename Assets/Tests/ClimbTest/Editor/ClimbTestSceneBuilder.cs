@@ -34,15 +34,6 @@ public static class ClimbTestSceneBuilder
                 return;
             }
 
-        // Team colours from the open game scene, if any.
-        Color alpha = Color.cyan, beta = Color.magenta;
-        NetGameManager existing = Object.FindFirstObjectByType<NetGameManager>();
-        if (existing != null)
-        {
-            alpha = existing.AlphaTeam;
-            beta  = existing.BetaTeam;
-        }
-
         inkMaterial = AssetDatabase.LoadAssetAtPath<Material>(InkMaterialPath);
         inkLayer = LayerMask.NameToLayer("InkSurface");
         if (!AssetDatabase.IsValidFolder(MeshDir)) AssetDatabase.CreateFolder(Root, "Meshes");
@@ -61,8 +52,6 @@ public static class ClimbTestSceneBuilder
         so.FindProperty("playerEntityPrefab").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
         so.FindProperty("devMode").boolValue = true;   // spawns a local player at the origin, no Steam
         so.FindProperty("autoLobby").boolValue = false;
-        so.FindProperty("alphaTeam").colorValue = alpha;
-        so.FindProperty("betaTeam").colorValue = beta;
         so.ApplyModifiedPropertiesWithoutUndo();
 
         ClimbTestRunner runner = new GameObject("ClimbTestRunner").AddComponent<ClimbTestRunner>();

@@ -34,6 +34,17 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     [SerializeField] PlayerMode playerMode = PlayerMode.Client;
     [SerializeField] UIController uiController;
 
+    // Splatted: the camera circles over where it happened (or the last ground before a fall out of
+    // the world) while the popup says who did it, then we're back at spawn, held in swim form for a
+    // moment before control returns.
+    const float SplattedTime = 4f;      // spinning over the spot
+    const float RespawnHoldTime = 1f;   // at spawn, in swim form, before we can act
+    const float DeathCamSpin = 50f;     // degrees per second around the spot
+    const float DeathCamPitch = 35f;    // looking down on it (the camera sits 7.5m back along the rig)
+    const float DeathCamHeight = 1f;    // the rig's pivot above the spot
+    public const float KillHeight = -10f;            // below this we've fallen out of the world
+    public const string FellCause = "Fell out of bounds";
+
     [Header("Respawn")]
     [SerializeField] Vector3 spawnPoint = new Vector3(0, 3, 0); // fallback if no tagged spawn exists
 
@@ -47,6 +58,16 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     public float InkLevel => inkLevel;
     public bool IsSquid => swimMode;
     public bool IsDead => isDead;
+    public Color TeamColour => teamColor;
+    public bool IsRespawning => Time.time < respawnHoldUntil; // back at spawn, not yet released
+    public float RespawnIn => isDead ? Mathf.Max(0f, respawnAt - Time.time) : 0f;
+    public Vector3 DeathSpot => deathSpot;        // what the death camera circles
+    public bool DeathCamera => deathCam;
+    public ulong KilledBy { get; private set; }   // 0: nobody (fell)
+    public string KilledWith { get; private set; }
+
+    // A client-side player was splatted: by whom (0 for nobody) and with what.
+    public static event System.Action<PlayerController, ulong, string> Splatted;
     public float SlopeLimit => WalkableSlopeLimit;
     // On walls only actual climbing counts (not mere sensor contact while falling past one).
     public bool IsInInk => swimMode && (OnOwnSurfaceInk || effectivelyClimbing);
@@ -89,7 +110,9 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     Color teamColor;
 
     int surfaceTeam;
-    bool swimMode, isDead;
+    bool swimMode, isDead, deathCam;
+    Vector3 deathSpot, lastGroundPos;
+    float deathCamYaw, respawnAt, respawnHoldUntil = -1f;
     float inkLevel = 1f;
     float realSpeed, airSpeed, cameraPitch, velocityY;
     Vector2 currentDir, currentDirVelocity, currentMouseDelta, currentMouseDeltaVelocity, targetDir;
@@ -172,6 +195,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         }
 
         ApplyTeamColor();
+        NetGameManager.TeamColoursChanged += ApplyTeamColor;
     }
 
     void OnEnable() => input?.Enable();
@@ -225,9 +249,9 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     {
         if (playerMode == PlayerMode.Client)
         {
-            UpdateMouseLook();
+            if (deathCam) UpdateDeathCamera(); else UpdateMouseLook();
             UpdateMovement();
-            UpdateCameraFormOffset();
+            if (!deathCam) UpdateCameraFormOffset();
             Camera view = Camera.main;
             float distance = view != null ? Vector3.Distance(view.transform.position, transform.position) : float.MaxValue;
             mat.color = distance < 2
@@ -282,11 +306,12 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         if (isDead) return;
         if (superJumpPhase == SuperJumpPhase.Flying) { UpdateSuperJumpFlight(); return; }
         bool charging = superJumpPhase == SuperJumpPhase.Charging; // forced into swim form, can't move
+        bool held = charging || IsRespawning;                         // likewise, just after respawning
 
         float prevHeight = controller.height;
         float prevRadius = controller.radius;
         bool wasClimbingWall = wasClimbing;
-        bool swimHeld = charging || !InputGate.MatchLocked && (ScriptedInput != null ? ScriptedInput.swim
+        bool swimHeld = held || !InputGate.MatchLocked && (ScriptedInput != null ? ScriptedInput.swim
                       : !InputGate.Blocked && input.Movement.Squidmode.ReadValue<float>() != 0);
         if (swimHeld)
         {
@@ -323,6 +348,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         bool justLanded = grounded && !wasGroundedPrev;
         float fallHeight = justLanded ? lastGroundedY - transform.position.y : 0f;
         if (grounded) lastGroundedY = transform.position.y;
+        if (grounded && transform.position.y > KillHeight) lastGroundPos = transform.position; // where a fall out of bounds is shown from
         wasGroundedPrev = grounded;
 
         gameObject.layer = swimMode ? swimLayer : playerLayer;
@@ -336,12 +362,12 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         {
             realSpeed = swimMode ? swimSpeed / 4 : moveSpeed;
         }
-        targetDir = charging || InputGate.MatchLocked ? Vector2.zero
+        targetDir = held || InputGate.MatchLocked ? Vector2.zero
                   : ScriptedInput != null ? ScriptedInput.move
                   : InputGate.Blocked ? Vector2.zero : input.Movement.Move.ReadValue<Vector2>();
         targetDir.Normalize();
         currentDir = Vector2.SmoothDamp(currentDir, targetDir, ref currentDirVelocity, moveSmoothTime);
-        if (charging) currentDir = currentDirVelocity = Vector2.zero; // locked at once, no glide
+        if (held) currentDir = currentDirVelocity = Vector2.zero; // locked at once, no glide
 
         // Grabbing a wall needs input pushing into it; once on, only reaching the floor without
         // pressing up lets go (or the sensor losing it).
@@ -432,7 +458,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         prevInOwnInk = inOwnInkNow;
 
         if (charging && (superJumpTimer += Time.deltaTime) >= superJumpChargeTime) LaunchSuperJump();
-        if (transform.position.y < -10) Respawn();
+        if (transform.position.y < KillHeight) OnDeath(0, FellCause);
     }
 
     // ── Super Jump ─────────────────────────────────────────────────────────
@@ -442,7 +468,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     // Once started, only dying (or a respawn/teleport) cancels it. Returns false if it can't start.
     public bool StartSuperJump(ISuperJumpTarget target)
     {
-        if (playerMode != PlayerMode.Client || isDead || IsSuperJumping || team == 0 || InputGate.MatchLocked) return false;
+        if (playerMode != PlayerMode.Client || isDead || IsRespawning || IsSuperJumping || team == 0 || InputGate.MatchLocked) return false;
         if (!SuperJumpTargets.Alive(target) || ReferenceEquals(target, this) || !target.IsValidTargetFor(this)) return false;
         superJumpTarget = target;
         superJumpLanding = target.JumpPosition;
@@ -513,30 +539,55 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         if (ViewmodelSquid  != null) ViewmodelSquid.SetActive(true);
     }
 
-    public void OnDeath()
+    // killerId: who splatted us (0: nobody, e.g. we fell); cause: with what.
+    public void OnDeath(ulong killerId = 0, string cause = null)
     {
         if (isDead || playerMode != PlayerMode.Client) return;
+        bool fell = transform.position.y < KillHeight;
         isDead   = true;
         swimMode = true;
         CancelSuperJump();
         velocity = Vector3.zero;
         velocityY = 0f;
         HideModels();
-        pendingRespawn = StartCoroutine(RespawnAfterDelay(5f));
+        KilledBy = killerId;
+        KilledWith = cause;
+        deathSpot = fell ? lastGroundPos : transform.position;
+        deathCamYaw = transform.eulerAngles.y;
+        deathCam = playerCamera != null;
+        respawnHoldUntil = -1f;
+        respawnAt = Time.time + SplattedTime;
+        Splatted?.Invoke(this, killerId, cause);
+        pendingRespawn = StartCoroutine(RespawnAfterDeath());
     }
 
     Coroutine pendingRespawn;
 
-    IEnumerator RespawnAfterDelay(float delay)
+    IEnumerator RespawnAfterDeath()
     {
-        yield return new WaitForSeconds(delay);
+        yield return new WaitForSeconds(SplattedTime);
         pendingRespawn = null;
         Respawn();
+        respawnHoldUntil = Time.time + RespawnHoldTime; // in swim form, still (UpdateMovement)
+    }
+
+    // Circles the rig over the spot; the camera hangs 7.5m back along it, so it orbits.
+    void UpdateDeathCamera()
+    {
+        deathCamYaw += DeathCamSpin * Time.deltaTime;
+        playerCamera.SetPositionAndRotation(deathSpot + Vector3.up * DeathCamHeight, Quaternion.Euler(DeathCamPitch, deathCamYaw, 0f));
     }
 
     public void Respawn()
     {
         if (pendingRespawn != null) { StopCoroutine(pendingRespawn); pendingRespawn = null; } // respawned some other way first
+        respawnHoldUntil = -1f;
+        if (deathCam)
+        {
+            deathCam = false; // back on our shoulder
+            playerCamera.localPosition = cameraBaseLocalPos;
+            playerCamera.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
+        }
         string tag = team == 1 ? "AlphaSpawn" : "BetaSpawn";
         GameObject[] pts = GameObject.FindGameObjectsWithTag(tag);
         Vector3 pos = pts.Length > 0
@@ -596,6 +647,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         prevInOwnInk = false;
         wasGroundedPrev = false;
         lastGroundedY = feetPos.y;
+        lastGroundPos = feetPos;
         cameraFormOffset = cameraFormOffsetVelocity = Vector3.zero; // a teleport snaps the camera
         CancelSuperJump();
         lastFramePos = feetPos;
@@ -654,6 +706,8 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
             tick     = tick,
             shielded = Shielded,
             specialReady = SpecialCharged,
+            subReady = SubReady,
+            ink      = inkLevel,
             weapon   = WeaponIndex
         };
     }
@@ -669,6 +723,9 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         swimMode     = s.swimMode; // team comes from the host's roster, not from state updates
         Shielded     = s.shielded;
         SpecialCharged = s.specialReady;
+        SubReady     = s.subReady;
+        inkLevel     = s.ink;
+        ShowInkLevel();
         WeaponIndex  = s.weapon;
         isClimbing = s.climbing;
         effectivelyClimbing = s.climbing;
@@ -787,13 +844,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         if (playerMode != PlayerMode.Client) return;
         float rate = team != 0 && IsInInk ? inkRechargeRateSquid : inkRechargeRate;
         inkLevel = Mathf.Clamp01(inkLevel + rate * Time.deltaTime);
-
-        if (InkTankScaler != null)
-        {
-            Vector3 s = InkTankScaler.transform.localScale;
-            s.y = inkLevel;
-            InkTankScaler.transform.localScale = s;
-        }
+        ShowInkLevel();
         if (uiController != null)
         {
             uiController.SetSwimMode(swimMode);
@@ -803,9 +854,19 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
 
     public void RefillInk() => inkLevel = 1f;
 
+    // The tank on the model's back (remote copies show the owner's level from state updates).
+    void ShowInkLevel()
+    {
+        if (InkTankScaler == null) return;
+        Vector3 s = InkTankScaler.transform.localScale;
+        s.y = inkLevel;
+        InkTankScaler.transform.localScale = s;
+    }
+
     // Set by PlayerLoadout locally, from state updates on remote copies.
     public bool Shielded { get; set; }       // bubble shield running
     public bool SpecialCharged { get; set; } // special ready to use
+    public bool SubReady { get; set; }       // enough ink for the sub (the tank's light)
     public int WeaponIndex { get; set; }     // equipped main weapon (PlayerLoadout)
 
     public bool ConsumeInk(float amount)
@@ -858,7 +919,9 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         if (playerMode == PlayerMode.Client)
             SteamGlobal.OnNetTick -= NetTickBroadcast;
         if (ownsMat && mat != null) Destroy(mat);
+        input?.Disable();
         input?.Dispose(); // otherwise the Jump callback outlives us
+        NetGameManager.TeamColoursChanged -= ApplyTeamColor;
     }
 
     // Off the main thread: only touches the cached snapshot.
@@ -873,7 +936,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
 
     void Jump()
     {
-        if (IsSuperJumping || InputGate.MatchLocked) return;
+        if (IsSuperJumping || isDead || IsRespawning || InputGate.MatchLocked) return;
         if (effectivelyClimbing)
         {
             float wallClimbSpeed = currentDir.y * realSpeed + velocityY;

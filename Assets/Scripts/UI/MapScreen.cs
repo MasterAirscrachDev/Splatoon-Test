@@ -94,6 +94,7 @@ public class MapScreen : MonoBehaviour
 
     void OnDestroy()
     {
+        input?.Disable();
         input?.Dispose();
         if (mapTexture != null) { mapTexture.Release(); Destroy(mapTexture); }
         if (mapCamera != null) Destroy(mapCamera.gameObject);

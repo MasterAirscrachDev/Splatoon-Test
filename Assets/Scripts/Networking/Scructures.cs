@@ -69,6 +69,8 @@ public class PlayerStateData
     public uint tick;
     public bool shielded;     // bubble shield (special) active
     public bool specialReady; // special charged, shown on everyone's player bar
+    public bool subReady;     // enough ink for the sub: the light on their tank
+    public float ink;         // tank level, shown on their model's tank
     public int weapon;        // index into PlayerLoadout's weapons, so remotes show the right one
 }
 
@@ -109,7 +111,8 @@ public class ProjectileSpawnData
     public ulong shooterSteamId;
     public int team;
     public NVector3 origin;
-    public float[] velocities; // xyz per shot
+    public NVector3 inherit;   // the shooter's carried velocity, shared by the volley
+    public float[] velocities; // launch velocity per shot (xyz), before the weapon's ballistics
     public int[] splashSizes;  // per shot
     public bool[] visible;     // per shot
 }
@@ -122,6 +125,7 @@ public class DamageData
     public ulong attackerSteamId;
     public float amount;
     public int fromTeam;
+    public string source; // weapon, sub or special that did it ("splatted with")
 }
 
 // ── Sub weapons: ids are per owner ───────────────────────────────────────
@@ -167,6 +171,7 @@ public class TeamAssignData
 {
     public ulong[] ids;
     public int[] roles;
+    public int colourPair; // the host's team colours (NetGameManager's pairs)
 }
 
 // ── Match-level state ─────────────────────────────────────────────────────
@@ -181,4 +186,5 @@ public class MatchEventData
     public float duration;                             // how long this phase lasts, in seconds
     public int alphaScore, betaScore, neutralScore;    // Results: the host's final turf (texels)
     public bool lateJoin;                              // sent to a mid-match joiner: they spectate this round
+    public int colourPair;                             // the host's team colours (a new game picks new ones)
 }

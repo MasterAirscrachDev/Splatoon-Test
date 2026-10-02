@@ -60,13 +60,14 @@ public class PlayerHitbox : MonoBehaviour
 
     // Returns true if the hit was lethal. Ignores friendly fire, hits while dead, and hits while
     // the bubble shield is up (replicated, so a shooter skips shielded remote copies too).
-    public bool TakeDamage(float amount, int fromTeam, ulong attackerId = 0)
+    // source: what did it (weapon, sub or special), for the death popup.
+    public bool TakeDamage(float amount, int fromTeam, ulong attackerId = 0, string source = null)
     {
         if (player != null && (fromTeam == player.Team || player.IsDead || player.Shielded)) return false;
         PlayerLoadout.ReportDamageDealt(attackerId, fromTeam, amount);
         if (player != null && !player.IsLocalPlayer)
         {
-            NetGameManager.Instance?.SendDamage(player.OwnerId, amount, fromTeam, attackerId);
+            NetGameManager.Instance?.SendDamage(player.OwnerId, amount, fromTeam, attackerId, source);
             return false;
         }
         if (health <= 0f) return false;
@@ -76,7 +77,7 @@ public class PlayerHitbox : MonoBehaviour
         if (health <= 0f)
         {
             health = 0f;
-            Die();
+            Die(attackerId, source);
             return true;
         }
         return false;
@@ -85,9 +86,9 @@ public class PlayerHitbox : MonoBehaviour
     public void Heal(float amount)  => health = Mathf.Min(maxHealth, health + amount);
     public void ResetHealth()       => health = maxHealth;
 
-    void Die()
+    void Die(ulong attackerId, string source)
     {
         ResetHealth();
-        if (player != null) player.OnDeath();
+        if (player != null) player.OnDeath(attackerId, source);
     }
 }
