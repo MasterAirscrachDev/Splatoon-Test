@@ -1,7 +1,7 @@
 using System.Collections;
 using UnityEngine;
 
-public class PlayerController : MonoBehaviour, ISuperJumpTarget
+public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
 {
     [SerializeField] Transform playerCamera = null;
     [SerializeField] int team = 0;
@@ -63,6 +63,9 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     const float WalkableSlopeLimit = 45f;
     const float FallSplashMinHeight = 0.5f;  // min fall to splash when landing in ink
     const float ViewmodelSwitchSpeed = 12f;  // kid/squid model scale easing
+    // Fastest we can rise: a jump's push (2 x jump) is clipped to this before gravity, so it peaks at
+    // about 1.52m at any frame rate (the height it had at 75 fps before it was made exact).
+    const float MaxRiseSpeed = 10.47f;
     const float AimHold = 0.3f;              // the body keeps facing the view this long after the last aimed action
     const float ModelTurnRate = 12f;         // the body turning to the way we move
     const float NetLerpSpeed = 14f;          // remote copies easing toward their latest state
@@ -71,6 +74,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     public float InkLevel => inkLevel;
     public bool IsSquid => swimMode;
     public bool IsDead => isDead;
+    public bool KidFormReady => !swimMode && (ViewmodelPlayer == null || ViewmodelPlayer.transform.localScale.y >= 0.98f); // out of swim form and fully grown: can use ink
     public Color TeamColour => teamColor;
     public bool IsRespawning => Time.time < respawnHoldUntil; // back at spawn, not yet released
     public float RespawnIn => isDead ? Mathf.Max(0f, respawnAt - Time.time) : 0f;
@@ -142,7 +146,8 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
 
     // Climbing. isClimbing = sensor sees an own-ink wall; effectivelyClimbing = actually on it.
     bool isClimbing, wasClimbing, effectivelyClimbing;
-    int missedWallFrames;
+    float missedWallTime;      // how long the wall has gone undetected
+    const float WallGrace = 0.05f; // brief misses (rounding a corner between rays) don't drop contact
     Vector3 climbNormal;       // raw, drives movement
     Vector3 visualClimbNormal; // eased, drives squid/trail orientation
     Vector3 climbIntent;       // world move direction, lets the sensor prefer the wall we move into
@@ -177,6 +182,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     void Start()
     {
         controller = GetComponent<CharacterController>();
+        controller.minMoveDistance = 0f; // every move counts: tiny ones (high frame rates, slow motion) skipped would drop isGrounded
         modelYaw = netModelYaw = transform.eulerAngles.y;
         playerLayer = LayerMask.NameToLayer("Player");
         swimLayer = LayerMask.NameToLayer("PlayerSwim");
@@ -221,38 +227,6 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         cachedNetState = null; // benched: stop broadcasting state
     }
 
-    // Swaps every child renderer slot using `shared` for one new instance, and returns it.
-    Material InstanceMaterial(Material shared)
-    {
-        Material inst = new Material(shared);
-        foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
-        {
-            Material[] mats = r.sharedMaterials;
-            bool changed = false;
-            for (int i = 0; i < mats.Length; i++)
-                if (mats[i] == shared) { mats[i] = inst; changed = true; }
-            if (changed) r.sharedMaterials = mats;
-        }
-        return inst;
-    }
-
-    void ApplyTeamColor()
-    {
-        NetGameManager gm = NetGameManager.Instance;
-        if (gm != null) teamColor = team == 2 ? gm.BetaTeam : gm.AlphaTeam;
-        if (InkTankScaler != null)
-        {
-            Renderer r = InkTankScaler.GetComponentInChildren<Renderer>();
-            if (r != null) r.material.color = teamColor;
-        }
-        if (ViewmodelSquid != null && ViewmodelSquid.transform.childCount > 0)
-        {
-            Renderer r = ViewmodelSquid.transform.GetChild(0).GetComponent<Renderer>();
-            if (r != null) r.material.color = teamColor;
-        }
-        if (uiController != null) uiController.SetTeamColor(teamColor);
-    }
-
     void Update()
     {
         if (playerMode == PlayerMode.Client)
@@ -281,375 +255,14 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         UpdateSquidTrail();
     }
 
-    void UpdateNetInterpolation()
-    {
-        if (!netInitialised) return;
-        transform.position = Vector3.Lerp(transform.position, netTargetPos, Time.deltaTime * NetLerpSpeed);
-        Quaternion targetRot = Quaternion.Euler(0f, netTargetYaw, 0f);
-        transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * NetLerpSpeed);
-        if (playerCamera != null) playerCamera.localEulerAngles = Vector3.right * netCamPitch;
-    }
-
-    // Eases out the offset that cancels form-switch nudges, so the camera glides instead of snapping.
-    void UpdateCameraFormOffset()
-    {
-        if (playerCamera == null) return;
-        cameraFormOffset = Vector3.SmoothDamp(cameraFormOffset, Vector3.zero, ref cameraFormOffsetVelocity, 0.12f); // settle time
-        playerCamera.localPosition = cameraBaseLocalPos + cameraFormOffset;
-    }
-
-    // The mouse moves the view by how far it moved (degrees per count, lightly smoothed); the right
-    // stick turns it at a rate (degrees per second, shaped for fine aim and sped up at the edge), so
-    // neither depends on the frame rate. Each is scaled by the player's settings. Recenter levels the
-    // view (only the mouse or stick looking up or down cuts it short; the gyro rides on top).
-    void UpdateLook()
-    {
-        bool hardware = ScriptedInput == null && !InputGate.Blocked;
-        Vector2 delta = ScriptedInput != null ? ScriptedInput.look : hardware ? input.Movement.LookDelta.ReadValue<Vector2>() : Vector2.zero;
-        Vector2 stick = ScriptedInput != null ? ScriptedInput.lookStick : hardware ? input.Movement.LookStick.ReadValue<Vector2>() : Vector2.zero;
-        // Gyro (on a gamepad): moves the view directly; with one, the stick only turns (Splatoon-style).
-        bool gyroAiming = hardware && InputMode.Scheme == ControlScheme.Gamepad && SteamGyro.Enabled && SteamGyro.HasGyro;
-        Vector2 gyro = gyroAiming ? Vector2.Scale(SteamGyro.Rate, new Vector2(GameSettings.GyroSensitivityX, GameSettings.GyroSensitivityY)) * gyroSensitivity : Vector2.zero;
-        if (gyroInvertY) gyro.y = -gyro.y;
-        if (gyroAiming) stick.y = 0f;
-        if (ScriptedInput != null ? ScriptedInput.recenter : hardware && input.Movement.Recenter.WasPressedThisFrame()) recentering = true;
-
-        currentMouseDelta = Vector2.SmoothDamp(currentMouseDelta, delta, ref currentMouseDeltaVelocity, mouseSmoothTime);
-        Vector2 aim = currentMouseDelta * (mouseSensitivity * GameSettings.MouseSensitivity)
-                    + StickTurn(stick) * (GameSettings.StickSensitivity * Time.deltaTime); // degrees this frame
-        if (invertY) aim.y = -aim.y;
-        if (Mathf.Abs(aim.y) > 0.01f) recentering = false; // looking up or down takes over again
-        Vector2 turn = aim + gyro * Time.deltaTime;
-        cameraPitch -= turn.y;
-        if (recentering)
-        {
-            cameraPitch = Mathf.MoveTowards(cameraPitch, 0f, RecenterSpeed * Time.deltaTime);
-            recentering = cameraPitch != 0f;
-        }
-        cameraPitch = Mathf.Clamp(cameraPitch, -70.0f, 80.0f);
-        playerCamera.localEulerAngles = Vector3.right * cameraPitch;
-        transform.Rotate(Vector3.up * turn.x);
-    }
-
-    // The right stick's turn rate, degrees per second.
-    Vector2 StickTurn(Vector2 stick)
-    {
-        float tilt = Mathf.Clamp01(stick.magnitude);
-        if (tilt < 1e-4f) { stickEdgeTime = 0f; return Vector2.zero; }
-        stickEdgeTime = tilt >= StickEdge ? stickEdgeTime + Time.deltaTime : 0f;
-        Vector2 shaped = stick / stick.magnitude * Mathf.Pow(tilt, stickCurve);
-        float boost = Mathf.Lerp(1f, stickBoost, Mathf.Clamp01(stickEdgeTime / stickBoostTime)); // turning only
-        return new Vector2(shaped.x * stickSpeed.x * boost, shaped.y * stickSpeed.y);
-    }
-
     public float CameraPitch => cameraPitch; // tests
     public Vector2 StickSpeed => stickSpeed;
     public float GyroSensitivity => gyroSensitivity;
 
-    void UpdateMovement()
-    {
-        if (isDead) return;
-        if (superJumpPhase == SuperJumpPhase.Flying) { UpdateSuperJumpFlight(); return; }
-        bool charging = superJumpPhase == SuperJumpPhase.Charging; // forced into swim form, can't move
-        bool held = charging || IsRespawning;                         // likewise, just after respawning
-
-        float prevHeight = controller.height;
-        float prevRadius = controller.radius;
-        bool wasClimbingWall = wasClimbing;
-        bool swimHeld = held || !InputGate.MatchLocked && (ScriptedInput != null ? ScriptedInput.swim
-                      : !InputGate.Blocked && input.Movement.Squidmode.ReadValue<float>() != 0);
-        if (swimHeld)
-        {
-            swimMode = true;
-            // Must drop before shrinking: Unity disables the controller if stepOffset > height + radius*2.
-            controller.stepOffset = 0f;
-            controller.height = 0.1f;
-            controller.radius = 0.1f;
-        }
-        else
-        {
-            swimMode = false;
-            isClimbing = false;
-            controller.height = 1.92f;
-            controller.radius = 0.5f;
-        }
-        if (controller.height != prevHeight)
-        {
-            // The capsule resizes around a fixed centre, so move the origin to keep its bottom on the floor.
-            Vector3 beforeNudge = transform.position;
-            transform.position += Vector3.up * ((controller.height - prevHeight) / 2f);
-
-            // Growing against a wall (leaving swim mid-climb) would overlap it.
-            if (wasClimbingWall && controller.radius > prevRadius)
-                transform.position += climbNormal * (controller.radius - prevRadius + controller.skinWidth);
-
-            Physics.SyncTransforms(); // Auto Sync Transforms is off; Move() would otherwise undo the nudge
-            cameraFormOffset -= transform.InverseTransformVector(transform.position - beforeNudge); // eased out by UpdateCameraFormOffset
-            lastFramePos += transform.position - beforeNudge; // not travel
-        }
-        bool enteredSwimModeThisFrame = swimMode && controller.height != prevHeight;
-
-        bool grounded = controller.isGrounded;
-        bool justLanded = grounded && !wasGroundedPrev;
-        float fallHeight = justLanded ? lastGroundedY - transform.position.y : 0f;
-        if (grounded) lastGroundedY = transform.position.y;
-        if (grounded && transform.position.y > KillHeight) lastGroundPos = transform.position; // where a fall out of bounds is shown from
-        wasGroundedPrev = grounded;
-
-        gameObject.layer = swimMode ? swimLayer : playerLayer;
-        if (surfaceTeam != 0)
-        {
-            bool inOwnInk = surfaceTeam == team;
-            if (swimMode) realSpeed = inOwnInk ? swimSpeed + 2 : swimSpeed / 8; // enemy ink: slower than bare ground
-            else          realSpeed = inOwnInk ? moveSpeed : moveSpeed - 2;
-        }
-        else
-        {
-            realSpeed = swimMode ? swimSpeed / 4 : moveSpeed;
-        }
-        if (!swimMode) realSpeed *= WeaponSpeedMultiplier;
-        targetDir = held || InputGate.MatchLocked ? Vector2.zero
-                  : ScriptedInput != null ? ScriptedInput.move
-                  : InputGate.Blocked ? Vector2.zero : input.Movement.Move.ReadValue<Vector2>();
-        targetDir.Normalize();
-        currentDir = Vector2.SmoothDamp(currentDir, targetDir, ref currentDirVelocity, moveSmoothTime);
-        if (held) currentDir = currentDirVelocity = Vector2.zero; // locked at once, no glide
-
-        // Grabbing a wall needs input pushing into it; once on, only reaching the floor without
-        // pressing up lets go (or the sensor losing it).
-        bool wantsToClimb = currentDir.y > 0.01f;
-        bool atWallBase = controller.isGrounded && !wantsToClimb;
-        Vector3 flatMove = transform.forward * currentDir.y + transform.right * currentDir.x;
-        bool pushingIntoWall = isClimbing && Vector3.Dot(flatMove, -climbNormal) > 0.3f; // how directly input must push in to grab
-        bool regrabBlocked = Time.time < regrabBlockedUntil;
-        bool canEngageClimb = !InWallJumpGrace && (wasClimbing ? !atWallBase : pushingIntoWall && !regrabBlocked);
-        bool climbing = swimMode && isClimbing && canEngageClimb;
-        effectivelyClimbing = climbing;
-        if (climbing)
-        {
-            if (!wasClimbing) { velocityY = 0f; airMomentum = Vector3.zero; }
-            wasClimbing = true;
-
-            // Nothing below on a wall, so speed comes from own-ink swim speed, boosted by jumps.
-            climbBoost = Mathf.Max(0f, climbBoost - 0.7f * Time.deltaTime); // boost lost per second
-            realSpeed = (swimSpeed + 2) * Mathf.Lerp(0.8f, 1f, climbBoost); // 80% of own-ink swim speed, up to 100% boosted
-
-            controller.slopeLimit = 90f;
-            controller.stepOffset = 0f;
-
-            velocityY += gravity * 0.1f * Time.deltaTime;
-            velocityY = Mathf.Max(velocityY, -1.5f); // slide speed cap: below realSpeed so gravity slows a climb, never stops it
-
-            Vector3 wallRight = Vector3.Cross(Vector3.up, climbNormal).normalized;
-            Vector3 wallUp    = Vector3.Cross(climbNormal, wallRight).normalized;
-            climbIntent = wallUp * currentDir.y - wallRight * currentDir.x;
-            lastClimbVelocity = wallUp    * (currentDir.y * realSpeed + velocityY)
-                              - wallRight *  currentDir.x * realSpeed;
-            velocity = lastClimbVelocity - climbNormal * 2f;
-            controller.Move(velocity * Time.deltaTime);
-        }
-        else
-        {
-            if (wasClimbing)
-            {
-                // Wall (or our ink on it) ran out, rather than leaving on purpose: keep momentum.
-                bool lostWall = swimMode && !isClimbing && !InWallJumpGrace;
-                if (lostWall) PopOffWall();
-                else velocityY = Mathf.Max(velocityY, 0f);
-            }
-            wasClimbing = false;
-
-            controller.slopeLimit = WalkableSlopeLimit;
-            controller.stepOffset = swimMode ? 0f : 0.3f; // no stepping in squid form, it bounces off walls
-            velocityY += (gravity * 3) * Time.deltaTime;
-            if (controller.isGrounded)
-            {
-                airSpeed = realSpeed;
-                airMomentum = Vector3.zero;
-                if (velocityY <= 0f) velocityY = -1f; // presses the capsule onto slopes; guarded so it can't cancel a jump this frame
-            }
-
-            if (velocityY > 10) velocityY = 10;
-            float hSpeed = controller.isGrounded ? realSpeed : airSpeed;
-            climbIntent = flatMove;
-            Vector3 move = flatMove * hSpeed;
-            // Follow walkable slopes; a horizontal move launches off downhill slopes every frame.
-            if (controller.isGrounded && velocityY <= 0f && groundNormal.y >= Mathf.Cos(WalkableSlopeLimit * Mathf.Deg2Rad))
-                move = Vector3.ProjectOnPlane(move, groundNormal).normalized * move.magnitude;
-            velocity = move + airMomentum + Vector3.up * velocityY;
-            controller.Move(velocity * Time.deltaTime);
-        }
-
-        bool onWallInk = effectivelyClimbing;
-        bool inOwnInkNow = swimMode && team != 0 && (OnOwnSurfaceInk || onWallInk);
-        Vector3 inkNormal = onWallInk ? climbNormal : groundNormal;
-
-        // Enter splash only when entering swim form on ink or landing in ink from a height.
-        bool enteredSwimModeOnInk  = enteredSwimModeThisFrame && surfaceTeam == team;
-        bool landedOnInkFromHeight = justLanded && surfaceTeam == team && fallHeight > FallSplashMinHeight;
-        if ((enteredSwimModeOnInk || landedOnInkFromHeight) && Time.time - lastEnterSplatTime >= 0.2f)
-        {
-            lastEnterSplatTime = Time.time;
-            InkParticles.Spawn(swimSplashParticlesPrefab, transform.position + controller.center,
-                Quaternion.FromToRotation(Vector3.up, groundNormal), teamColor);
-        }
-
-        // Exit splash on leaving own ink while still swimming.
-        if (prevInOwnInk && !inOwnInkNow && swimMode && InkExitSplashPrefab != null && Time.time - lastExitSplatTime >= 0.2f)
-        {
-            lastExitSplatTime = Time.time;
-            GameObject splash = Instantiate(InkExitSplashPrefab, transform.position + controller.center, Quaternion.FromToRotation(Vector3.up, inkNormal));
-            splash.GetComponent<InkEmitter>().Setup(team, 3, true);
-        }
-        prevInOwnInk = inOwnInkNow;
-
-        if (charging && (superJumpTimer += Time.deltaTime) >= superJumpChargeTime) LaunchSuperJump();
-        if (transform.position.y < KillHeight) OnDeath(0, FellCause);
-    }
-
-    // ── Super Jump ─────────────────────────────────────────────────────────
-
-    // Charges for superJumpChargeTime (forced into swim form, movement locked), then launches on
-    // a high arc to where the target (teammate, beacon or spawn) was when the jump started.
-    // Once started, only dying (or a respawn/teleport) cancels it. Returns false if it can't start.
-    public bool StartSuperJump(ISuperJumpTarget target)
-    {
-        if (playerMode != PlayerMode.Client || isDead || IsRespawning || IsSuperJumping || team == 0 || InputGate.MatchLocked) return false;
-        if (!SuperJumpTargets.Alive(target) || ReferenceEquals(target, this) || !target.IsValidTargetFor(this)) return false;
-        superJumpTarget = target;
-        superJumpLanding = target.JumpPosition;
-        superJumpLandsOnGround = Physics.Raycast(superJumpLanding + Vector3.up, Vector3.down, out RaycastHit ground, 8f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore);
-        if (superJumpLandsOnGround) superJumpLanding = ground.point;
-        superJumpPhase = SuperJumpPhase.Charging;
-        superJumpTimer = 0f;
-        return true;
-    }
-
-    public void CancelSuperJump()
-    {
-        superJumpPhase = SuperJumpPhase.None;
-        superJumpTarget = null;
-    }
-
     // As a target: teammates can jump to us while we're alive and on their team.
     public Vector3 JumpPosition => transform.position;
-    public bool IsValidTargetFor(PlayerController jumper) =>
-        jumper != null && jumper != this && isActiveAndEnabled && !isDead && team != 0 && team == jumper.team;
-    public void OnSuperJumpLanded(PlayerController jumper) { }
-
-    void LaunchSuperJump()
-    {
-        // Our capsule's bottom just above the locked landing spot (the capsule is squid-sized now).
-        superJumpFrom = transform.position;
-        superJumpTo = superJumpLanding;
-        if (superJumpLandsOnGround) superJumpTo += Vector3.up * (controller.height / 2f - controller.center.y + 0.2f);
-
-        float distance = Vector3.ProjectOnPlane(superJumpTo - superJumpFrom, Vector3.up).magnitude;
-        superJumpDuration = superJumpFlightTime;
-        superJumpArc = superJumpHeight;
-        superJumpTimer = 0f;
-        superJumpPhase = SuperJumpPhase.Flying;
-        isClimbing = wasClimbing = effectivelyClimbing = false;
-        airMomentum = Vector3.zero;
-        prevInOwnInk = false; // leaving the ink by jump isn't an exit splash
-    }
-
-    // Moves along the arc directly (no collision), then hands back to normal movement.
-    void UpdateSuperJumpFlight()
-    {
-        superJumpTimer += Time.deltaTime;
-        float t = Mathf.Clamp01(superJumpTimer / superJumpDuration);
-        transform.position = Vector3.Lerp(superJumpFrom, superJumpTo, t) + Vector3.up * (superJumpArc * 4f * t * (1f - t));
-        Physics.SyncTransforms();
-        velocityY = (superJumpTo.y - superJumpFrom.y + superJumpArc * (4f - 8f * t)) / superJumpDuration;
-        if (t < 1f) return;
-
-        ISuperJumpTarget landedOn = superJumpTarget;
-        CancelSuperJump();
-        if (SuperJumpTargets.Alive(landedOn)) landedOn.OnSuperJumpLanded(this); // a beacon breaks, if it's still there
-        velocityY = 0;
-        wasGroundedPrev = false;
-        lastGroundedY = transform.position.y + FallSplashMinHeight + 1f; // splash if we land in our ink
-    }
-
-    void HideModels()
-    {
-        if (ViewmodelPlayer != null) ViewmodelPlayer.SetActive(false);
-        if (ViewmodelSquid  != null) ViewmodelSquid.SetActive(false);
-    }
-
-    void ShowModels()
-    {
-        if (ViewmodelPlayer != null) ViewmodelPlayer.SetActive(true);
-        if (ViewmodelSquid  != null) ViewmodelSquid.SetActive(true);
-    }
-
-    // killerId: who splatted us (0: nobody, e.g. we fell); cause: with what.
-    public void OnDeath(ulong killerId = 0, string cause = null)
-    {
-        if (isDead || playerMode != PlayerMode.Client) return;
-        bool fell = transform.position.y < KillHeight;
-        isDead   = true;
-        swimMode = true;
-        CancelSuperJump();
-        velocity = Vector3.zero;
-        velocityY = 0f;
-        HideModels();
-        KilledBy = killerId;
-        KilledWith = cause;
-        deathSpot = fell ? lastGroundPos : transform.position;
-        deathCamYaw = transform.eulerAngles.y;
-        deathCam = playerCamera != null;
-        respawnHoldUntil = -1f;
-        respawnAt = Time.time + SplattedTime;
-        Splatted?.Invoke(this, killerId, cause);
-        pendingRespawn = StartCoroutine(RespawnAfterDeath());
-    }
 
     Coroutine pendingRespawn;
-
-    IEnumerator RespawnAfterDeath()
-    {
-        yield return new WaitForSeconds(SplattedTime);
-        pendingRespawn = null;
-        Respawn();
-        respawnHoldUntil = Time.time + RespawnHoldTime; // in swim form, still (UpdateMovement)
-    }
-
-    // Circles the rig over the spot; the camera hangs 7.5m back along it, so it orbits.
-    void UpdateDeathCamera()
-    {
-        deathCamYaw += DeathCamSpin * Time.deltaTime;
-        playerCamera.SetPositionAndRotation(deathSpot + Vector3.up * DeathCamHeight, Quaternion.Euler(DeathCamPitch, deathCamYaw, 0f));
-    }
-
-    public void Respawn()
-    {
-        if (pendingRespawn != null) { StopCoroutine(pendingRespawn); pendingRespawn = null; } // respawned some other way first
-        respawnHoldUntil = -1f;
-        if (deathCam)
-        {
-            deathCam = false; // back on our shoulder
-            playerCamera.localPosition = cameraBaseLocalPos;
-            playerCamera.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
-        }
-        string tag = team == 1 ? "AlphaSpawn" : "BetaSpawn";
-        GameObject[] pts = GameObject.FindGameObjectsWithTag(tag);
-        Vector3 pos = pts.Length > 0
-            ? pts[Random.Range(0, pts.Length)].transform.position
-            : spawnPoint;
-        PlaceAt(pos, transform.eulerAngles.y);
-        isDead = false;
-        ShowModels();
-
-        if (playerMode == PlayerMode.Client)
-            SteamGlobal.SendAllData((ushort)NetMsg.Teleport, new TeleportData
-            {
-                steamId  = localSteamId,
-                position = pos,
-                bodyYaw  = transform.eulerAngles.y
-            });
-    }
 
     // The team's first tagged spawn (by name, so the map shows a stable one), or the fallback.
     public Vector3 SpawnPosition
@@ -662,253 +275,17 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
             return pts[0].transform.position;
         }
     }
-
-    // Instantly moves the local player (feet at feetPos) and resets all motion and climb state.
-    public void PlaceAt(Vector3 feetPos, float yaw)
-    {
-        controller.enabled = false;
-        try
-        {
-            swimMode = false;
-            controller.height = 1.92f;
-            controller.radius = 0.5f;
-            transform.SetPositionAndRotation(feetPos, Quaternion.Euler(0f, yaw, 0f));
-            modelYaw = yaw;
-            ApplyModelYaw();
-        }
-        finally
-        {
-            controller.enabled = true; // never leave it disabled
-        }
-        velocityY  = 0f;
-        velocity   = Vector3.zero;
-        currentDir = currentDirVelocity = Vector2.zero;
-        isClimbing = false;
-        wasClimbing = false;
-        effectivelyClimbing = false;
-        missedWallFrames = 0;
-        regrabBlockedUntil = -1f;
-        airMomentum = Vector3.zero;
-        climbBoost = 0f;
-        wallJumpGraceUntil = -1f;
-        prevInOwnInk = false;
-        wasGroundedPrev = false;
-        lastGroundedY = feetPos.y;
-        lastGroundPos = feetPos;
-        cameraFormOffset = cameraFormOffsetVelocity = Vector3.zero; // a teleport snaps the camera
-        CancelSuperJump();
-        lastFramePos = feetPos;
-        travelVelocity = Vector3.zero;
-    }
-
-    // Remote copies: snap on Teleport instead of interpolating across the map.
-    public void ApplyTeleport(Vector3 pos, float yaw)
-    {
-        if (playerMode != PlayerMode.Network) return;
-        netTargetPos = pos;
-        netTargetYaw = yaw;
-        transform.position = pos;
-        transform.rotation = Quaternion.Euler(0f, yaw, 0f);
-    }
-
-    // ── Networking API (driven by NetGameManager) ─────────────────────────
-    public void SetPlayerMode(PlayerMode mode) => playerMode = mode;
-    public void SetTeam(int t) { team = t; Role = (PlayerRole)t; }
     public PlayerRole Role { get; private set; } = PlayerRole.Alpha;
-
-    // Applies a roster role. Spectators and benched players have no team and their entity is
-    // hidden; a local player joining (or switching) a team respawns at that team's spawn.
-    public void SetRole(PlayerRole role)
-    {
-        bool playing = role == PlayerRole.Alpha || role == PlayerRole.Beta;
-        int newTeam = playing ? (int)role : 0;
-        bool wasPlaying = transform.root.gameObject.activeSelf;
-        bool teamChanged = newTeam != team;
-        Role = role;
-        team = newTeam;
-        if (teamChanged && playing) ApplyTeamColor();
-        transform.root.gameObject.SetActive(playing);
-        if (playing && IsLocalPlayer && controller != null && (teamChanged || !wasPlaying)) Respawn();
-    }
-    public void SetOwner(ulong steamId) => OwnerId = steamId;
-    public void SetDisplayName(string name) => DisplayName = name;
     public string DisplayName { get; private set; } = "";
     public ulong OwnerId { get; private set; } // Steam id of the client that owns this player
     public PlayerHitbox Hitbox => hitbox != null ? hitbox : (hitbox = GetComponentInChildren<PlayerHitbox>(true));
     PlayerHitbox hitbox;
-
-    public PlayerStateData GetNetState(ulong steamId, uint tick)
-    {
-        return new PlayerStateData
-        {
-            steamId  = steamId,
-            position = transform.position,
-            bodyYaw  = transform.eulerAngles.y,
-            camPitch = cameraPitch,
-            moveDir  = new Vector2(currentDir.x, currentDir.y),
-            team     = team,
-            swimMode = swimMode,
-            climbing = effectivelyClimbing,
-            dead     = isDead,
-            tick     = tick,
-            shielded = Shielded,
-            specialReady = SpecialCharged,
-            subReady = SubReady,
-            ink      = inkLevel,
-            weapon   = WeaponIndex,
-            weaponDown = WeaponDown,
-            modelYaw = modelYaw
-        };
-    }
-
-    public void ApplyNetState(PlayerStateData s)
-    {
-        if (playerMode != PlayerMode.Network) return;
-
-        netTargetPos = s.position;
-        netTargetYaw = s.bodyYaw;
-        netCamPitch  = s.camPitch;
-        currentDir   = s.moveDir;
-        swimMode     = s.swimMode; // team comes from the host's roster, not from state updates
-        Shielded     = s.shielded;
-        SpecialCharged = s.specialReady;
-        SubReady     = s.subReady;
-        inkLevel     = s.ink;
-        ShowInkLevel();
-        WeaponIndex  = s.weapon;
-        WeaponDown   = s.weaponDown;
-        netModelYaw  = s.modelYaw;
-        isClimbing = s.climbing;
-        effectivelyClimbing = s.climbing;
-
-        if (s.dead != isDead)
-        {
-            isDead = s.dead;
-            if (isDead) HideModels(); else ShowModels();
-        }
-
-        if (controller != null)
-        {
-            controller.height = swimMode ? 0.1f : 1.92f;
-            controller.radius = swimMode ? 0.1f : 0.5f;
-        }
-
-        if (!netInitialised)
-        {
-            // Remotes are driven by interpolation only; snap to the first pose.
-            netInitialised = true;
-            if (controller != null) controller.enabled = false;
-            transform.position = netTargetPos;
-            transform.rotation = Quaternion.Euler(0f, netTargetYaw, 0f);
-        }
-    }
-
-    void UpdateViewmodels()
-    {
-        if (isDead) return;
-        if (ViewmodelPlayer == null || ViewmodelSquid == null) return;
-
-        Vector3 playerTarget = swimMode ? new Vector3(1,0,1) : Vector3.one;
-        Vector3 squidTarget  = swimMode && (!IsInInk || IsSuperJumping) ? Vector3.one : Vector3.zero;
-
-        ViewmodelPlayer.transform.localScale = !swimMode && AttackHeld
-            ? playerTarget // attacking out of swim form: straight up, so the weapon can go at once
-            : Vector3.Lerp(ViewmodelPlayer.transform.localScale, playerTarget, Time.deltaTime * ViewmodelSwitchSpeed);
-        ViewmodelSquid.transform.localScale  = Vector3.Lerp(ViewmodelSquid.transform.localScale,  squidTarget,  Time.deltaTime * ViewmodelSwitchSpeed);
-        ViewmodelPlayer.SetActive(ViewmodelPlayer.transform.localScale.y > 0.05f);
-        UpdateSquidFacing();
-        UpdateModelFacing();
-    }
-
-    void UpdateModelFacing()
-    {
-        if (playerMode == PlayerMode.Network) modelYaw = Mathf.LerpAngle(modelYaw, netModelYaw, Time.deltaTime * NetLerpSpeed);
-        else if (Aiming) modelYaw = transform.eulerAngles.y;
-        else if (swimMode)
-        {
-            // Come out of swim form facing the way the squid was heading.
-            Vector3 heading = Vector3.ProjectOnPlane(ViewmodelSquid.transform.forward, Vector3.up);
-            if (heading.sqrMagnitude > 0.01f && !effectivelyClimbing) modelYaw = Mathf.Atan2(heading.x, heading.z) * Mathf.Rad2Deg;
-        }
-        else if (currentDir.magnitude > 0.1f)
-        {
-            Vector3 dir = transform.TransformDirection(new Vector3(currentDir.x, 0f, currentDir.y));
-            modelYaw = Mathf.LerpAngle(modelYaw, Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg, 1f - Mathf.Exp(-ModelTurnRate * Time.deltaTime));
-        }
-        ApplyModelYaw();
-    }
-
-    void ApplyModelYaw()
-    {
-        if (ViewmodelPlayer != null) ViewmodelPlayer.transform.rotation = Quaternion.Euler(0f, modelYaw, 0f);
-    }
-
-    // Submerged (or moving on ink) the squid lies along the surface facing the input direction.
-    // Otherwise it points where it's actually travelling: arcing through the air, falling, hopping.
-    void UpdateSquidFacing()
-    {
-        Transform squid = ViewmodelSquid.transform;
-        bool airborne = swimMode && !IsInInk && !effectivelyClimbing;
-        Quaternion target;
-        if (superJumpPhase == SuperJumpPhase.Charging)
-            target = FacingAlong(Vector3.ProjectOnPlane(superJumpLanding - transform.position, Vector3.up).normalized + Vector3.up * 2f); // nose up toward the launch
-        else if (airborne && travelVelocity.sqrMagnitude > 0.25f)
-            target = FacingAlong(travelVelocity);
-        else if (swimMode && currentDir.magnitude > 0.05f)
-        {
-            GetSwimPose(out Vector3 moveDir, out Vector3 upHint);
-            if (moveDir.sqrMagnitude > 0.001f) squid.rotation = Quaternion.LookRotation(moveDir, upHint);
-            return;
-        }
-        else
-        {
-            // Idle: settle flat on whatever is below, keeping the heading.
-            Vector3 heading = Vector3.ProjectOnPlane(squid.forward, groundNormal);
-            if (heading.sqrMagnitude < 0.01f) heading = Vector3.ProjectOnPlane(transform.forward, groundNormal);
-            target = Quaternion.LookRotation(heading.normalized, groundNormal);
-        }
-        squid.rotation = Quaternion.Slerp(squid.rotation, target, 1f - Mathf.Exp(-12f * Time.deltaTime)); // turn rate
-    }
-
-    // Nose along `dir`, back as close to world up as that allows.
-    Quaternion FacingAlong(Vector3 dir)
-    {
-        dir.Normalize();
-        Vector3 up = Vector3.ProjectOnPlane(Vector3.up, dir);
-        if (up.sqrMagnitude < 0.0001f) up = -transform.forward; // straight up or down
-        return Quaternion.LookRotation(dir, up);
-    }
 
     // Swimming through ink: SwimWake lays the wake, and the ink's normal map is indented along the path.
     public bool Wading => !isDead && swimMode && IsInInk && currentDir.magnitude > 0.05f;
 
     // The surface's normal under the squid (the floor's, or the wall's while climbing).
     public Vector3 SwimUp { get { GetSwimPose(out _, out Vector3 up); return up; } }
-
-    void UpdateSquidTrail()
-    {
-        if (!Wading) return;
-        if (effectivelyClimbing) { if (climbInk != null) climbInk.PaintTrailNormal(climbInkUV, 4, 4, 0.01f); }
-        else if (groundInk != null) groundInk.PaintTrailNormal(groundInkUV, 4, 4, 0.01f);
-    }
-
-    // Movement direction and up vector for the squid and trail, flat on the wall or floor/slope.
-    void GetSwimPose(out Vector3 moveDir, out Vector3 upHint)
-    {
-        if (effectivelyClimbing)
-        {
-            Vector3 wallRight = Vector3.Cross(Vector3.up, visualClimbNormal).normalized;
-            Vector3 wallUp    = Vector3.Cross(visualClimbNormal, wallRight).normalized;
-            moveDir = (wallUp * currentDir.y - wallRight * currentDir.x).normalized;
-            upHint  = visualClimbNormal;
-        }
-        else
-        {
-            Vector3 flatDir = (transform.forward * currentDir.y + transform.right * currentDir.x).normalized;
-            moveDir = Vector3.ProjectOnPlane(flatDir, groundNormal).normalized; // keep orthogonal to upHint
-            upHint  = groundNormal;
-        }
-    }
 
     void UpdateInk()
     {
@@ -925,15 +302,6 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
 
     public void RefillInk() => inkLevel = 1f;
 
-    // The tank on the model's back (remote copies show the owner's level from state updates).
-    void ShowInkLevel()
-    {
-        if (InkTankScaler == null) return;
-        Vector3 s = InkTankScaler.transform.localScale;
-        s.y = inkLevel;
-        InkTankScaler.transform.localScale = s;
-    }
-
     // Set by PlayerLoadout locally, from state updates on remote copies.
     public bool Shielded { get; set; }       // bubble shield running
     public bool SpecialCharged { get; set; } // special ready to use
@@ -946,57 +314,16 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     // Facing: the kid model turns to the way we move (as the squid does), except while aiming (a
     // weapon firing, a sub going out), when it faces the view at once. Synced as modelYaw.
     float aimUntil, modelYaw, netModelYaw;
-    public bool Aiming => Time.time < aimUntil;
+    bool netAiming;
+    public bool Aiming => playerMode == PlayerMode.Network ? netAiming : Time.time < aimUntil;
+    public float AimPitch => playerMode == PlayerMode.Network ? netCamPitch : cameraPitch; // degrees, down positive
     public float ModelYaw => modelYaw; // world yaw of the kid model
-    public void MarkAiming(float hold = AimHold)
-    {
-        if (!Aiming) { modelYaw = transform.eulerAngles.y; ApplyModelYaw(); } // snap round before the shot leaves
-        aimUntil = Mathf.Max(aimUntil, Time.time + hold);
-    }
 
     public bool ConsumeInk(float amount)
     {
-        if (inkLevel < amount || swimMode || ViewmodelPlayer.transform.localScale.y < 0.98f) return false;
+        if (inkLevel < amount || !KidFormReady) return false;
         inkLevel -= amount;
         return true;
-    }
-
-    // Called every frame by WallClimbSensor while it sees an own-ink wall.
-    public void SetClimbContact(Vector3 normal, SurfaceInkManager wallInk, Vector2 wallUV)
-    {
-        bool wasAlreadyClimbing = isClimbing;
-        isClimbing = true;
-        missedWallFrames = 0;
-        climbNormal = normal; // raw, so movement can turn sharp corners at full speed
-        visualClimbNormal = wasAlreadyClimbing
-            ? Vector3.Slerp(visualClimbNormal, normal, Time.deltaTime * 15f) // visual easing toward a new wall
-            : normal;
-        climbInk = wallInk;
-        climbInkUV = wallUV;
-    }
-
-    // Leave the wall keeping its momentum: scaled upward speed becomes a hop, plus a push over
-    // the lip, limited air control until landing, and a brief no-regrab window.
-    void PopOffWall()
-    {
-        float lift = lostWallAtInkEdge ? 0.25f : 0.8f; // share of upward speed kept: edge of our ink / top of the wall
-        velocityY = Mathf.Max(lastClimbVelocity.y, 0f) * lift;
-        airMomentum = Vector3.ProjectOnPlane(lastClimbVelocity, Vector3.up) - climbNormal * 2.5f; // push over the lip
-        airSpeed = 3f;                               // air input speed until landing
-        regrabBlockedUntil = Time.time + 0.3f;       // no re-grab for this long
-    }
-
-    // Brief misses (rounding a corner between rays) get a few frames' grace. Reaching the edge
-    // of our ink or the top of the wall is definite and drops contact immediately.
-    public void ClearClimbContact(bool atInkEdge = false, bool atWallTop = false)
-    {
-        missedWallFrames++;
-        if (atInkEdge || atWallTop || missedWallFrames > 3) // frames the wall may go undetected
-        {
-            if (isClimbing) lostWallAtInkEdge = atInkEdge;
-            isClimbing = false;
-            climbInk = null;
-        }
     }
 
     void OnDestroy()
@@ -1009,70 +336,11 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         NetGameManager.TeamColoursChanged -= ApplyTeamColor;
     }
 
-    // Off the main thread: only touches the cached snapshot.
-    void NetTickBroadcast(uint tick)
-    {
-        PlayerStateData snap = cachedNetState;
-        if (snap == null) return;
-        snap.tick = tick;
-        // Unreliable: a newer snapshot follows every tick, and reliable delivery stalled on loss.
-        SteamGlobal.SendAllData((ushort)NetMsg.PlayerState, snap, reliable: false);
-    }
-
-    void Jump()
-    {
-        if (IsSuperJumping || isDead || IsRespawning || InputGate.MatchLocked) return;
-        if (effectivelyClimbing)
-        {
-            float wallClimbSpeed = currentDir.y * realSpeed + velocityY;
-            if (wallClimbSpeed < 0f)
-            {
-                // Descending: eject from the wall.
-                velocityY += jump * 2 * 0.2f;            // eject: a fifth of a normal jump
-                wallJumpGraceUntil = Time.time + 0.3f; // no re-grab for this long
-            }
-            else
-            {
-                // Climbing or holding: boost climb speed (decays, so spam to keep it) and cancel the slide.
-                climbBoost = Mathf.Min(1f, climbBoost + 0.35f); // per jump
-                velocityY = Mathf.Max(velocityY, 0f);
-            }
-            return;
-        }
-        if (controller.isGrounded || IsInInk) { velocityY += jump * 2; }
-    }
-
     void TestCheckScores()
     {
         NetGameManager gm = NetGameManager.Instance;
         gm.GetScores();
         gm.GetTopDownScores();
-    }
-
-    void GetInkTeam()
-    {
-        Vector3 origin = transform.position + controller.center;
-        float reach = (controller.height / 2) + 0.3f;
-        if (Physics.Raycast(origin, Vector3.down, out RaycastHit inkHit, reach, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore))
-        {
-            Debug.DrawLine(origin, inkHit.point, Color.blue);
-            groundInk = inkHit.collider.GetComponent<SurfaceInkManager>();
-            groundInkUV = inkHit.textureCoord;
-            groundNormal = inkHit.normal;
-            surfaceTeam = groundInk != null ? groundInk.getSurfaceTeam(groundInkUV) : 0;
-        }
-        else if (controller.enabled && controller.isGrounded && superJumpPhase != SuperJumpPhase.Flying) // isGrounded is stale mid-flight
-        {
-            // On a ledge lip the centre ray misses; keep the last reading so speed isn't lost.
-            Debug.DrawRay(origin, Vector3.down * reach, Color.yellow);
-        }
-        else
-        {
-            Debug.DrawRay(origin, Vector3.down * reach, Color.red);
-            surfaceTeam = 0;
-            groundInk = null;
-            groundNormal = Vector3.up;
-        }
     }
 }
 

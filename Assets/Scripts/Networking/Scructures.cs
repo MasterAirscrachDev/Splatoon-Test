@@ -1,6 +1,6 @@
 using UnityEngine;
 
-// Network message types. Sent via BinaryFormatter, so they must be [Serializable] and use the
+// Network message types. Sent via NetCodec (add new ones to NetCodec.Types); they use the
 // NVector*/NColor wrappers instead of Unity types.
 
 // ── Serialization helpers ─────────────────────────────────────────────────
@@ -37,7 +37,7 @@ public enum NetMsg : ushort
     PlayerSpawn,     // a player entity exists / should be created on remotes
     PlayerDespawn,   // a player left — destroy their entity
     PlayerState,     // per-tick transform + state for one player (unreliable)
-    Splat,           // a paint event to replay on remote clients
+    Splat,           // paint events to replay on remote clients: a SplatBatchData per net tick
     ProjectileSpawn, // spawn a visual-only projectile on remote clients
     Damage,          // a player took damage / died
     MatchEvent,      // match phase changes, from the host (see MatchPhase)
@@ -74,6 +74,7 @@ public class PlayerStateData
     public int weapon;        // index into PlayerLoadout's weapons, so remotes show the right one
     public bool weaponDown;   // its down pose (a roller rolling)
     public float modelYaw;    // which way the kid model faces (it turns to the way they move unless aiming)
+    public bool aiming;       // firing or using a sub: their weapon follows camPitch
 }
 
 // ── Spawn / despawn ───────────────────────────────────────────────────────
@@ -95,6 +96,20 @@ public class SplatData
     public NVector2 uv;
     public int splashSize;
     public int team;
+}
+
+// A net tick's worth of our splats in one message, as compact flat arrays (index i is one splat).
+[System.Serializable]
+public class SplatBatchData
+{
+    public ushort[] surfaceIds;
+    public ushort[] uvs;       // x, y per splat, in 1/65535ths of the texture (finer than a texel)
+    public byte[] splashSizes;
+    public byte[] teams;
+
+    public const float UVScale = 65535f;
+    public static ushort PackUV(float v) => (ushort)Mathf.RoundToInt(Mathf.Clamp01(v) * UVScale);
+    public static float UnpackUV(ushort v) => v / UVScale;
 }
 
 // ── Instant reposition (respawn), bypassing interpolation ───────────────

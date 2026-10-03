@@ -150,6 +150,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.Bind((ushort)NetMsg.PlayerDespawn, OnPlayerDespawnMsg);
         SteamGlobal.Bind((ushort)NetMsg.PlayerState,   OnPlayerStateMsg);
         SteamGlobal.Bind((ushort)NetMsg.Splat,         OnSplatMsg);
+        SteamGlobal.OnNetTick += CountNetTick;
         SteamGlobal.Bind((ushort)NetMsg.InkReset,      OnInkResetMsg);
         SteamGlobal.Bind((ushort)NetMsg.MatchEvent,    OnMatchEventMsg);
         SteamGlobal.Bind((ushort)NetMsg.Teleport,      OnTeleportMsg);
@@ -170,6 +171,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.UnBind((ushort)NetMsg.PlayerDespawn, OnPlayerDespawnMsg);
         SteamGlobal.UnBind((ushort)NetMsg.PlayerState,   OnPlayerStateMsg);
         SteamGlobal.UnBind((ushort)NetMsg.Splat,         OnSplatMsg);
+        SteamGlobal.OnNetTick -= CountNetTick;
         SteamGlobal.UnBind((ushort)NetMsg.InkReset,      OnInkResetMsg);
         SteamGlobal.UnBind((ushort)NetMsg.MatchEvent,    OnMatchEventMsg);
         SteamGlobal.UnBind((ushort)NetMsg.Teleport,      OnTeleportMsg);
@@ -623,6 +625,8 @@ public class NetGameManager : MonoBehaviour
         UpdateMatch();
     }
 
+    void LateUpdate() => FlushSplats();
+
     // ── Message handlers ───────────────────────────────────────────────────
     void OnPlayerSpawnMsg(object data, SteamId from)
     {
@@ -656,20 +660,60 @@ public class NetGameManager : MonoBehaviour
             });
     }
 
+    // Our splats go out batched: queued here, sent once per net tick (see FlushSplats).
+    readonly List<SplatData> pendingSplats = new List<SplatData>();
+    const int MaxSplatsPerMessage = 64;
+    int netTicks, flushedAtTick;   // ticks counted off the network thread; read on the main thread
+    float lastTickSeen = -10f;
+
     void OnLocalSplat(SplatData data)
     {
         if (localPlayer == null) return;
-        Send(NetMsg.Splat, data);
+        pendingSplats.Add(data);
+    }
+
+    void CountNetTick(uint tick) => System.Threading.Interlocked.Increment(ref netTicks);
+
+    // Main thread, after everything has painted this frame: send what's queued if a net tick has
+    // passed since the last send. With no ticks coming (offline, tests), every frame.
+    void FlushSplats()
+    {
+        int ticks = System.Threading.Volatile.Read(ref netTicks);
+        if (ticks != flushedAtTick) lastTickSeen = Time.unscaledTime;
+        bool ticking = Time.unscaledTime - lastTickSeen < 0.25f;
+        if (pendingSplats.Count == 0 || (ticking && ticks == flushedAtTick)) return;
+        flushedAtTick = ticks;
+        for (int start = 0; start < pendingSplats.Count; start += MaxSplatsPerMessage)
+        {
+            int n = Mathf.Min(MaxSplatsPerMessage, pendingSplats.Count - start);
+            var batch = new SplatBatchData { surfaceIds = new ushort[n], uvs = new ushort[n * 2], splashSizes = new byte[n], teams = new byte[n] };
+            for (int i = 0; i < n; i++)
+            {
+                SplatData d = pendingSplats[start + i];
+                batch.surfaceIds[i] = (ushort)d.surfaceId;
+                batch.uvs[i * 2] = SplatBatchData.PackUV(d.uv.x);
+                batch.uvs[i * 2 + 1] = SplatBatchData.PackUV(d.uv.y);
+                batch.splashSizes[i] = (byte)Mathf.Clamp(d.splashSize, 0, 255);
+                batch.teams[i] = (byte)d.team;
+            }
+            Send(NetMsg.Splat, batch);
+        }
+        pendingSplats.Clear();
     }
 
     void OnSplatMsg(object data, SteamId from)
     {
-        if (data is SplatData d)
+        if (data is SplatBatchData b && b.surfaceIds != null && b.uvs != null && b.splashSizes != null && b.teams != null)
             mainThread.Enqueue(() =>
             {
-                if (from.Value == localId) return;
-                if (surfaceManagers == null || d.surfaceId < 0 || d.surfaceId >= surfaceManagers.Length) return;
-                surfaceManagers[d.surfaceId].Splat(d.uv, d.splashSize, d.team, broadcast: false);
+                if (from.Value == localId || surfaceManagers == null) return;
+                int n = Mathf.Min(b.surfaceIds.Length, b.uvs.Length / 2, b.splashSizes.Length, b.teams.Length);
+                for (int i = 0; i < n; i++)
+                {
+                    int s = b.surfaceIds[i];
+                    if (s < 0 || s >= surfaceManagers.Length) continue;
+                    surfaceManagers[s].Splat(new Vector2(SplatBatchData.UnpackUV(b.uvs[i * 2]), SplatBatchData.UnpackUV(b.uvs[i * 2 + 1])), b.splashSizes[i], b.teams[i], broadcast: false);
+                }
             });
     }
 

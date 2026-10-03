@@ -162,6 +162,18 @@ MonoBehaviour:
     anyFamily: 1
     family: 0
     sprite: {fileID: -1396597085, guid: 8f4a0fcbb539ffc43a1966ba381d8514, type: 3}
+  - control: Gamepad/dpad/left
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: 7156621146509115421, guid: 3d77419b4c01e104c9f4988035e4dca2, type: 3}
+  - control: Gamepad/dpad/right
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -4284262641490016052, guid: 3d77419b4c01e104c9f4988035e4dca2, type: 3}
+  - control: Gamepad/dpad/down
+    anyFamily: 1
+    family: 0
+    sprite: {fileID: -4451704309870010626, guid: 3d77419b4c01e104c9f4988035e4dca2, type: 3}
   - control: Gamepad/buttonSouth
     anyFamily: 0
     family: 0

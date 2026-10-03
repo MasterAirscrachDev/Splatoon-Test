@@ -80,7 +80,7 @@ public class UIController : MonoBehaviour
         if (SquidUI == null) return;
 
         Vector3 target = swimMode ? Vector3.one : Vector3.zero;
-        SquidUI.localScale = Vector3.Lerp(SquidUI.localScale, target, Time.deltaTime * squidUISpeed);
+        SquidUI.localScale = Vector3.Lerp(SquidUI.localScale, target, 1f - Mathf.Exp(-squidUISpeed * Time.deltaTime));
 
         if (swimMode && squidUIRect != null)
         {

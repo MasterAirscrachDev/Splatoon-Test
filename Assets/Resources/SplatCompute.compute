@@ -12,12 +12,13 @@ float NormalStrength;       // slope of the ink rim — higher = more pronounced
 float NoiseStrength;        // amplitude of the surface noise that breaks up flat ink tops
 float NoiseScale;           // frequency of that noise (in noise-cells per texel)
 float SeamHeight;           // height of the ridge where two teams' ink meets
-int2 PixelCoords;      // used by Splat
+// A group of splats applied in one dispatch (SurfaceInkManager.FlushSplats), in order.
+struct SplatInfo { int2 centre; int radius; int team; };
+StructuredBuffer<SplatInfo> Splats;
+int SplatCount;
 int2 BoundsMin;        // texel-space origin of the current dispatch's bounding box
 int Size;
-int Team;
-int SplashSize;
-int MaskToSplat;       // when nonzero, ComputeNormals only rewrites texels inside the current splat's blob
+int MaskToSplat;       // when nonzero, ComputeNormals only rewrites texels the current splats reached
 float2 TrailCenter;    // texel-space centre of a PaintTrailNormal stamp
 float TrailRadius;     // texel radius of that stamp
 float TrailDepth;      // steepness of the fully-formed indent
@@ -51,13 +52,15 @@ int TeamOf(float4 ink) {
     return ink.r >= ink.g ? 1 : 2;
 }
 
-// Alpha the current splat contributes at a texel (0 outside its blob and feather band).
-float SplatAlpha(int2 texel) {
-    float r = (float)SplashSize;
+// Alpha a splat contributes at a texel (0 outside its blob and feather band).
+float SplatAlpha(int2 texel, SplatInfo s) {
+    float r = (float)s.radius;
     if (r <= 0) return 0.0;
+    int reach = (int)ceil(r * 1.4) + 4; // domain warp pushes the edge out up to r*0.4, plus feather
+    if (abs(texel.x - s.centre.x) > reach || abs(texel.y - s.centre.y) > reach) return 0.0;
 
-    float dx = texel.x - PixelCoords.x;
-    float dy = texel.y - PixelCoords.y;
+    float dx = texel.x - s.centre.x;
+    float dy = texel.y - s.centre.y;
     float2 p = float2(texel);
 
     // Domain warp: two noise channels displace the distance field into organic lobes.
@@ -73,20 +76,32 @@ float SplatAlpha(int2 texel) {
     return 1.0 - smoothstep(-featherHalfWidth, featherHalfWidth, dist - r);
 }
 
-// Dispatched only over the splat's bounding box (BoundsMin). Raises the splat's team coverage
-// to its soft-edged shape and pulls the other team's down to match, so where teams meet the
-// crossing point (r == g) keeps the splat's sub-texel smoothness.
+// Strongest alpha any of the current splats gives a texel.
+float SplatsAlpha(int2 texel) {
+    float a = 0.0;
+    for (int i = 0; i < SplatCount; i++) a = max(a, SplatAlpha(texel, Splats[i]));
+    return a;
+}
+
+// Dispatched only over the group's bounding box (BoundsMin). Each splat, in order, raises its
+// team's coverage to its soft-edged shape and pulls the other team's down to match, so where
+// teams meet the crossing point (r == g) keeps the splat's sub-texel smoothness. One thread does
+// a texel's splats in turn: the same as splatting them one by one.
 [numthreads(8,8,1)]
 void Splat(uint3 id : SV_DispatchThreadID) {
     int2 texel = BoundsMin + int2(id.xy);
     if (texel.x < 0 || texel.y < 0 || texel.x >= Size || texel.y >= Size) return;
-    float s = SplatAlpha(texel);
-    if (s < 0.01) return;
-
     float4 ink = InkTexture[texel];
-    if (Team == 1) { ink.r = max(ink.r, s); ink.g = min(ink.g, 1.0 - s); }
-    else           { ink.g = max(ink.g, s); ink.r = min(ink.r, 1.0 - s); }
-    InkTexture[texel] = ink;
+    bool touched = false;
+    for (int i = 0; i < SplatCount; i++) {
+        SplatInfo sp = Splats[i];
+        float s = SplatAlpha(texel, sp);
+        if (s < 0.01) continue;
+        if (sp.team == 1) { ink.r = max(ink.r, s); ink.g = min(ink.g, 1.0 - s); }
+        else              { ink.g = max(ink.g, s); ink.r = min(ink.r, 1.0 - s); }
+        touched = true;
+    }
+    if (touched) InkTexture[texel] = ink;
 }
 
 [numthreads(8,8,1)]
@@ -114,12 +129,12 @@ float InkHeight(int2 c) {
 }
 
 // Tangent-space normals from the ink height field (central differences), RGB-encoded.
-// With MaskToSplat, only texels the current splat reached are rebuilt, so trail indents survive.
+// With MaskToSplat, only texels the current splats reached are rebuilt, so trail indents survive.
 [numthreads(8,8,1)]
 void ComputeNormals(uint3 id : SV_DispatchThreadID) {
     int2 texel = BoundsMin + int2(id.xy);
     if (texel.x < 0 || texel.y < 0 || texel.x >= Size || texel.y >= Size) return;
-    if (MaskToSplat != 0 && SplatAlpha(texel) < 0.01) return;
+    if (MaskToSplat != 0 && SplatsAlpha(texel) < 0.01) return;
     int x = texel.x, y = texel.y;
     int xl = max(x - 1, 0), xr = min(x + 1, Size - 1);
     int yd = max(y - 1, 0), yu = min(y + 1, Size - 1);

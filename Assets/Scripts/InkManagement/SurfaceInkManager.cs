@@ -36,6 +36,17 @@ public class SurfaceInkManager : MonoBehaviour
     ComputeBuffer scoreBuffer;
     ComputeBuffer topScoreBuffer;
 
+    // Splats wait here until the end of the frame (FlushSplats), then go to the GPU in groups:
+    // one dispatch, one normals rebuild and one readback per group instead of per splat.
+    struct PendingSplat { public int x, y, radius, team, turfTeam; }
+    struct SplatInfo { public int x, y, radius, team; } // matches the compute shader's SplatInfo
+    const int MaxGroup = 64;
+    readonly System.Collections.Generic.List<PendingSplat> pendingSplats = new System.Collections.Generic.List<PendingSplat>();
+    readonly SplatInfo[] groupUpload = new SplatInfo[MaxGroup];
+    ComputeBuffer splatBuffer;
+    public static int SplatDispatches { get; private set; } // tests: GPU work done for splats
+    public static int TeamMapReadbacks { get; private set; }
+
     // The ink texture stores coverage per team (r = alpha, g = beta), not colours; the surface
     // shader colours it. teamMap is a CPU copy of ownership per texel (0 none, 1 alpha, 2 beta),
     // synced by reading back each splat's area. getSurfaceTeam reads this.
@@ -274,6 +285,7 @@ public class SurfaceInkManager : MonoBehaviour
 
         scoreBuffer = new ComputeBuffer(3, sizeof(int));
         topScoreBuffer = new ComputeBuffer(3, sizeof(int));
+        splatBuffer = new ComputeBuffer(MaxGroup, sizeof(int) * 4);
 
         splatCompute.SetTexture(kernelSplat,            "InkTexture",    splatMapRenderTexture);
         splatCompute.SetTexture(kernelGetScores,        "InkTexture",    splatMapRenderTexture);
@@ -283,48 +295,105 @@ public class SurfaceInkManager : MonoBehaviour
         splatCompute.SetTexture(kernelComputeNormals,   "NormalTexture", normalMapRenderTexture);
         splatCompute.SetTexture(kernelPaintTrailNormal, "NormalTexture", normalMapRenderTexture);
 
-        splatCompute.SetBuffer(kernelSplat,        "TeamScores", scoreBuffer);
+        splatCompute.SetBuffer(kernelSplat,          "Splats", splatBuffer);
+        splatCompute.SetBuffer(kernelComputeNormals, "Splats", splatBuffer);
         splatCompute.SetBuffer(kernelGetScores,    "TeamScores", scoreBuffer);
         splatCompute.SetBuffer(kernelGetTopScores, "TeamScores", topScoreBuffer);
 
         splatCompute.SetInt("Size", size);
-        splatCompute.SetInts("PixelCoords", new int[2] { 0, 0 });
-        splatCompute.SetInt("SplashSize", 0);
-        splatCompute.SetInt("Team", 1);
+        splatCompute.SetInt("SplatCount", 0);
         splatCompute.SetFloat("NormalStrength", inkNormalStrength);
-        splatCompute.Dispatch(kernelSplat, size / 8, size / 8, 1);
         RegenerateNormalsFull(); // prime to flat
     }
 
+    // Queued: painted at the end of the frame with the others (FlushSplats). Sent on at once.
     public void Splat(Vector2 texCoords, int splashSize, int team, bool broadcast = true)
     {
-        int x = (int)(texCoords.x * size);
-        int y = (int)(texCoords.y * size);
-        int radius = Mathf.RoundToInt(splashSize * splatScale);
-
-        int boundRadius = Mathf.CeilToInt(radius * 1.4f) + 4; // domain warp pushes the edge out up to r*0.4, plus feather
-        ComputeBounds(x, y, boundRadius, out int minX, out int minY, out int groupsX, out int groupsY);
-
-        splatCompute.SetTexture(kernelSplat, "InkTexture", splatMapRenderTexture);
-        splatCompute.SetInts("PixelCoords", new int[2] { x, y });
-        splatCompute.SetInts("BoundsMin", new int[2] { minX, minY });
-        splatCompute.SetInt("SplashSize", radius);
-        splatCompute.SetInt("Team", team);
-        splatCompute.Dispatch(kernelSplat, groupsX, groupsY, 1);
-
-        RegenerateNormalsRegion(minX, minY, groupsX, groupsY);
-        SyncTeamMapRegion(minX, minY, Mathf.Min(groupsX * 8, size - minX), Mathf.Min(groupsY * 8, size - minY),
-                          broadcast ? team : 0); // our own splats charge our special
+        pendingSplats.Add(new PendingSplat
+        {
+            x = (int)(texCoords.x * size), y = (int)(texCoords.y * size),
+            radius = Mathf.RoundToInt(splashSize * splatScale), team = team,
+            turfTeam = broadcast ? team : 0, // our own splats charge our special
+        });
 
         if (broadcast)
             OnSplatApplied?.Invoke(new SplatData { surfaceId = SurfaceId, uv = texCoords, splashSize = splashSize, team = team });
     }
+
+    void LateUpdate() => FlushSplats();
+
+    // Paints everything queued, in order: splats close together (and charging the same team) go
+    // as one group over their shared box; a splat far from the group's box starts a new group, so
+    // no dispatch covers much more than its splats. Anything else that touches the ink flushes
+    // first, keeping the order of operations.
+    public void FlushSplats()
+    {
+        if (pendingSplats.Count == 0 || splatMapRenderTexture == null) return;
+        int i = 0;
+        while (i < pendingSplats.Count)
+        {
+            RectInt box = SplatBox(pendingSplats[i]);
+            long area = Area(box);
+            int turf = pendingSplats[i].turfTeam, end = i + 1;
+            while (end < pendingSplats.Count && end - i < MaxGroup && pendingSplats[end].turfTeam == turf)
+            {
+                RectInt next = SplatBox(pendingSplats[end]);
+                RectInt joined = Union(box, next);
+                if (Area(joined) > 2 * (area + Area(next)) + 4096) break; // too spread out: its own group
+                box = joined;
+                area += Area(next);
+                end++;
+            }
+            PaintGroup(i, end, box, turf);
+            i = end;
+        }
+        pendingSplats.Clear();
+    }
+
+    void PaintGroup(int from, int to, RectInt box, int turfTeam)
+    {
+        int n = to - from;
+        for (int k = 0; k < n; k++)
+        {
+            PendingSplat p = pendingSplats[from + k];
+            groupUpload[k] = new SplatInfo { x = p.x, y = p.y, radius = p.radius, team = p.team };
+        }
+        splatBuffer.SetData(groupUpload, 0, 0, n);
+        int groupsX = Mathf.CeilToInt(box.width / 8f), groupsY = Mathf.CeilToInt(box.height / 8f);
+
+        splatCompute.SetTexture(kernelSplat, "InkTexture", splatMapRenderTexture);
+        splatCompute.SetInt("SplatCount", n);
+        splatCompute.SetInts("BoundsMin", box.xMin, box.yMin);
+        splatCompute.Dispatch(kernelSplat, groupsX, groupsY, 1);
+        SplatDispatches++;
+
+        RegenerateNormalsRegion(box.xMin, box.yMin, groupsX, groupsY);
+        SyncTeamMapRegion(box.xMin, box.yMin, box.width, box.height, turfTeam);
+    }
+
+    // The texels a splat can touch, clamped to the texture.
+    RectInt SplatBox(PendingSplat p)
+    {
+        int reach = Mathf.CeilToInt(p.radius * 1.4f) + 4; // domain warp pushes the edge out up to r*0.4, plus feather
+        int minX = Mathf.Clamp(p.x - reach, 0, size - 1), maxX = Mathf.Clamp(p.x + reach, 0, size - 1);
+        int minY = Mathf.Clamp(p.y - reach, 0, size - 1), maxY = Mathf.Clamp(p.y + reach, 0, size - 1);
+        return new RectInt(minX, minY, maxX - minX + 1, maxY - minY + 1);
+    }
+
+    static RectInt Union(RectInt a, RectInt b)
+    {
+        int minX = Mathf.Min(a.xMin, b.xMin), minY = Mathf.Min(a.yMin, b.yMin);
+        return new RectInt(minX, minY, Mathf.Max(a.xMax, b.xMax) - minX, Mathf.Max(a.yMax, b.yMax) - minY);
+    }
+
+    static long Area(RectInt r) => (long)r.width * r.height;
 
     // Stamps a swim-trail indent into the normal map only (ink, colour and score are untouched).
     // Blends toward the target depth, so repeated stamps converge.
     public void PaintTrailNormal(Vector2 texCoords, int radius, float depth = 1f, float blend = 0.25f)
     {
         if (inkNormalStrength <= 0f) return;
+        FlushSplats(); // ink first, so its normals don't overwrite this indent later
         int x = (int)(texCoords.x * size);
         int y = (int)(texCoords.y * size);
         int texRadius = Mathf.Max(1, Mathf.RoundToInt(radius * splatScale));
@@ -344,6 +413,7 @@ public class SurfaceInkManager : MonoBehaviour
     public void FillRegion(Rect uvRect, int team)
     {
         if (splatMapRenderTexture == null) return; // Start hasn't run yet
+        FlushSplats();
         int minX = Mathf.Clamp(Mathf.FloorToInt(uvRect.xMin * size), 0, size);
         int minY = Mathf.Clamp(Mathf.FloorToInt(uvRect.yMin * size), 0, size);
         int maxX = Mathf.Clamp(Mathf.CeilToInt(uvRect.xMax * size), 0, size);
@@ -363,6 +433,7 @@ public class SurfaceInkManager : MonoBehaviour
 
     public void ClearInk()
     {
+        pendingSplats.Clear(); // wiped anyway
         RenderTexture prev = RenderTexture.active;
         RenderTexture.active = splatMapRenderTexture;
         GL.Clear(false, true, Color.clear);
@@ -375,6 +446,7 @@ public class SurfaceInkManager : MonoBehaviour
 
     public void CheckScoresAsync(System.Action<Vector3Int> callback)
     {
+        FlushSplats();
         scoreBuffer.SetData(new int[] { 0, 0, 0 });
         splatCompute.SetTexture(kernelGetScores, "InkTexture", splatMapRenderTexture);
         splatCompute.SetBuffer(kernelGetScores, "TeamScores", scoreBuffer);
@@ -392,6 +464,7 @@ public class SurfaceInkManager : MonoBehaviour
     // Floor/slope texels only (walls excluded via the top mask).
     public void CheckTopScoresAsync(System.Action<Vector3Int> callback)
     {
+        FlushSplats();
         topScoreBuffer.SetData(new int[] { 0, 0, 0 });
         splatCompute.SetTexture(kernelGetTopScores, "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(kernelGetTopScores, "TopMask", topMaskTexture);
@@ -445,6 +518,7 @@ public class SurfaceInkManager : MonoBehaviour
     void SyncTeamMapRegion(int minX, int minY, int width, int height, int turfTeam = 0)
     {
         if (width <= 0 || height <= 0) return;
+        TeamMapReadbacks++;
         int generation = teamMapGeneration;
         AsyncGPUReadback.Request(splatMapRenderTexture, 0, minX, width, minY, height, 0, 1, TextureFormat.RGBA32, request =>
         {
@@ -480,6 +554,7 @@ public class SurfaceInkManager : MonoBehaviour
         NetGameManager.TeamColoursChanged -= ApplyTeamColours;
         scoreBuffer?.Release();
         topScoreBuffer?.Release();
+        splatBuffer?.Release();
         if (topMaskTexture != null) Destroy(topMaskTexture);
         if (splatMapRenderTexture != null) splatMapRenderTexture.Release();
         if (normalMapRenderTexture != null) normalMapRenderTexture.Release();

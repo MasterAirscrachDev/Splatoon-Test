@@ -6,7 +6,6 @@ using UnityEngine.SceneManagement;
 using Steamworks;
 using System;
 using System.Linq;
-using BinaryFormatter = System.Runtime.Serialization.Formatters.Binary.BinaryFormatter;
 using System.IO;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
@@ -56,7 +55,6 @@ public static class SteamGlobal{
     static List<UserIcon> icons = new List<UserIcon>();
     static byte nextClientId = 0, myClientId = 0;
     static uint localNetIdCounter = 0;
-    static BinaryFormatter bf = new BinaryFormatter();
     static readonly ushort INTERNAL_HEADER_SPACE = 8, NETWORK_BUFFER_SIZE = 1024;
     static ConcurrentDictionary<ushort, OnDataRecived> dataHandlers = new ConcurrentDictionary<ushort, OnDataRecived>();
     public delegate void OnDataRecived(object data, SteamId id);
@@ -642,12 +640,7 @@ public static class SteamGlobal{
     }
     static byte[] ObjectToByteArray(object obj) {
         try {
-            if (obj == null) { return Array.Empty<byte>(); }
-            
-            // Avoid allocating multiple MemoryStreams by using a pooled one
-            using var memStream = new MemoryStream();
-            bf.Serialize(memStream, obj);
-            return memStream.ToArray();
+            return NetCodec.Encode(obj); // only NetCodec's listed message types (see NetCodec)
         }
         catch (Exception e) {
             Debug.LogError($"Error converting object to byte array: {e.Message}");
@@ -657,11 +650,7 @@ public static class SteamGlobal{
     //Byte array to object
     static object ByteArrayToObject(byte[] arrBytes, int offset, int length) {
     try {
-        using (MemoryStream memStream = new MemoryStream()) {
-            memStream.Write(arrBytes, offset, length);
-            memStream.Seek(0, SeekOrigin.Begin);
-            return bf.Deserialize(memStream);
-        }
+        return NetCodec.Decode(arrBytes, offset, length); // never builds a type outside NetCodec's list
     }
     catch(Exception e) {
         Debug.LogError($"Error converting byte array to object: {e.Message}");

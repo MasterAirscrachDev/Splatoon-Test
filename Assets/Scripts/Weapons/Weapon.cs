@@ -42,6 +42,6 @@ public abstract class Weapon : MonoBehaviour
         Owner = owner;
         enabled = owner.IsLocalPlayer;
         WeaponCameraAim aim = GetComponent<WeaponCameraAim>();
-        if (aim != null) aim.enabled = owner.IsLocalPlayer;
+        if (aim != null) aim.enabled = true; // remote copies tilt with their synced aim
     }
 }

@@ -1,8 +1,10 @@
 // Lit, opaque variant of Ink/InkVolume for ink that sits in the world: same noisy liquid look and
 // Standard BRDF, but drawn in the opaque queue so it receives shadows (the built-in pipeline never
 // shadows transparent objects), and lit by point/spot lights too (ForwardAdd). Opacity is not
-// used: give it shapes whose edges tuck under whatever they sit on. No shadow caster pass, so its
-// screen-space shadow is that of the surface just behind it.
+// used: give it shapes whose edges tuck under whatever they sit on. It has a shadow caster pass
+// (the same noisy shape): the built-in pipeline draws the camera's depth with it, and the main
+// light's screen-space shadow is looked up at that depth; without one, a blob took the shadow of
+// whatever surface was behind it. Whether it casts shadows is the renderer's Cast Shadows setting.
 Shader "Ink/InkVolumeLit"
 {
     Properties
@@ -77,6 +79,7 @@ Shader "Ink/InkVolumeLit"
             float4 color  : COLOR; // particle colour; white for plain meshes
         };
 
+        #if !defined(UNITY_PASS_SHADOWCASTER) // the lit passes only; the shadow caster needs just InkShape
         struct v2f
         {
             float4 pos       : SV_POSITION;
@@ -86,16 +89,15 @@ Shader "Ink/InkVolumeLit"
             float4 vertColor : COLOR0;
             LIGHTING_COORDS(3, 4)         // shadow / light cookie coordinates
         };
+        #endif
 
         // Same shape as Ink/InkVolume: noise displacement along the normal, optional stretch.
-        v2f vert(appdata v)
+        float3 InkShape(float3 pos, float3 normal)
         {
-            v2f o;
-            float3 pos = v.vertex.xyz;
             float3 shapePosA = pos * (_NoiseFreq * 0.5) + _Time.y * _FlowSpeed * 0.4 + _Seed;
             float3 shapePosB = shapePosA * 1.7 + float3(7.3, 13.1, 5.7);
             float  disp = (valueNoise3(shapePosA) * 0.65 + valueNoise3(shapePosB) * 0.35) * 2.0 - 1.0;
-            pos += v.normal * disp * _ShapeAmp;
+            pos += normal * disp * _ShapeAmp;
 
             float stretch = _Direction.w;
             if (stretch > 1.001)
@@ -103,9 +105,15 @@ Shader "Ink/InkVolumeLit"
                 float3 localDir = normalize(mul((float3x3)unity_WorldToObject, _Direction.xyz));
                 pos += localDir * dot(pos, localDir) * (stretch - 1.0);
             }
+            return pos;
+        }
 
+        #if !defined(UNITY_PASS_SHADOWCASTER)
+        v2f vert(appdata v)
+        {
+            v2f o;
             o.objPos    = v.vertex.xyz;
-            v.vertex.xyz = pos; // the lighting macros read v.vertex
+            v.vertex.xyz = InkShape(v.vertex.xyz, v.normal); // the lighting macros read v.vertex
             o.pos       = UnityObjectToClipPos(v.vertex);
             o.worldN    = UnityObjectToWorldNormal(v.normal);
             o.worldPos  = mul(unity_ObjectToWorld, v.vertex).xyz;
@@ -159,6 +167,7 @@ Shader "Ink/InkVolumeLit"
             color += spec * lightColor * _SpecTint.rgb * (F * 4.0 + 0.3);
             return color;
         }
+        #endif
         ENDCG
 
         Pass
@@ -195,6 +204,30 @@ Shader "Ink/InkVolumeLit"
                 float3 L = normalize(UnityWorldSpaceLightDir(i.worldPos));
                 return fixed4(InkShade(i, L, _LightColor0.rgb * atten, false), 0.0);
             }
+            ENDCG
+        }
+
+        Pass
+        {
+            // Depth for shadow maps and for the camera's depth texture, from the same noisy shape.
+            Tags { "LightMode"="ShadowCaster" }
+            ZWrite On ZTest LEqual
+            CGPROGRAM
+            #pragma vertex   vertShadow
+            #pragma fragment fragShadow
+            #pragma multi_compile_shadowcaster
+
+            struct v2fShadow { V2F_SHADOW_CASTER; };
+
+            v2fShadow vertShadow(appdata_base v)
+            {
+                v2fShadow o;
+                v.vertex.xyz = InkShape(v.vertex.xyz, v.normal);
+                TRANSFER_SHADOW_CASTER_NORMALOFFSET(o)
+                return o;
+            }
+
+            float4 fragShadow(v2fShadow i) : SV_Target { SHADOW_CASTER_FRAGMENT(i) }
             ENDCG
         }
     }

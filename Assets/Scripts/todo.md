@@ -1,1 +1,0 @@
-from some angles shadows render over ink blobs

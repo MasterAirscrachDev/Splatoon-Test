@@ -183,7 +183,11 @@ public class Roller : Weapon
         float dt = Mathf.Max(Time.deltaTime, 1e-5f);
 
         if (local) Think(player, moved, dt);
-        else Down = player.WeaponDown;
+        else
+        {
+            Down = player.WeaponDown;
+            if (state == State.Flick && Time.time - flickStart >= windup + followThrough) state = State.Idle; // their swing played out
+        }
 
         // The drum turns with the ground going by under it.
         if (roller != null && Down)
@@ -302,12 +306,27 @@ public class Roller : Weapon
                                ballistics: paced ?? ballistics, inherit: inherit, source: Source, hitGroup: hits, visualScale: dropletScale);
     }
 
-    // Their flick, visual-only here.
+    // Their flick, visual-only here, with the swing played from the top (the droplets leave at the
+    // top of it). A narrow spread is an air flick: the frame turns on its side for it.
     public override void Replay(ProjectileSpawnData d)
     {
         if (projectile == null || d.velocities == null || d.splashSizes == null) return;
         Vector3 inherit = d.inherit != null ? (Vector3)d.inherit : Vector3.zero;
         int n = Mathf.Min(d.splashSizes.Length, d.velocities.Length / 3);
+        if (!local && n > 0)
+        {
+            float first = Mathf.Atan2(d.velocities[0], d.velocities[2]) * Mathf.Rad2Deg, minYaw = 0f, maxYaw = 0f;
+            for (int i = 1; i < n; i++)
+            {
+                float yaw = Mathf.DeltaAngle(first, Mathf.Atan2(d.velocities[i * 3], d.velocities[i * 3 + 2]) * Mathf.Rad2Deg);
+                minYaw = Mathf.Min(minYaw, yaw);
+                maxYaw = Mathf.Max(maxYaw, yaw);
+            }
+            flickInAir = maxYaw - minYaw < 20f;
+            flickStart = Time.time - windup;
+            state = State.Flick;
+            Flicks++;
+        }
         for (int i = 0; i < n; i++)
             Fire(d.origin, new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]), inherit, d.splashSizes[i], d.team, d.shooterSteamId, false, 0f, null);
     }
@@ -365,7 +384,7 @@ public class Roller : Weapon
         bool idle = !Down && !(local && state == State.Held);
         float targetPitch = idle ? idlePitch : carryPitch, targetShift = 0f, targetTurn = idle ? verticalTurn : 0f, targetFold = idle ? 1f : 0f;
         bool snap = false;
-        if (local && state == State.Flick)
+        if (state == State.Flick) // ours, or theirs replayed
         {
             // Up and over the top from wherever it was: the ground flick, unfolded, comes down into
             // the rolling position (centred); the air flick, folded on its side, down to the carry.
