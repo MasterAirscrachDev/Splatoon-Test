@@ -290,7 +290,7 @@ public class InkStrike : MonoBehaviour
         {
             RaycastHit h = unpainted[painted++].hit;
             SurfaceInkManager ink = h.collider != null ? h.collider.GetComponent<SurfaceInkManager>() : null;
-            if (ink != null) ink.Splat(ink.UVFromHit(h), splashSize, team);
+            if (ink != null) ink.SplatAt(h, splashSize, team);
         }
         Damage();
     }

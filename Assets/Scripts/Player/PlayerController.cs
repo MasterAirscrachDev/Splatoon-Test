@@ -310,6 +310,7 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
     public bool WeaponDown { get; set; }     // weapon in its down pose (a roller rolling), synced so remotes show it
     public float WeaponSpeedMultiplier { get; set; } = 1f; // x walking speed, set by the weapon (rolling)
     public bool AttackHeld { get; set; }     // the attack button is down (set by the weapon): out of swim form, it acts at once
+    public bool ActionQueued { get; set; }   // a sub waiting for the kid form (set by PlayerLoadout): likewise
 
     // Facing: the kid model turns to the way we move (as the squid does), except while aiming (a
     // weapon firing, a sub going out), when it faces the view at once. Synced as modelYaw.

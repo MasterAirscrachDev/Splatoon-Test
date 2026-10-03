@@ -15,6 +15,36 @@ using static ClimbTestLayout;
 public partial class ClimbTestRunner
 {
 
+    IEnumerator SubOutOfSwim()
+    {
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        NetGameManager.SendOverride = (id, data, target) => { };
+        var results = new List<string>();
+        foreach (SubType type in new[] { SubType.Beacon, SubType.Sprinkler, SubType.CurlingBomb })
+        {
+            loadout.SetSub(type);
+            SubDevice.RemoveAll();
+            player.RefillInk();
+            yield return Hold(Still, true, 0.4f, "swim");
+            player.ScriptedInput.swim = false;
+            yield return null; // out of swim form, the kid model still growing
+            bool inTransition = !player.IsSquid && !player.KidFormReady;
+            int before = SubDevice.All.Count(d => d.OwnerId == player.OwnerId);
+            bool accepted = loadout.UseSub();
+            int frames = 0;
+            while (SubDevice.All.Count(d => d.OwnerId == player.OwnerId) == before && frames < 30) { yield return null; Record("sub"); frames++; }
+            bool went = SubDevice.All.Count(d => d.OwnerId == player.OwnerId) > before;
+            results.Add($"{type}: pressed {(inTransition ? "mid-transition" : "NOT mid-transition")}, {(went ? $"out after {frames} frame(s)" : "never went")}");
+            if (!inTransition) Fail($"{type}: the press didn't land in the swim exit (test setup)");
+            if (!accepted || !went || frames > 4) Fail($"{type}: pressed while coming out of swim form, it didn't go at once");
+            yield return Hold(Still, false, 0.3f, "settle");
+        }
+        Note(string.Join("; ", results));
+        SubDevice.RemoveAll();
+        loadout.SetSub(SubType.Beacon);
+        NetGameManager.SendOverride = null;
+    }
+
     IEnumerator SubBeacon()
     {
         NetGameManager gm = NetGameManager.Instance;

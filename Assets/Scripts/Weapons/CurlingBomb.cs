@@ -199,7 +199,7 @@ public class CurlingBomb : SubDevice
     {
         if (!Physics.Raycast(from, dir, out RaycastHit hit, reach, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) return;
         SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
-        if (ink != null) ink.Splat(ink.UVFromHit(hit), size, team);
+        if (ink != null) ink.SplatAt(hit, size, team);
     }
 
     void Splat(Vector3 from, Vector3 dir, float reach, int size) => Splat(from, dir, reach, size, Team);

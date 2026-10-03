@@ -343,7 +343,7 @@ public class Roller : Weapon
             Vector3 at = centre + across * Mathf.Lerp(-half * 0.75f, half * 0.75f, k);
             if (!Physics.Raycast(at + Vector3.up, Vector3.down, out RaycastHit hit, 1f + rollerRadius * 4f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) continue;
             SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
-            if (ink != null) ink.Splat(ink.UVFromHit(hit), rollSplatSize, player.Team);
+            if (ink != null) ink.SplatAt(hit, rollSplatSize, player.Team);
         }
     }
 

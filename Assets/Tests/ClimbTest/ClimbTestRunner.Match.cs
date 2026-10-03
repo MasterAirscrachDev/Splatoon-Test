@@ -427,6 +427,60 @@ public partial class ClimbTestRunner
         NetGameManager.SendOverride = null;
     }
 
+    IEnumerator SeamBridging()
+    {
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        NetGameManager.SendOverride = (id, data, target) => { };
+        Vector3 right = station.TransformDirection(Vector3.right), forward = station.TransformDirection(Vector3.forward);
+        Vector3 origin = station.TransformPoint(new Vector3(0f, 8f, 0f)); // clear air over the lobby
+        SurfaceInkManager Make(string name, Vector3 at)
+        {
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Plane); // 10 x 10m, a concave mesh collider
+            go.name = name;
+            go.layer = floor.gameObject.layer;
+            go.transform.SetPositionAndRotation(at, station.rotation);
+            go.GetComponent<Renderer>().sharedMaterial = floor.GetComponent<Renderer>().sharedMaterial;
+            return go.AddComponent<SurfaceInkManager>();
+        }
+        SurfaceInkManager a = Make("SeamA", origin), b = Make("SeamB", origin + right * 10f); // they meet at origin + right * 5
+        Physics.SyncTransforms();
+        for (int i = 0; i < 3; i++) yield return null; // their Start
+        RaycastHit Down(Vector3 at, SurfaceInkManager on) { on.GetComponent<Collider>().Raycast(new Ray(at + Vector3.up, Vector3.down), out RaycastHit h, 2f); return h; }
+        int TeamAt(SurfaceInkManager on, Vector3 at) { RaycastHit h = Down(at, on); return h.collider != null ? on.getSurfaceTeam(on.UVFromHit(h)) : -1; }
+        int size = Mathf.RoundToInt(1f / a.TexelSize); // about 1m across... in radius: splatScale 1
+
+        // 0.4m from the join: it carries on over it.
+        Vector3 near = origin + right * 4.6f + forward * 2f;
+        a.SplatAt(Down(near, a), size, player.Team);
+        // 7m from it: b untouched.
+        Vector3 far = origin - right * 2f - forward * 2f;
+        a.SplatAt(Down(far, a), size, player.Team);
+        // Switched off: stops at its own edge.
+        SurfaceInkManager.BridgeSeams = false;
+        Vector3 off = origin + right * 4.6f - forward * 3f;
+        a.SplatAt(Down(off, a), size, player.Team);
+        SurfaceInkManager.BridgeSeams = true;
+        yield return Hold(Still, false, 0.3f, "readback");
+
+        float radius = size * a.TexelSize;
+        int ours = player.Team;
+        var probes = new (string what, int team, int want)[]
+        {
+            ("this side of the join", TeamAt(a, near + right * 0.35f), ours),
+            ("just over the join", TeamAt(b, near + right * 0.5f), ours),
+            ("over the join, inside the circle", TeamAt(b, near + right * (radius * 0.85f)), ours),
+            ("over the join, outside the circle", TeamAt(b, near + right * (radius + 0.6f)), 0),
+            ("b beside the far splat", TeamAt(b, origin + right * 5.3f - forward * 2f), 0),
+            ("switched off: just over the join", TeamAt(b, off + right * 0.5f), 0),
+            ("switched off: this side", TeamAt(a, off + right * 0.3f), ours),
+        };
+        Note($"splat radius {radius:F2}m, 0.4m from the join: " + string.Join(", ", probes.Select(p => $"{p.what} {(p.team == p.want ? "ok" : $"WRONG ({p.team})")}")));
+        foreach (var p in probes) if (p.team != p.want) Fail($"seam bridging: {p.what} was {p.team}, expected {p.want}");
+        Destroy(a.gameObject);
+        Destroy(b.gameObject);
+        NetGameManager.SendOverride = null;
+    }
+
     IEnumerator SplatGrouping()
     {
         SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");

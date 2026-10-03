@@ -137,6 +137,7 @@ public class PlayerLoadout : MonoBehaviour
             player.Shielded = Time.time < shieldUntil && !player.IsDead;
             player.SpecialCharged = SpecialReady;
             player.SubReady = CanUseSub && !player.IsDead;
+            UpdateQueuedSub();
             UpdateHeldBomb();
         }
         else if (player.WeaponIndex != equippedIndex) Equip(player.WeaponIndex); // they switched
@@ -187,10 +188,32 @@ public class PlayerLoadout : MonoBehaviour
 
     bool CanStartSub => player.IsLocalPlayer && !player.IsDead && !player.IsRespawning && !player.IsSuperJumping && player.Team != 0 && !InputGate.MatchLocked && CanUseSub;
 
+    // Pressed (or a held curling bomb let go) while coming out of swim form, before the kid form is
+    // up to use ink: it goes as soon as it is (the model snaps up for it), within SubQueueTime.
+    const float SubQueueTime = 0.5f;
+    float pressQueuedAt = -1f, releaseQueuedAt = -1f;
+    public bool SubQueued => pressQueuedAt >= 0f || releaseQueuedAt >= 0f; // tests
+
+    bool InTransition => player.IsLocalPlayer && !player.IsSquid && !player.KidFormReady;
+
+    void UpdateQueuedSub()
+    {
+        if (player.IsSquid || player.IsDead) pressQueuedAt = releaseQueuedAt = -1f; // back under, or gone: dropped
+        if (pressQueuedAt >= 0f && Time.time - pressQueuedAt > SubQueueTime) pressQueuedAt = -1f;
+        if (releaseQueuedAt >= 0f && Time.time - releaseQueuedAt > SubQueueTime) releaseQueuedAt = -1f;
+        if (player.KidFormReady)
+        {
+            if (pressQueuedAt >= 0f) { pressQueuedAt = -1f; PressSub(); }
+            if (releaseQueuedAt >= 0f) { releaseQueuedAt = -1f; ReleaseSub(); }
+        }
+        player.ActionQueued = SubQueued;
+    }
+
     // Press and release at once (a curling bomb goes with its full fuse).
     public bool UseSub()
     {
         if (!CanStartSub) return false;
+        if (InTransition && sub != SubType.CurlingBomb) { pressQueuedAt = Time.time; player.ActionQueued = true; return true; }
         player.MarkAiming(0.5f); // turn to the view to throw or place it
         if (sub == SubType.CurlingBomb) return PressSub() && ReleaseSub();
         return sub == SubType.Beacon ? PlaceBeacon() : ThrowSprinkler();
@@ -213,6 +236,7 @@ public class PlayerLoadout : MonoBehaviour
     public bool ReleaseSub()
     {
         if (held == null) return false;
+        if (InTransition) { releaseQueuedAt = Time.time; player.ActionQueued = true; return true; } // thrown once the kid form's up
         CurlingBomb bomb = held;
         held = null;
         if (!CanStartSub || !player.ConsumeInk(InkCost(SubType.CurlingBomb))) { Destroy(bomb.gameObject); return false; }

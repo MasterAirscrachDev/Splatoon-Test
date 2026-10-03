@@ -311,7 +311,7 @@ public class SurfaceInkManager : MonoBehaviour
     {
         pendingSplats.Add(new PendingSplat
         {
-            x = (int)(texCoords.x * size), y = (int)(texCoords.y * size),
+            x = Mathf.FloorToInt(texCoords.x * size), y = Mathf.FloorToInt(texCoords.y * size), // may be off the texture (bridged)
             radius = Mathf.RoundToInt(splashSize * splatScale), team = team,
             turfTeam = broadcast ? team : 0, // our own splats charge our special
         });
@@ -495,22 +495,116 @@ public class SurfaceInkManager : MonoBehaviour
     public Vector2 UVFromHit(RaycastHit hit)
     {
         if (hit.textureCoord.sqrMagnitude > 0.0001f) return hit.textureCoord;
+        return PlanarUV(hit.point, hit.normal, clamp: true);
+    }
 
+    // The bounds-based UV estimate: the normal's dominant axis is depth, the other two become U and V.
+    // Unclamped, it carries on past the edges (for splats reaching over from a neighbour).
+    Vector2 PlanarUV(Vector3 point, Vector3 normal, bool clamp)
+    {
         Renderer rend = GetComponent<Renderer>();
         if (rend == null) return Vector2.zero;
         Bounds b = rend.localBounds;
         if (b.size.sqrMagnitude < 0.0001f) return Vector2.zero;
 
-        Vector3 p = transform.InverseTransformPoint(hit.point);
-        Vector3 n = transform.InverseTransformDirection(hit.normal);
+        Vector3 p = transform.InverseTransformPoint(point);
+        Vector3 n = transform.InverseTransformDirection(normal);
         float ax = Mathf.Abs(n.x), ay = Mathf.Abs(n.y), az = Mathf.Abs(n.z);
+        float Along(float min, float max, float v) => clamp ? Mathf.InverseLerp(min, max, v) : (max - min > 1e-6f ? (v - min) / (max - min) : 0f);
 
-        // The normal's dominant axis is depth; the other two become U and V.
         if (ay >= ax && ay >= az)
-            return new Vector2(Mathf.InverseLerp(b.min.x, b.max.x, p.x), Mathf.InverseLerp(b.min.z, b.max.z, p.z));
+            return new Vector2(Along(b.min.x, b.max.x, p.x), Along(b.min.z, b.max.z, p.z));
         if (az >= ax)
-            return new Vector2(Mathf.InverseLerp(b.min.x, b.max.x, p.x), Mathf.InverseLerp(b.min.y, b.max.y, p.y));
-        return new Vector2(Mathf.InverseLerp(b.min.z, b.max.z, p.z), Mathf.InverseLerp(b.min.y, b.max.y, p.y));
+            return new Vector2(Along(b.min.x, b.max.x, p.x), Along(b.min.y, b.max.y, p.y));
+        return new Vector2(Along(b.min.z, b.max.z, p.z), Along(b.min.y, b.max.y, p.y));
+    }
+
+    // ── Splats across seams ──────────────────────────────────────────────────
+    // A splat at a ray hit. Each surface has its own texture, so a splat near an edge used to stop
+    // dead there; now any neighbouring surface facing the same way that the splat reaches (two
+    // floors meeting edge to edge) is painted too, at the same world centre and size, so the splat
+    // carries on across the join. Surfaces at an angle (a wall meeting a floor) are left alone.
+    public static bool BridgeSeams = true;   // off: splats stop at their own surface's edge (comparisons)
+    const float BridgeFacing = 0.8f;          // neighbours within ~37° of facing the same way
+    static readonly Collider[] nearbySurfaces = new Collider[16];
+    Vector3[] colliderVerts;                  // the collider mesh, for carrying UVs past its edge
+    Vector2[] colliderUVs;
+    int[] colliderTris;
+
+    public float TexelSize => texelArea > 0f ? Mathf.Sqrt(texelArea) : 0f; // metres across a texel
+
+    public void SplatAt(RaycastHit hit, int splashSize, int team)
+    {
+        Splat(UVFromHit(hit), splashSize, team);
+        if (BridgeSeams) Bridge(hit.point, hit.normal, splashSize, team);
+    }
+
+    void Bridge(Vector3 centre, Vector3 normal, int splashSize, int team)
+    {
+        if (TexelSize <= 0f) return;
+        float radius = splashSize * splatScale * TexelSize;            // metres
+        float reach = (splashSize * splatScale * 1.4f + 4f) * TexelSize; // with the warp and feather (see SplatBox)
+        int n = Physics.OverlapSphereNonAlloc(centre, reach, nearbySurfaces, 1 << gameObject.layer, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < n; i++)
+        {
+            SurfaceInkManager other = nearbySurfaces[i].GetComponent<SurfaceInkManager>();
+            if (other == null || other == this || other.TexelSize <= 0f) continue;
+            if (!other.NearestHit(nearbySurfaces[i], centre, normal, reach, out RaycastHit near)) continue;
+            if (Vector3.Dot(near.normal, normal) < BridgeFacing) continue;
+            int size = Mathf.RoundToInt(radius / other.TexelSize / other.splatScale);
+            if (size > 0) other.Splat(other.UVToward(near, centre), size, team);
+        }
+    }
+
+    // The point of this surface nearest the splat's centre that a ray straight down the splat's
+    // normal finds, from rings around the centre out to its reach.
+    bool NearestHit(Collider surface, Vector3 centre, Vector3 normal, float reach, out RaycastHit best)
+    {
+        best = default;
+        Vector3 tangent = Vector3.Cross(normal, Mathf.Abs(normal.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+        Vector3 bitangent = Vector3.Cross(normal, tangent);
+        bool found = false;
+        for (int ring = 1; ring <= 4 && !found; ring++) // nearest ring first
+            for (int k = 0; k < 12; k++)
+            {
+                float a = k * Mathf.PI * 2f / 12f;
+                Vector3 at = centre + (tangent * Mathf.Cos(a) + bitangent * Mathf.Sin(a)) * (reach * ring / 4f);
+                if (!surface.Raycast(new Ray(at + normal * 0.3f, -normal), out RaycastHit hit, 0.6f)) continue;
+                if (found && (hit.point - centre).sqrMagnitude >= (best.point - centre).sqrMagnitude) continue;
+                best = hit;
+                found = true;
+            }
+        return found;
+    }
+
+    // This surface's UV at a world point off its edge, carried on from a hit near it: through the
+    // hit triangle's UV mapping (mesh colliders), or the bounds-based estimate unclamped.
+    Vector2 UVToward(RaycastHit near, Vector3 point)
+    {
+        if (near.collider is MeshCollider mc && !mc.convex && mc.sharedMesh != null && mc.sharedMesh.isReadable && near.triangleIndex >= 0)
+        {
+            if (colliderTris == null) { colliderVerts = mc.sharedMesh.vertices; colliderUVs = mc.sharedMesh.uv; colliderTris = mc.sharedMesh.triangles; }
+            int t = near.triangleIndex * 3;
+            if (colliderUVs.Length == colliderVerts.Length && t + 2 < colliderTris.Length)
+            {
+                int i0 = colliderTris[t], i1 = colliderTris[t + 1], i2 = colliderTris[t + 2];
+                Transform tf = mc.transform;
+                Vector3 p0 = tf.TransformPoint(colliderVerts[i0]);
+                Vector3 e1 = tf.TransformPoint(colliderVerts[i1]) - p0, e2 = tf.TransformPoint(colliderVerts[i2]) - p0;
+                Vector2 d1 = colliderUVs[i1] - colliderUVs[i0], d2 = colliderUVs[i2] - colliderUVs[i0];
+                Vector3 w = Vector3.ProjectOnPlane(point - near.point, Vector3.Cross(e1, e2).normalized);
+                // w = a e1 + b e2 in the triangle's plane; the UV moves a d1 + b d2.
+                float d11 = Vector3.Dot(e1, e1), d12 = Vector3.Dot(e1, e2), d22 = Vector3.Dot(e2, e2);
+                float det = d11 * d22 - d12 * d12;
+                if (Mathf.Abs(det) > 1e-10f)
+                {
+                    float w1 = Vector3.Dot(w, e1), w2 = Vector3.Dot(w, e2);
+                    float a = (w1 * d22 - w2 * d12) / det, b = (w2 * d11 - w1 * d12) / det;
+                    return near.textureCoord + a * d1 + b * d2;
+                }
+            }
+        }
+        return PlanarUV(point, near.normal, clamp: false);
     }
 
     // Reads a texel box of the ink texture back and re-classifies it into teamMap. With

@@ -103,13 +103,13 @@ public class SplatData
 public class SplatBatchData
 {
     public ushort[] surfaceIds;
-    public ushort[] uvs;       // x, y per splat, in 1/65535ths of the texture (finer than a texel)
+    public ushort[] uvs;       // x, y per splat, -0.5..1.5 of the texture in 65535 steps (a splat bridged over a seam can be centred off its texture)
     public byte[] splashSizes;
     public byte[] teams;
 
-    public const float UVScale = 65535f;
-    public static ushort PackUV(float v) => (ushort)Mathf.RoundToInt(Mathf.Clamp01(v) * UVScale);
-    public static float UnpackUV(ushort v) => v / UVScale;
+    const float UVMin = -0.5f, UVSpan = 2f, Steps = 65535f;
+    public static ushort PackUV(float v) => (ushort)Mathf.RoundToInt(Mathf.Clamp01((v - UVMin) / UVSpan) * Steps);
+    public static float UnpackUV(ushort v) => UVMin + v / Steps * UVSpan;
 }
 
 // ── Instant reposition (respawn), bypassing interpolation ───────────────

@@ -213,7 +213,7 @@ public class ProjectileManager : MonoBehaviour
         if (!surface.Raycast(probe, out RaycastHit hit, 2f)) return;
         SurfaceInkManager ink = surface.GetComponent<SurfaceInkManager>();
         if (ink == null) return;
-        if (s.authoritative) ink.Splat(ink.UVFromHit(hit), s.splashSize, s.team); // remotes get the shooter's Splat message
+        if (s.authoritative) ink.SplatAt(hit, s.splashSize, s.team); // remotes get the shooter's Splat message
         if (s.impactParticles && templates.TryGetValue(s.prefab, out ProjectileVisual t) && t != null)
             InkParticles.Spawn(t.SplashParticles, hit.point, Quaternion.FromToRotation(Vector3.up, hit.normal), s.colour);
     }

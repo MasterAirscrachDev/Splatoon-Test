@@ -50,7 +50,7 @@ public static class InkExplosion
         {
             if (!Physics.Raycast(centre, dir, out RaycastHit hit, blast.inkReach, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) continue;
             SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
-            if (ink != null) ink.Splat(ink.UVFromHit(hit), blast.splashSize, team);
+            if (ink != null) ink.SplatAt(hit, blast.splashSize, team);
         }
         if (drop != null) Fall(centre, blast, team, ownerId, drop);
 

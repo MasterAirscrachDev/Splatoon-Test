@@ -45,7 +45,7 @@ public partial class PlayerController
         Vector3 playerTarget = swimMode ? new Vector3(1,0,1) : Vector3.one;
         Vector3 squidTarget  = swimMode && (!IsInInk || IsSuperJumping) ? Vector3.one : Vector3.zero;
 
-        ViewmodelPlayer.transform.localScale = !swimMode && AttackHeld
+        ViewmodelPlayer.transform.localScale = !swimMode && (AttackHeld || ActionQueued)
             ? playerTarget // attacking out of swim form: straight up, so the weapon can go at once
             : Vector3.Lerp(ViewmodelPlayer.transform.localScale, playerTarget, 1f - Mathf.Exp(-ViewmodelSwitchSpeed * Time.deltaTime));
         ViewmodelSquid.transform.localScale  = Vector3.Lerp(ViewmodelSquid.transform.localScale,  squidTarget,  1f - Mathf.Exp(-ViewmodelSwitchSpeed * Time.deltaTime));

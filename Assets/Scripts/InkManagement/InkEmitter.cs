@@ -30,7 +30,7 @@ public class InkEmitter : MonoBehaviour
         {
             if (other.Raycast(new Ray(transform.position - dir * 2f, dir), out RaycastHit hit, 3f))
             {
-                ink.Splat(ink.UVFromHit(hit), splashSize, team);
+                ink.SplatAt(hit, splashSize, team);
                 if (instaClear) Destroy(gameObject);
                 return; // one splat per collider per physics tick
             }
