@@ -12,6 +12,10 @@ public static class LoadoutBuilder
     const string ColumnMaterialPath = "Assets/Materials/InkShape.mat";
     const string SprinklerPath = "Assets/Prefabs/Sprinkler.prefab";
     const string CurlingBombPath = "Assets/Prefabs/CurlingBomb.prefab";
+    const string BlasterPath = "Assets/Prefabs/Weapons/Blaster.prefab";
+    const string InkBlastPath = "Assets/Prefabs/InkBlast.prefab";
+    const string RollerPath = "Assets/Prefabs/Weapons/Inkroller.prefab";
+    const string RollerModelPath = "Assets/Models/Inkroller.fbx";
     const string BlastMatPath = "Assets/Materials/SwimWakeLit.mat"; // the curling bomb's blast: lit ink
     const string InkStrikePath = "Assets/Prefabs/InkStrike.prefab";
     const string ProjectilePath = "Assets/Prefabs/Projectile.prefab";
@@ -241,8 +245,90 @@ public static class LoadoutBuilder
         return saved.GetComponent<Sprinkler>();
     }
 
-    // A squat puck with a grip on top and a light that blinks faster as its fuse runs out, plus the
-    // blast sphere (hidden until it goes off). No collider: it can't be shot.
+    // Blaster: Airspray SE's set-up with a short, fat barrel, firing one exploding shot.
+    internal static Weapon CreateBlaster()
+    {
+        GameObject c = PrefabUtility.LoadPrefabContents(AirsprayPath);
+        try
+        {
+            c.name = "Blaster";
+            Transform muzzle = c.transform.Find("BulletSpawn");
+            Object.DestroyImmediate(c.GetComponent<WeaponShooter>());
+            Blaster blaster = c.AddComponent<Blaster>();
+            var so = new SerializedObject(blaster);
+            so.FindProperty("displayName").stringValue = "Blaster";
+            so.FindProperty("description").stringValue = "Slow, short-ranged shots that explode at the end of their flight or on whatever they hit.";
+            so.FindProperty("muzzle").objectReferenceValue = muzzle;
+            so.FindProperty("projectile").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ProjectilePath);
+            GameObject effect = AssetDatabase.LoadAssetAtPath<GameObject>(InkBlastPath);
+            if (effect == null) effect = BuildInkBlast();
+            so.FindProperty("blast.effect").objectReferenceValue = effect;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            Transform model = c.transform.Find("InkShot");
+            if (model != null) model.localScale = Vector3.Scale(model.localScale, new Vector3(1.5f, 1.5f, 0.75f));
+            PrefabUtility.SaveAsPrefabAsset(c, BlasterPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(c);
+        }
+        return AssetDatabase.LoadAssetAtPath<Weapon>(BlasterPath);
+    }
+
+    // The roller, around its model: the Inkroller set up in the open scene if there is one (it carries
+    // the materials), else the bare model. Its drum is RollerFrame/Roller; its width the drum's.
+    internal static Weapon CreateRoller()
+    {
+        GameObject source = GameObject.Find("Inkroller");
+        if (source == null) source = AssetDatabase.LoadAssetAtPath<GameObject>(RollerModelPath);
+        if (source == null) { Debug.LogError("[LoadoutBuilder] no Inkroller model"); return null; }
+        var root = new GameObject("Inkroller");
+        GameObject model = Object.Instantiate(source, root.transform);
+        model.name = "Model";
+        model.transform.localPosition = Vector3.zero;
+        model.transform.localRotation = Quaternion.identity;
+        model.transform.localScale = Vector3.one;
+        foreach (Collider c in model.GetComponentsInChildren<Collider>(true)) Object.DestroyImmediate(c);
+        foreach (Renderer r in model.GetComponentsInChildren<Renderer>(true)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+        Transform drum = model.transform.Find("RollerFrame/Roller");
+
+        Roller roller = root.AddComponent<Roller>();
+        var so = new SerializedObject(roller);
+        so.FindProperty("displayName").stringValue = "Inkroller";
+        so.FindProperty("description").stringValue = "Flick ink in a wide arc (or a long line from the air), then hold to roll a strip of ink and run enemies over.";
+        so.FindProperty("projectile").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ProjectilePath);
+        so.FindProperty("roller").objectReferenceValue = drum;
+        if (drum != null && drum.TryGetComponent(out MeshFilter mf) && mf.sharedMesh != null)
+        {
+            Vector3 size = Vector3.Scale(mf.sharedMesh.bounds.size, drum.lossyScale);
+            so.FindProperty("rollerWidth").floatValue = size.y;            // the drum's axis is its mesh's Y
+            so.FindProperty("rollerRadius").floatValue = size.x * 0.5f;
+        }
+        so.ApplyModifiedPropertiesWithoutUndo();
+        PrefabUtility.SaveAsPrefabAsset(root, RollerPath);
+        Object.DestroyImmediate(root);
+        return AssetDatabase.LoadAssetAtPath<Weapon>(RollerPath);
+    }
+
+    // An explosion: a sphere of lit ink that swells and collapses, flinging droplets, and a splash.
+    internal static GameObject BuildInkBlast()
+    {
+        var root = new GameObject("InkBlast");
+        Renderer sphere = Part(PrimitiveType.Sphere, "Sphere", root.transform, Vector3.zero, Vector3.one, AssetDatabase.LoadAssetAtPath<Material>(BlastMatPath));
+        sphere.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        InkBlastEffect effect = root.AddComponent<InkBlastEffect>();
+        var so = new SerializedObject(effect);
+        so.FindProperty("sphere").objectReferenceValue = sphere.transform;
+        var projectile = AssetDatabase.LoadAssetAtPath<ProjectileVisual>(ProjectilePath);
+        if (projectile != null) so.FindProperty("splash").objectReferenceValue = projectile.SplashParticles;
+        so.ApplyModifiedPropertiesWithoutUndo();
+        GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, InkBlastPath);
+        Object.DestroyImmediate(root);
+        return saved;
+    }
+
+    // A squat puck with a grip on top and a light that blinks faster as its fuse runs out; it goes
+    // off with the shared InkBlast effect. No collider: it can't be shot.
     internal static CurlingBomb BuildCurlingBomb()
     {
         Material body = EnsureMaterial(BeaconBodyMatPath, "Standard", m => m.color = new Color(0.22f, 0.22f, 0.26f));
@@ -256,9 +342,6 @@ public static class LoadoutBuilder
         Part(PrimitiveType.Cube, "Grip", model, new Vector3(0f, 0.3f, 0f), new Vector3(0.08f, 0.1f, 0.34f), body);
         Renderer blinker = Part(PrimitiveType.Sphere, "Light", model, new Vector3(0f, 0.25f, 0.16f), Vector3.one * 0.1f, light);
 
-        Renderer blastSphere = Part(PrimitiveType.Sphere, "Blast", root.transform, new Vector3(0f, 0.3f, 0f), Vector3.one, AssetDatabase.LoadAssetAtPath<Material>(BlastMatPath));
-        blastSphere.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        blastSphere.gameObject.SetActive(false);
 
         CurlingBomb bomb = root.AddComponent<CurlingBomb>();
         var so = new SerializedObject(bomb);
@@ -267,10 +350,10 @@ public static class LoadoutBuilder
         tinted.arraySize = 1;
         tinted.GetArrayElementAtIndex(0).objectReferenceValue = band;
         so.FindProperty("blinker").objectReferenceValue = blinker;
-        so.FindProperty("blast").objectReferenceValue = blastSphere.transform;
         so.FindProperty("body").objectReferenceValue = model;
-        var projectile = AssetDatabase.LoadAssetAtPath<ProjectileVisual>(ProjectilePath);
-        if (projectile != null) so.FindProperty("blastParticles").objectReferenceValue = projectile.SplashParticles;
+        GameObject effect = AssetDatabase.LoadAssetAtPath<GameObject>(InkBlastPath);
+        if (effect == null) effect = BuildInkBlast();
+        so.FindProperty("blastEffect").objectReferenceValue = effect;
         so.ApplyModifiedPropertiesWithoutUndo();
 
         GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, CurlingBombPath);
@@ -356,6 +439,10 @@ public static class LoadoutBuilder
             if (airspray == null) airspray = CreateAirspray(builtIn.transform);
             Weapon inkshot = AssetDatabase.LoadAssetAtPath<Weapon>(InkshotPath);
             if (inkshot == null) inkshot = CreateInkshot();
+            Weapon blaster = AssetDatabase.LoadAssetAtPath<Weapon>(BlasterPath);
+            if (blaster == null) blaster = CreateBlaster();
+            Weapon roller = AssetDatabase.LoadAssetAtPath<Weapon>(RollerPath);
+            if (roller == null) roller = CreateRoller();
             foreach (Weapon w in mount.GetComponentsInChildren<Weapon>(true)) Object.DestroyImmediate(w.gameObject); // equipped at runtime now
 
             Transform bubble = pc.transform.Find("BubbleShield");
@@ -366,7 +453,7 @@ public static class LoadoutBuilder
             so.FindProperty("sprinklerPrefab").objectReferenceValue = sprinklerPrefab;
             so.FindProperty("curlingBombPrefab").objectReferenceValue = curlingBombPrefab;
             so.FindProperty("inkStrikePrefab").objectReferenceValue = inkStrikePrefab;
-            Weapon[] weapons = { airspray, inkshot };
+            Weapon[] weapons = { airspray, inkshot, blaster, roller };
             SerializedProperty list = so.FindProperty("weapons");
             list.arraySize = weapons.Length;
             for (int i = 0; i < weapons.Length; i++) list.GetArrayElementAtIndex(i).objectReferenceValue = weapons[i];

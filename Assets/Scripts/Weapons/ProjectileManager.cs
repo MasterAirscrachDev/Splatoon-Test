@@ -9,7 +9,9 @@ using UnityEngine.Pool;
 // count (the physics matrix: grates let ink through). Enemy hitboxes and subs take damage,
 // teammates' are passed through, and the first solid surface stops the shot (splatting it if it's
 // inkable).
-// Remote replays (authoritative = false) only fly and splash. Visuals are pooled per prefab; hidden
+// Shots with a blast (see InkBlast) explode instead of splatting: on whatever they hit, or in
+// mid-air once they've flown their maxDistance. Remote replays (authoritative = false) only fly,
+// splash and show their explosions. Visuals are pooled per prefab; hidden
 // shots have none.
 public class ProjectileManager : MonoBehaviour
 {
@@ -25,6 +27,11 @@ public class ProjectileManager : MonoBehaviour
         public bool authoritative, impactParticles;
         public ulong ownerId;
         public string source; // what fired it, for "splatted with"
+        public float maxDistance, travelled; // explodes in mid-air at maxDistance (0: no limit)
+        public InkBlast blast;                // explodes rather than splats
+        public float trailSpacing, sinceDrip; // drops a drip of ink every trailSpacing metres it flies (0: none)
+        public int trailSize;
+        public HashSet<Object> hitGroup;      // shots sharing one: each target takes damage from the first of them only
         public Color colour;
 
         public Vector3 Velocity => launch * ballistics.velocityOverTime.Evaluate(age) + inherit + fallVelocity;
@@ -70,7 +77,8 @@ public class ProjectileManager : MonoBehaviour
     public static Shot Fire(GameObject prefab, Vector3 origin, Vector3 launch, int splashSize, int team,
                             bool visible = true, bool authoritative = true, ulong ownerId = 0, float damage = 30f,
                             bool impactParticles = true, Ballistics ballistics = null, Vector3 inherit = default,
-                            string source = null)
+                            string source = null, float maxDistance = 0f, InkBlast blast = null,
+                            float trailSpacing = 0f, int trailSize = 0, HashSet<Object> hitGroup = null, float visualScale = 1f)
     {
         ProjectileManager m = Instance;
         ProjectileVisual template = m.Template(prefab);
@@ -90,12 +98,19 @@ public class ProjectileManager : MonoBehaviour
         s.impactParticles = impactParticles;
         s.ownerId = ownerId;
         s.source = source;
+        s.maxDistance = maxDistance;
+        s.travelled = 0f;
+        s.blast = blast;
+        s.trailSpacing = trailSpacing;
+        s.trailSize = trailSize;
+        s.sinceDrip = 0f;
+        s.hitGroup = hitGroup;
         NetGameManager gm = NetGameManager.Instance;
         s.colour = gm == null ? Color.white : team == 1 ? gm.AlphaTeam : gm.BetaTeam;
         s.visual = visible && template != null ? m.pools[prefab].Get() : null;
         if (s.visual != null)
         {
-            s.visual.Show(s.colour, splashSize);
+            s.visual.Show(s.colour, splashSize, visualScale);
             s.visual.Follow(origin, s.Velocity);
         }
         m.live.Add(s);
@@ -123,9 +138,24 @@ public class ProjectileManager : MonoBehaviour
         {
             s.fallVelocity += Physics.gravity * (s.ballistics.gravityOverTime.Evaluate(s.age) * h);
             s.age += h;
-            Vector3 next = s.position + s.Velocity * h;
+            Vector3 step = s.Velocity * h;
+            bool lastStep = false;
+            if (s.maxDistance > 0f)
+            {
+                float left = s.maxDistance - s.travelled, length = step.magnitude;
+                if (length >= left) { step *= left / Mathf.Max(length, 1e-6f); lastStep = true; }
+            }
+            Vector3 next = s.position + step;
             if (Sweep(s, s.position, next)) return true;
             s.position = next;
+            s.travelled += step.magnitude;
+            Drip(s, step.magnitude);
+            if (lastStep)
+            {
+                Detonate(s, s.position, null); // as far as it goes
+                Impact?.Invoke(s, s.position);
+                return true;
+            }
             if (s.age > MaxLifetime || s.position.y < KillHeight) return true;
         }
         return false;
@@ -150,27 +180,32 @@ public class ProjectileManager : MonoBehaviour
             SubDevice device = c.GetComponentInParent<SubDevice>();
             if (device != null)
             {
-                if (device.Team == s.team) continue;
-                if (s.authoritative) device.TakeDamage(s.damage, s.team, s.ownerId);
+                if (device.Team == s.team || s.damage <= 0f) continue; // drips fall through
+                if (s.authoritative && FirstHit(s, device)) device.TakeDamage(s.damage, s.team, s.ownerId);
+                Detonate(s, from + dir * Mathf.Max(0f, h.distance), device);
                 Impact?.Invoke(s, point);
                 return true;
             }
             PlayerHitbox hitbox = c.GetComponentInParent<PlayerHitbox>();
             if (hitbox != null)
             {
-                if (hitbox.Team == s.team) continue; // teammates and the shooter
-                if (s.authoritative) hitbox.TakeDamage(s.damage, s.team, s.ownerId, s.source);
+                if (hitbox.Team == s.team || s.damage <= 0f) continue; // teammates and the shooter; drips fall through
+                if (s.authoritative && FirstHit(s, hitbox)) hitbox.TakeDamage(s.damage, s.team, s.ownerId, s.source);
+                Detonate(s, from + dir * Mathf.Max(0f, h.distance), hitbox); // they took the direct hit
                 Impact?.Invoke(s, point);
                 return true;
             }
             if (c.isTrigger) continue; // volumes don't stop ink
 
-            Land(s, c, overlapping ? new Ray(from - dir * 0.5f, dir) : new Ray(h.point + h.normal * 0.5f, -h.normal));
+            if (s.blast != null) Detonate(s, overlapping ? from : h.point + h.normal * 0.1f, null);
+            else Land(s, c, overlapping ? new Ray(from - dir * 0.5f, dir) : new Ray(h.point + h.normal * 0.5f, -h.normal));
             Impact?.Invoke(s, point);
             return true;
         }
         return false;
     }
+
+    static bool FirstHit(Shot s, Object target) => s.hitGroup == null || s.hitGroup.Add(target);
 
     // Splats the surface (re-cast onto it for the exact point and, for mesh colliders, its UV).
     void Land(Shot s, Collider surface, Ray probe)
@@ -181,6 +216,28 @@ public class ProjectileManager : MonoBehaviour
         if (s.authoritative) ink.Splat(ink.UVFromHit(hit), s.splashSize, s.team); // remotes get the shooter's Splat message
         if (s.impactParticles && templates.TryGetValue(s.prefab, out ProjectileVisual t) && t != null)
             InkParticles.Spawn(t.SplashParticles, hit.point, Quaternion.FromToRotation(Vector3.up, hit.normal), s.colour);
+    }
+
+    // A trail under its path: every trailSpacing metres, a small unseen drip that falls and splats
+    // (the owner's only; the paint reaches everyone else as Splat messages). Drips hurt nobody.
+    static void Drip(Shot s, float moved)
+    {
+        if (s.trailSpacing <= 0f || !s.authoritative) return;
+        s.sinceDrip += moved;
+        while (s.sinceDrip >= s.trailSpacing)
+        {
+            s.sinceDrip -= s.trailSpacing;
+            Fire(s.prefab, s.position, s.Velocity * DripCarry + Vector3.down * FallSpeed, s.trailSize, s.team,
+                 visible: false, authoritative: true, ownerId: s.ownerId, damage: 0f, impactParticles: false);
+        }
+    }
+
+    const float DripCarry = 0.1f; // share of the shot's velocity a drip keeps
+    public const float FallSpeed = 12f; // unseen ink dropping to the surface below (trails, blasts) starts this fast, metres per second
+
+    static void Detonate(Shot s, Vector3 centre, Object exclude)
+    {
+        if (s.blast != null) InkExplosion.Detonate(centre, s.blast, s.team, s.ownerId, s.source, s.authoritative, s.colour, exclude, s.prefab);
     }
 
     void Retire(int index)

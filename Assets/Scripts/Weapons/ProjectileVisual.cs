@@ -28,14 +28,14 @@ public class ProjectileVisual : MonoBehaviour
         block = new MaterialPropertyBlock();
     }
 
-    public void Show(Color colour, int splashSize)
+    public void Show(Color colour, int splashSize, float scale = 1f)
     {
         if (visual == null) return;
         visual.GetPropertyBlock(block);
         block.SetColor(ShaderColor, colour);
         block.SetFloat(ShaderSeed, Random.Range(0f, 100f));
         visual.SetPropertyBlock(block);
-        visual.transform.localScale = Vector3.one * (splashSize * 0.035f);
+        visual.transform.localScale = Vector3.one * (splashSize * 0.035f * scale);
     }
 
     public void Follow(Vector3 position, Vector3 velocity)

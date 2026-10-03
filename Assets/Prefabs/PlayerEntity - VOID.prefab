@@ -5608,10 +5608,17 @@ MonoBehaviour:
   playerCamera: {fileID: 5259456391889857808}
   team: 2
   mouseSensitivity: 0.5
+  mouseSmoothTime: 0.03
+  stickSpeed: {x: 180, y: 120}
+  stickCurve: 1.8
+  stickBoost: 1.6
+  stickBoostTime: 0.35
+  invertY: 0
+  gyroSensitivity: 1.5
+  gyroInvertY: 0
   gravity: -12
   jump: 8
   moveSmoothTime: 0.3
-  mouseSmoothTime: 0.03
   moveSpeed: 6
   swimSpeed: 10
   lockCursor: 1
@@ -5645,6 +5652,8 @@ MonoBehaviour:
   weapons:
   - {fileID: 1912437224533128077, guid: f3235f49b560e5a4fa14f7a37e3fba23, type: 3}
   - {fileID: 1680705428740658682, guid: 66bb45dbe338dbf428fa6876f82e5523, type: 3}
+  - {fileID: 114069460458977127, guid: 0115cd5a0c8cbc54695cf17c91f3e318, type: 3}
+  - {fileID: 3969233499896776995, guid: f33754660fb4f9a47a37795ebe372655, type: 3}
   weaponMount: {fileID: 2034416416101227102}
   beaconPrefab: {fileID: 7517210129143154419, guid: 841058bcdcffb02499cdd9a726fa1d86, type: 3}
   maxBeacons: 3

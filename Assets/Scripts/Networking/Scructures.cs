@@ -72,6 +72,8 @@ public class PlayerStateData
     public bool subReady;     // enough ink for the sub: the light on their tank
     public float ink;         // tank level, shown on their model's tank
     public int weapon;        // index into PlayerLoadout's weapons, so remotes show the right one
+    public bool weaponDown;   // its down pose (a roller rolling)
+    public float modelYaw;    // which way the kid model faces (it turns to the way they move unless aiming)
 }
 
 // ── Spawn / despawn ───────────────────────────────────────────────────────

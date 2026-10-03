@@ -101,7 +101,7 @@ public class PlayerLoadout : MonoBehaviour
         }
     }
 
-    const string WeaponPref = "loadout.weapon", SubPref = "loadout.sub", SpecialPref = "loadout.special";
+    public const string WeaponPref = "loadout.weapon", SubPref = "loadout.sub", SpecialPref = "loadout.special";
     SpecialType special = SpecialType.BubbleShield;
 
     void Start()
@@ -191,6 +191,7 @@ public class PlayerLoadout : MonoBehaviour
     public bool UseSub()
     {
         if (!CanStartSub) return false;
+        player.MarkAiming(0.5f); // turn to the view to throw or place it
         if (sub == SubType.CurlingBomb) return PressSub() && ReleaseSub();
         return sub == SubType.Beacon ? PlaceBeacon() : ThrowSprinkler();
     }
@@ -200,6 +201,7 @@ public class PlayerLoadout : MonoBehaviour
     {
         if (sub != SubType.CurlingBomb) return UseSub();
         if (!CanStartSub || held != null || curlingBombPrefab == null) return false;
+        player.MarkAiming(0.5f);
         held = Instantiate(curlingBombPrefab, player.transform);
         held.transform.localPosition = holdOffset;
         held.transform.localRotation = Quaternion.identity;
@@ -229,6 +231,7 @@ public class PlayerLoadout : MonoBehaviour
     {
         if (held == null) return;
         if (player.IsDead || player.IsRespawning || player.IsSuperJumping || InputGate.MatchLocked) { Destroy(held.gameObject); held = null; return; }
+        player.MarkAiming(0.5f); // facing the view while it's in hand
         if (held.FuseLeft <= held.MinFuse) ReleaseSub();
     }
 

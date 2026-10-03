@@ -7,7 +7,7 @@ using UnityEngine;
 // its light blinking faster as it runs out; then it explodes, inking a wide patch and hurting
 // enemies (and their subs) nearby. The owner's copy paints and damages; remote copies slide the
 // same way, resynced from the owner's updates (sent at the throw and on every bounce), and show
-// the same blast on their own timer. It can't be shot.
+// the same blast (InkBlastEffect) on their own timer. It can't be shot.
 public class CurlingBomb : SubDevice
 {
     [Header("Slide")]
@@ -26,22 +26,21 @@ public class CurlingBomb : SubDevice
     [SerializeField] float blastRadius = 3f;
     [SerializeField] float blastDamage = 45f;
     [SerializeField] int blastSplash = 26;        // splats around the blast
-    [SerializeField] GameObject blastParticles;   // splash particles, in the team colour
+    [SerializeField] GameObject blastEffect;      // InkBlastEffect, sized to the blast, in the team colour
     [SerializeField] Renderer blinker;            // flashes, faster as the fuse runs out
-    [SerializeField] Transform blast;             // sphere that swells and collapses at the blast (hidden until then)
     [SerializeField] Transform body;              // hidden at the blast
 
     const float GroundProbe = 0.6f;     // how far below its middle to look for ground to ride on
     const float WallLimit = 0.6f;       // surfaces steeper than this (normal's y) are walls
-    const float BlastShowTime = 0.4f;   // swelling and collapsing
     public const string Cause = "Curling Bomb";
 
     static readonly int EmissionId = Shader.PropertyToID("_EmissionColor");
     static readonly int ColourId = Shader.PropertyToID("_Color");
 
     Vector3 velocity;            // along the ground (or through the air, falling)
+    Vector3 groundNormal = Vector3.up;
     bool launched, grounded, exploded;
-    float explodeAt, blastAt, holdStart = -1f;
+    float explodeAt, holdStart = -1f;
     Vector3 lastSplat;
     Color colour = Color.white;
     MaterialPropertyBlock block;
@@ -65,7 +64,6 @@ public class CurlingBomb : SubDevice
     void Awake()
     {
         block = new MaterialPropertyBlock();
-        if (blast != null) blast.gameObject.SetActive(false);
     }
 
     public override void Init(ulong ownerId, int id, int team, bool ownedLocally)
@@ -115,7 +113,7 @@ public class CurlingBomb : SubDevice
 
     protected override void Update()
     {
-        if (exploded) { ShowBlast(); return; }
+        if (exploded) return;
         Blink();
         if (!launched) return;
         if (Time.time >= explodeAt) { Explode(); return; }
@@ -136,48 +134,57 @@ public class CurlingBomb : SubDevice
         blinker.SetPropertyBlock(block);
     }
 
-    // Moves along the ground: down slopes and off edges under gravity, glancing off walls.
+    // Moves along the ground's surface. Gravity pulls it along slopes (slower climbing, rolling back
+    // once it runs out of speed, faster coming down); friction eases it down to minSpeed but never
+    // stops it on the flat. Its speed carries over between flat and slope, it falls off edges, and
+    // only steep faces (walls) bounce it.
     void Slide(float dt)
     {
-        Vector3 flat = Vector3.ProjectOnPlane(velocity, Vector3.up);
-        float speed = flat.magnitude;
-        if (speed > 0.01f && grounded)
+        if (grounded)
         {
-            speed = Mathf.Max(minSpeed, speed - friction * dt);
-            flat = flat.normalized * speed;
+            velocity = Vector3.ProjectOnPlane(velocity, groundNormal) + Vector3.ProjectOnPlane(Vector3.down * gravity, groundNormal) * dt;
+            float speed = velocity.magnitude;
+            if (speed > minSpeed) velocity *= Mathf.Max(minSpeed, speed - friction * dt) / speed;
         }
-        float fall = grounded ? 0f : velocity.y - gravity * dt;
+        else velocity += Vector3.down * (gravity * dt);
 
-        // Walls: sweep the body along its way; bounce off anything steep.
-        Vector3 centre = transform.position + Vector3.up * radius;
-        Vector3 move = flat * dt;
+        // Walls: sweep the body along its way, lifted off the surface it's riding; bounce off anything steep.
+        Vector3 up = grounded ? groundNormal : Vector3.up;
+        Vector3 move = velocity * dt;
         if (move.sqrMagnitude > 1e-8f &&
-            Physics.SphereCast(centre, radius * 0.9f, move.normalized, out RaycastHit wall, move.magnitude, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore) &&
-            Mathf.Abs(wall.normal.y) < WallLimit)
+            Physics.SphereCast(transform.position + up * radius, radius * 0.9f, move.normalized, out RaycastHit wall, move.magnitude, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore) &&
+            wall.normal.y < WallLimit)
         {
-            Vector3 n = Vector3.ProjectOnPlane(wall.normal, Vector3.up).normalized;
+            Vector3 n = Vector3.ProjectOnPlane(wall.normal, up);
+            n = n.sqrMagnitude > 1e-4f ? n.normalized : wall.normal;
             transform.position += move.normalized * Mathf.Max(0f, wall.distance - 0.01f);
-            flat = Vector3.Reflect(flat, n);
+            velocity = Vector3.Reflect(velocity, n);
             move = Vector3.zero;
-            velocity = flat + Vector3.up * fall;
             if (authoritative) NetGameManager.Instance?.SendSubSpawn(this); // remotes follow the bounce
         }
 
-        Vector3 next = transform.position + move + Vector3.up * (fall * dt);
-        // Ride the ground: find it under where we're going; stick to it unless we're above it and falling.
+        // Ride the ground under where we're going: stay on it (over small drops and onto slopes) while
+        // sliding, or land on it when falling; otherwise we're in the air.
+        Vector3 next = transform.position + move;
+        bool wasGrounded = grounded;
         grounded = false;
-        if (Physics.Raycast(next + Vector3.up * (radius + 0.3f), Vector3.down, out RaycastHit ground, radius + 0.3f + GroundProbe, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)
-            && ground.normal.y >= WallLimit && next.y - ground.point.y <= (fall < 0f ? 0.05f : GroundProbe))
+        float above = radius + 0.3f;
+        if (Physics.Raycast(next + Vector3.up * above, Vector3.down, out RaycastHit ground, above + GroundProbe, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)
+            && ground.normal.y >= WallLimit
+            && (wasGrounded ? next.y - ground.point.y <= GroundProbe : next.y <= ground.point.y + 0.05f))
         {
             next.y = ground.point.y;
+            Vector3 along = Vector3.ProjectOnPlane(velocity, ground.normal);
+            // Sliding over a change of slope keeps its speed; landing keeps what runs along the ground.
+            velocity = along.sqrMagnitude > 1e-6f ? along.normalized * (wasGrounded ? velocity.magnitude : along.magnitude) : Vector3.zero;
             grounded = true;
-            fall = 0f;
-            flat = Vector3.ProjectOnPlane(flat, ground.normal).normalized * flat.magnitude; // along the slope
-            flat.y = 0f;
-            transform.rotation = Quaternion.LookRotation(flat.sqrMagnitude > 1e-4f ? flat : transform.forward, ground.normal);
+            groundNormal = ground.normal;
         }
         transform.position = next;
-        velocity = flat + Vector3.up * fall;
+
+        Vector3 surfaceUp = grounded ? groundNormal : Vector3.up;
+        Vector3 facing = Vector3.ProjectOnPlane(velocity.sqrMagnitude > 1e-4f ? velocity : transform.forward, surfaceUp);
+        if (facing.sqrMagnitude > 1e-6f) transform.rotation = Quaternion.LookRotation(facing, surfaceUp);
     }
 
     // A stripe of ink behind it, one splat every trailSpacing along the ground.
@@ -213,10 +220,9 @@ public class CurlingBomb : SubDevice
     void Explode()
     {
         exploded = true;
-        blastAt = Time.time;
         Vector3 centre = Centre;
         if (body != null) body.gameObject.SetActive(false);
-        if (blastParticles != null) InkParticles.Spawn(blastParticles, centre, Quaternion.identity, colour);
+        if (blastEffect != null) InkBlastEffect.Spawn(blastEffect, centre, blastRadius, colour);
         if (authoritative)
         {
             // Ink: straight down, a ring around it, and outwards in every direction (nearby walls).
@@ -238,21 +244,6 @@ public class CurlingBomb : SubDevice
                 if (sub != null && sub != this && sub.Team != Team && struck.Add(sub)) sub.TakeDamage(blastDamage, Team, OwnerId);
             }
         }
-        Retire(BlastShowTime); // gone from the registry now; the blast plays out first
-    }
-
-    // A sphere of ink that swells to most of the blast's reach, then collapses.
-    void ShowBlast()
-    {
-        if (blast == null) return;
-        float k = (Time.time - blastAt) / BlastShowTime;
-        float size = k < 0.35f ? Mathf.SmoothStep(0.2f, 1f, k / 0.35f) : Mathf.SmoothStep(1f, 0f, (k - 0.35f) / 0.65f);
-        blast.gameObject.SetActive(size > 0.01f);
-        blast.localScale = Vector3.one * (blastRadius * 1.6f * size);
-        Renderer r = blast.GetComponent<Renderer>();
-        if (r == null) return;
-        r.GetPropertyBlock(block);
-        block.SetColor(ColourId, colour);
-        r.SetPropertyBlock(block);
+        Retire(0f); // the effect plays out on its own
     }
 }

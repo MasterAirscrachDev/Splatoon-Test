@@ -1,1 +1,1 @@
-fix curling bomb on slopes
+from some angles shadows render over ink blobs

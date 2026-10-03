@@ -63,6 +63,8 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     const float WalkableSlopeLimit = 45f;
     const float FallSplashMinHeight = 0.5f;  // min fall to splash when landing in ink
     const float ViewmodelSwitchSpeed = 12f;  // kid/squid model scale easing
+    const float AimHold = 0.3f;              // the body keeps facing the view this long after the last aimed action
+    const float ModelTurnRate = 12f;         // the body turning to the way we move
     const float NetLerpSpeed = 14f;          // remote copies easing toward their latest state
 
     public bool IsLocalPlayer => playerMode == PlayerMode.Client;
@@ -175,6 +177,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     void Start()
     {
         controller = GetComponent<CharacterController>();
+        modelYaw = netModelYaw = transform.eulerAngles.y;
         playerLayer = LayerMask.NameToLayer("Player");
         swimLayer = LayerMask.NameToLayer("PlayerSwim");
 
@@ -404,6 +407,7 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         {
             realSpeed = swimMode ? swimSpeed / 4 : moveSpeed;
         }
+        if (!swimMode) realSpeed *= WeaponSpeedMultiplier;
         targetDir = held || InputGate.MatchLocked ? Vector2.zero
                   : ScriptedInput != null ? ScriptedInput.move
                   : InputGate.Blocked ? Vector2.zero : input.Movement.Move.ReadValue<Vector2>();
@@ -669,6 +673,8 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
             controller.height = 1.92f;
             controller.radius = 0.5f;
             transform.SetPositionAndRotation(feetPos, Quaternion.Euler(0f, yaw, 0f));
+            modelYaw = yaw;
+            ApplyModelYaw();
         }
         finally
         {
@@ -749,7 +755,9 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
             specialReady = SpecialCharged,
             subReady = SubReady,
             ink      = inkLevel,
-            weapon   = WeaponIndex
+            weapon   = WeaponIndex,
+            weaponDown = WeaponDown,
+            modelYaw = modelYaw
         };
     }
 
@@ -768,6 +776,8 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         inkLevel     = s.ink;
         ShowInkLevel();
         WeaponIndex  = s.weapon;
+        WeaponDown   = s.weaponDown;
+        netModelYaw  = s.modelYaw;
         isClimbing = s.climbing;
         effectivelyClimbing = s.climbing;
 
@@ -801,10 +811,36 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
         Vector3 playerTarget = swimMode ? new Vector3(1,0,1) : Vector3.one;
         Vector3 squidTarget  = swimMode && (!IsInInk || IsSuperJumping) ? Vector3.one : Vector3.zero;
 
-        ViewmodelPlayer.transform.localScale = Vector3.Lerp(ViewmodelPlayer.transform.localScale, playerTarget, Time.deltaTime * ViewmodelSwitchSpeed);
+        ViewmodelPlayer.transform.localScale = !swimMode && AttackHeld
+            ? playerTarget // attacking out of swim form: straight up, so the weapon can go at once
+            : Vector3.Lerp(ViewmodelPlayer.transform.localScale, playerTarget, Time.deltaTime * ViewmodelSwitchSpeed);
         ViewmodelSquid.transform.localScale  = Vector3.Lerp(ViewmodelSquid.transform.localScale,  squidTarget,  Time.deltaTime * ViewmodelSwitchSpeed);
         ViewmodelPlayer.SetActive(ViewmodelPlayer.transform.localScale.y > 0.05f);
         UpdateSquidFacing();
+        UpdateModelFacing();
+    }
+
+    void UpdateModelFacing()
+    {
+        if (playerMode == PlayerMode.Network) modelYaw = Mathf.LerpAngle(modelYaw, netModelYaw, Time.deltaTime * NetLerpSpeed);
+        else if (Aiming) modelYaw = transform.eulerAngles.y;
+        else if (swimMode)
+        {
+            // Come out of swim form facing the way the squid was heading.
+            Vector3 heading = Vector3.ProjectOnPlane(ViewmodelSquid.transform.forward, Vector3.up);
+            if (heading.sqrMagnitude > 0.01f && !effectivelyClimbing) modelYaw = Mathf.Atan2(heading.x, heading.z) * Mathf.Rad2Deg;
+        }
+        else if (currentDir.magnitude > 0.1f)
+        {
+            Vector3 dir = transform.TransformDirection(new Vector3(currentDir.x, 0f, currentDir.y));
+            modelYaw = Mathf.LerpAngle(modelYaw, Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg, 1f - Mathf.Exp(-ModelTurnRate * Time.deltaTime));
+        }
+        ApplyModelYaw();
+    }
+
+    void ApplyModelYaw()
+    {
+        if (ViewmodelPlayer != null) ViewmodelPlayer.transform.rotation = Quaternion.Euler(0f, modelYaw, 0f);
     }
 
     // Submerged (or moving on ink) the squid lies along the surface facing the input direction.
@@ -903,6 +939,20 @@ public class PlayerController : MonoBehaviour, ISuperJumpTarget
     public bool SpecialCharged { get; set; } // special ready to use
     public bool SubReady { get; set; }       // enough ink for the sub (the tank's light)
     public int WeaponIndex { get; set; }     // equipped main weapon (PlayerLoadout)
+    public bool WeaponDown { get; set; }     // weapon in its down pose (a roller rolling), synced so remotes show it
+    public float WeaponSpeedMultiplier { get; set; } = 1f; // x walking speed, set by the weapon (rolling)
+    public bool AttackHeld { get; set; }     // the attack button is down (set by the weapon): out of swim form, it acts at once
+
+    // Facing: the kid model turns to the way we move (as the squid does), except while aiming (a
+    // weapon firing, a sub going out), when it faces the view at once. Synced as modelYaw.
+    float aimUntil, modelYaw, netModelYaw;
+    public bool Aiming => Time.time < aimUntil;
+    public float ModelYaw => modelYaw; // world yaw of the kid model
+    public void MarkAiming(float hold = AimHold)
+    {
+        if (!Aiming) { modelYaw = transform.eulerAngles.y; ApplyModelYaw(); } // snap round before the shot leaves
+        aimUntil = Mathf.Max(aimUntil, Time.time + hold);
+    }
 
     public bool ConsumeInk(float amount)
     {

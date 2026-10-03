@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -13,7 +13,7 @@ public static class LoadoutMenuBuilder
 {
     const string PrefabPath = "Assets/Prefabs/UI/LoadoutMenu.prefab";
     const float ColumnWidth = 360, InfoHeight = 120;
-    const int Rows = 3;                               // buttons in the longest column
+    const int Rows = 4;                               // buttons in the longest column
     const float RowStep = 68, InfoTop = -156 - (Rows - 1) * RowStep - 86; // descriptions under the last row
     const float CloseY = InfoTop - 160, PanelHeight = -CloseY + 90;
 
@@ -41,11 +41,11 @@ public static class LoadoutMenuBuilder
 
         RectTransform panel = Panel("Panel", screen, new Vector2(3 * ColumnWidth + 160, PanelHeight));
         Title(panel, "LOADOUT");
-        TextMeshProUGUI note = Text("Note", panel, "Placeholder until the hub exists  ·  changes apply now", 18, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
+        TextMeshProUGUI note = Text("Note", panel, "Placeholder until the hub exists  Â·  changes apply now", 18, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
         Place(note.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -64), new Vector2(900, 26));
 
         float[] x = { -(ColumnWidth + 40), 0, ColumnWidth + 40 };
-        Button[] weapons = Column(panel, "MAIN WEAPON", x[0], new[] { "Airspray SE", "Inkshot" }, out TextMeshProUGUI weaponInfo);
+        Button[] weapons = Column(panel, "MAIN WEAPON", x[0], new[] { "Airspray SE", "Inkshot", "Blaster", "Inkroller" }, out TextMeshProUGUI weaponInfo);
         Button[] subs = Column(panel, "SUB", x[1], new[] { "Beacon", "Ink Sprinkler", "Curling Bomb" }, out TextMeshProUGUI subInfo);
         Button[] specials = Column(panel, "SPECIAL", x[2], new[] { "Bubble Shield", "InkStrike" }, out TextMeshProUGUI specialInfo);
 

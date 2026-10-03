@@ -24,14 +24,10 @@ public class WeaponShooter : Weapon
     [SerializeField] float pitchSpread = 2f;
     [SerializeField] float fillerSpread = 10f;
 
-    [Header("Feet ink")] // keeps the shooter standing in their own ink
-    [SerializeField] float feetShotInterval = 0.4f;
-    [SerializeField] int feetShotMinSize = 12, feetShotMaxSize = 18;
-    [SerializeField] float feetShotDropSpeed = 6f; // starts falling at once, so it lands under us even on the move
-
     ControlLayer input;
     CharacterController playerController;
-    float lastShotTime = -1f, nextFeetShot;
+    WeaponCameraAim cameraAim;
+    float lastShotTime = -1f;
 
     // Current volley, broadcast as one message so remotes can replay it.
     readonly List<float> volleyVelocities = new List<float>();
@@ -43,7 +39,6 @@ public class WeaponShooter : Weapon
     public float ShotSpeed => shotSpeed;
     public Ballistics Ballistics => ballistics;
     public bool ScriptedFire { get; set; } // tests: hold the trigger
-    public int FeetShots { get; private set; }
     public int MainShots { get; private set; }
     public Vector3 LastInherited { get; private set; } // the shooter's velocity carried by the last volley
     public event System.Action<Vector3, Quaternion> MainShotFired; // own velocity (no inherit), aim before spread (tests)
@@ -54,6 +49,7 @@ public class WeaponShooter : Weapon
         input.Enable();
         if (muzzle == null) muzzle = transform;
         if (Owner != null) playerController = Owner.GetComponent<CharacterController>();
+        cameraAim = GetComponent<WeaponCameraAim>();
     }
 
     void OnDestroy() { input?.Disable(); input?.Dispose(); }
@@ -65,9 +61,15 @@ public class WeaponShooter : Weapon
         // Real controls only when nothing's scripting the player (tests drive it through ScriptedFire).
         bool hardware = !player.IsTestPlayer && player.ScriptedInput == null && !InputGate.Blocked && input.Weapon.Attack.ReadValue<float>() != 0;
         bool firing = !InputGate.MatchLocked && (ScriptedFire || hardware);
+        player.AttackHeld = firing;
+        if (firing && !player.IsSquid)
+        {
+            player.MarkAiming(); // face the view, and aim there before the shot
+            if (cameraAim != null) cameraAim.Apply();
+        }
         // Still shooting (not out of ink or in swim form): a shot went out within the last cycle.
         bool shooting = firing && lastShotTime >= 0f && Time.time - lastShotTime <= fireRate + 0.05f;
-        if (shooting && Time.time >= nextFeetShot) DropFeetShot(player);
+        UpdateFeetInk(player, shooting, projectile);
         if (firing && Time.time - lastShotTime >= fireRate && player.ConsumeInk(inkCostPerShot * 0.001f))
         {
             lastShotTime = Time.time;
@@ -106,15 +108,18 @@ public class WeaponShooter : Weapon
         }
     }
 
-    // An unseen shot released just above the feet, heading straight down. Not replayed on remotes:
-    // its splat reaches them like any other.
-    void DropFeetShot(PlayerController player)
+    // Their volley, visual-only, flown with this weapon's ballistics.
+    public override void Replay(ProjectileSpawnData d)
     {
-        nextFeetShot = Time.time + feetShotInterval;
-        FeetShots++;
-        Vector3 feet = player.transform.position + Vector3.up * 0.5f;
-        ProjectileManager.Fire(projectile, feet, Vector3.down * feetShotDropSpeed, Random.Range(feetShotMinSize, feetShotMaxSize + 1), player.Team,
-                               visible: false, ownerId: player.OwnerId, damage: 0, impactParticles: false, source: DisplayName);
+        if (projectile == null || d.velocities == null || d.splashSizes == null || d.visible == null) return;
+        Vector3 inherit = d.inherit != null ? (Vector3)d.inherit : Vector3.zero;
+        int count = Mathf.Min(d.splashSizes.Length, d.visible.Length, d.velocities.Length / 3);
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 v = new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]);
+            ProjectileManager.Fire(projectile, d.origin, v, d.splashSizes[i], d.team, d.visible[i],
+                                   authoritative: false, ownerId: d.shooterSteamId, ballistics: ballistics, inherit: inherit);
+        }
     }
 
     // Returns its launch velocity (without what the shooter carries into it).

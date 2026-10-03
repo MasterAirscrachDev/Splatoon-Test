@@ -15,6 +15,7 @@ using static ClimbTestLayout;
 // shown on screen). Fixed 1/75 s steps make runs repeatable. Station scenarios run side by side on
 // several players (one per station at a time, see RunParallel); the Lobby ones, which share match,
 // HUD and network state, run one at a time on the real local player. Watched from overhead.
+// Each scenario is tagged with the systems it covers, so a run can be just those (see Choose).
 // Manual use: F1–F9 teleport to stations 1–9, F11 toggles overhead/player view, F12 reruns everything.
 public class ClimbTestRunner : MonoBehaviour
 {
@@ -56,6 +57,7 @@ public class ClimbTestRunner : MonoBehaviour
         public Station station;
         public string spawn;
         public Func<IEnumerator> body;
+        public string[] tags;  // the systems it covers, for running just those (see Choose)
     }
 
     struct Result { public string name; public bool pass; public string detail; }
@@ -173,21 +175,37 @@ public class ClimbTestRunner : MonoBehaviour
         while (!GameSettings.Loaded) yield return null;
         GameSettings.FileName = "test_settings.cfg";
         GameSettings.ResetToDefaults();
+        // ...and the default loadout, putting the player's saved choice back afterwards.
+        int savedWeapon = PlayerPrefs.GetInt(PlayerLoadout.WeaponPref, 0), savedSub = PlayerPrefs.GetInt(PlayerLoadout.SubPref, 0), savedSpecial = PlayerPrefs.GetInt(PlayerLoadout.SpecialPref, 0);
+        PlayerLoadout startLoadout = player.GetComponent<PlayerLoadout>();
+        if (startLoadout != null)
+        {
+            startLoadout.SetMainWeapon(0);
+            startLoadout.SetSub(SubType.Beacon);
+            startLoadout.SetSpecial(SpecialType.BubbleShield);
+        }
         Time.captureDeltaTime = Dt;
 
-        var chosen = Scenarios().Where(s => string.IsNullOrEmpty(filter) || s.name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
-        yield return RunParallel(chosen.Where(s => s.station != Station.Lobby).ToList());
+        List<Scenario> all = Scenarios().ToList();
+        List<Scenario> chosen = Choose(all, out string selection);
+        List<Scenario> stations = chosen.Where(s => s.station != Station.Lobby).ToList();
+        if (stations.Count > 0) yield return RunParallel(stations);
         lane = mainLane;
         foreach (Scenario s in chosen.Where(s => s.station == Station.Lobby))
             yield return RunScenario(s);
 
         Time.captureDeltaTime = 0f;
+        PlayerPrefs.SetInt(PlayerLoadout.WeaponPref, savedWeapon);
+        PlayerPrefs.SetInt(PlayerLoadout.SubPref, savedSub);
+        PlayerPrefs.SetInt(PlayerLoadout.SpecialPref, savedSpecial);
         player.ScriptedInput = null;
         NetGameManager.SendOverride = null;
         Application.logMessageReceived -= OnLog;
 
         int passed = results.Count(r => r.pass);
-        StringBuilder sb = new StringBuilder($"[ClimbTest] SUMMARY {passed}/{results.Count} passed\n");
+        WriteLog(LastFailedFile, results.Where(r => !r.pass).Select(r => r.name));
+        string ran = chosen.Count == all.Count ? $"all {all.Count} scenarios" : $"{selection}: {chosen.Count} of {all.Count} scenarios";
+        StringBuilder sb = new StringBuilder($"[ClimbTest] SUMMARY {passed}/{results.Count} passed ({ran})\n");
         foreach (Result r in results) sb.AppendLine($"  {(r.pass ? "PASS" : "FAIL")}  {r.name}");
         Debug.Log(sb.ToString());
         running = false;
@@ -195,6 +213,55 @@ public class ClimbTestRunner : MonoBehaviour
 #if UNITY_EDITOR
         if (exitPlayModeWhenDone) UnityEditor.EditorApplication.isPlaying = false;
 #endif
+    }
+
+    // ── Choosing what to run ────────────────────────────────────────────────
+
+    // Everything, unless the run script left a request in Logs/ClimbTest/run_request.txt (read once,
+    // then deleted, so a later manual run is a full one) or the inspector's filter is set. Request
+    // lines, any mix, a scenario running if it matches any of them:
+    //   tags: Weapons, Blast    covering any of these systems (Climb, Swim, Camera, Input, UI, Map,
+    //                           Projectiles, Weapons, Blast, Subs, Specials, Combat, Match, Net, Ink,
+    //                           Roller, Facing)
+    //   filter: Blaster         whose name contains this (commas for several)
+    //   failed                  whatever failed last run (last_failed.txt)
+    const string RequestFile = "run_request.txt", LastFailedFile = "last_failed.txt";
+
+    static string LogPath(string file) => System.IO.Path.Combine(Application.dataPath, "..", "Logs", "ClimbTest", file);
+
+    static void WriteLog(string file, IEnumerable<string> lines)
+    {
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(LogPath(file)));
+        System.IO.File.WriteAllLines(LogPath(file), lines);
+    }
+
+    List<Scenario> Choose(List<Scenario> all, out string selection)
+    {
+        var lines = new List<string>();
+        if (System.IO.File.Exists(LogPath(RequestFile)))
+        {
+            lines.AddRange(System.IO.File.ReadAllLines(LogPath(RequestFile)));
+            System.IO.File.Delete(LogPath(RequestFile));
+        }
+        else if (!string.IsNullOrEmpty(filter)) lines.Add("filter: " + filter);
+        lines = lines.Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        selection = string.Join("; ", lines);
+        if (lines.Count == 0) return all;
+
+        List<string> List(string prefix) => lines.Where(l => l.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(l => l.Substring(prefix.Length).Split(',')).Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+        List<string> tags = List("tags:"), names = List("filter:");
+        var failed = new HashSet<string>();
+        if (lines.Any(l => l.Equals("failed", StringComparison.OrdinalIgnoreCase)) && System.IO.File.Exists(LogPath(LastFailedFile)))
+            failed.UnionWith(System.IO.File.ReadAllLines(LogPath(LastFailedFile)));
+
+        var known = new HashSet<string>(all.SelectMany(s => s.tags), StringComparer.OrdinalIgnoreCase);
+        foreach (string t in tags.Where(t => !known.Contains(t)))
+            results.Add(new Result { name = $"Run request: unknown tag '{t}' (known: {string.Join(", ", known.OrderBy(k => k))})", pass = false });
+
+        return all.Where(s => s.tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase))
+                           || names.Any(n => s.name.IndexOf(n, StringComparison.OrdinalIgnoreCase) >= 0)
+                           || failed.Contains(s.name)).ToList();
     }
 
     // Station scenarios across all lanes: each idle lane takes the next scenario whose station is
@@ -417,6 +484,7 @@ public class ClimbTestRunner : MonoBehaviour
                 bool formChange = f.squid != frames[i - 1].squid;
                 if (f.dead != frames[i - 1].dead || f.team != frames[i - 1].team) continue; // respawn teleports
                 if (f.flying || frames[i - 1].flying) continue; // Super Jump arcs cover ~1m a frame
+                if (f.phase != frames[i - 1].phase && f.phase.StartsWith("placed")) continue; // the scenario moved us (PlaceAt)
                 float step = Vector3.Distance(f.pos, frames[i - 1].pos);
                 if (step > (formChange ? 1.5f : 0.75f))
                 {
@@ -433,60 +501,65 @@ public class ClimbTestRunner : MonoBehaviour
 
     IEnumerable<Scenario> Scenarios()
     {
-        Scenario S(string name, Station st, Func<IEnumerator> body, string spawn = null) =>
-            new Scenario { name = name, station = st, body = body, spawn = spawn };
+        Scenario S(string name, Station st, Func<IEnumerator> body, string tags, string spawn = null) =>
+            new Scenario { name = name, station = st, body = body, spawn = spawn, tags = tags.Split(',') };
 
-        yield return S("Controls: every action bound for keyboard/mouse and gamepad; the right stick turns at a rate (same at any frame rate, faster at the edge); Recenter levels the view; B closes menus", Station.Lobby, Controls);
-        yield return S("Control icons: each action shows its key/button art for keyboard/mouse, Xbox, PlayStation and Switch (text where there's no art); the last device used picks them, mouse movement alone doesn't", Station.Lobby, ControlIcons);
-        yield return S("Cursor: a ring placed directly by the mouse (or gyro, with Y to recentre), moved at a rate by the stick in the map, A clicks; a gamepad picks menu buttons instead", Station.Lobby, CursorControl);
-        yield return S("Gyro (Steam Input): its calls resolve; it moves the view on a gamepad (the stick then only turns) and the cursor; Steam's pad types pick the icons", Station.Lobby, Gyro);
-        yield return S("Map on a gamepad: the west button toggles it (B closes it too); the d-pad Super Jumps to teammates, down to base, shown on their entries", Station.Lobby, MapPadButtons);
-        yield return S("Pause menu: Esc/Select open it; settings scale mouse, stick, gyro X/Y, gyro off, saved; Y recentres under gyro; RT clicks", Station.Lobby, PauseAndSettings);
-        yield return S("Lobby: switching form glides the camera instead of snapping", Station.Lobby, CameraFormSwitch);
-        yield return S("Lobby: pooled projectiles splat where they land and are reused", Station.Lobby, ProjectilePooling);
-        yield return S("Projectiles: speed/gravity curves retime a path without changing it; fast shots can't skip hitboxes", Station.Lobby, ProjectileBallistics);
-        yield return S("FlatWall: climb up and over the top", Station.FlatWall, ClimbUpAndOver);
-        yield return S("FlatWall: no input on the wall slides slowly without letting go", Station.FlatWall, HoldStillOnWall);
-        yield return S("FlatWall: climb down to the floor and swim away", Station.FlatWall, ClimbDownAndAway);
-        yield return S("FlatWall: jump while climbing up boosts and stays on the wall", Station.FlatWall, JumpBoost);
-        yield return S("FlatWall: jump while descending ejects from the wall", Station.FlatWall, JumpEject);
-        yield return S("FlatWall: leaving swim form on the wall drops cleanly to the floor", Station.FlatWall, LeaveSwimOnWall);
-        yield return S("Ledge: swimming off a ledge falls past the inked wall below", Station.Ledge, LedgeWalkOff);
-        yield return S("Pillar: strafing around an outer corner keeps climbing", Station.Pillar, OuterCorner);
-        yield return S("InnerCorner: strafing into an inner corner transfers to the side wall", Station.InnerCorner, InnerCorner);
-        yield return S("NeutralWall: an unpainted wall can't be climbed", Station.NeutralWall, CannotClimb);
-        yield return S("EnemyWall: an enemy-ink wall can't be climbed", Station.EnemyWall, CannotClimb);
-        yield return S("PartialWall: reaching the top of own ink pops off, then re-grabs after 0.2s", Station.PartialWall, PartialWallPopOff);
-        yield return S("PartialWall: holding up bobs at the ink edge without climbing past it", Station.PartialWall, PartialWallBob);
-        yield return S("Ramp30: swims up a walkable slope without climb mode or jitter", Station.Ramp30, ShallowRampUp);
-        yield return S("Ramp30: swims down a walkable slope without bouncing", Station.Ramp30, ShallowRampDown, "SpawnTop");
-        yield return S("Ramp60: a steep slope is climbed", Station.Ramp60, SteepRamp);
-        yield return S("Combat: replays are visual-only, hits route to the victim, damage kills and respawns", Station.Lobby, Combat);
-        yield return S("Death: the camera circles the spot while a popup says who and with what; back at spawn 4s later, held in swim form for 1s; falling out of bounds too", Station.Lobby, Death);
-        yield return S("HostMenu: percentages toggle, special fills, team editor moves players between teams and the bench", Station.Lobby, HostMenuTeams);
-        yield return S("Map: holding opens it, lists our team with lines to markers, picking a teammate requests a Super Jump", Station.Lobby, MapTeam);
-        yield return S("SuperJump: locked charge in swim form, high arc onto the teammate, unlocks on landing (swim kept only if held)", Station.Lobby, SuperJump);
-        yield return S("SuperJump: the landing spot locks on click, only our death cancels, spawn is always a target", Station.Lobby, SuperJumpLocking);
-        yield return S("Sub: a beacon costs 70% ink, shows on our map only, and a Super Jump onto it breaks it", Station.Lobby, SubBeacon);
-        yield return S("Beacon: 35 health from enemy fire only, expires, remote hits go to the owner", Station.Lobby, BeaconHealth);
-        yield return S("Special: charges from new turf and damage dealt; bubble shield refills ink and blocks damage for 5s", Station.Lobby, SpecialShield);
-        yield return S("Loadout HUD: gauges follow ink and special charge, READY when full", Station.Lobby, LoadoutGauges);
-        yield return S("Special: half lost on death; charged state is synced and shown on the player bar", Station.Lobby, SpecialDeathAndSync);
-        yield return S("Lobby: swimming is fastest in our ink, slower on bare ground, slowest in enemy ink", Station.Lobby, SwimSpeeds);
-        yield return S("Lobby: swimming raises a ring of ink around the squid and spraying side wakes that grow with speed; nothing while still", Station.Lobby, SwimWakeTrail);
-        yield return S("LobbyMenu: hidden in dev mode, lists lobbies as rows, a failed join reports and refreshes", Station.Lobby, LobbyMenuList);
-        yield return S("Colours: a random pair from the set each load, the host's pick reaches everyone and recolours ink, players and HUD", Station.Lobby, TeamColourPairs);
-        yield return S("Match: countdown locks and resets everyone, final minute hides the bar (no banner), results fill to a suspense point then the real split", Station.Lobby, MatchFlow);
-        yield return S("Match: a mid-match joiner spectates the rest of the round, then gets their team back", Station.Lobby, LateJoin);
-        yield return S("Spectating: no player of our own means the overhead view", Station.Lobby, SpectatorView);
-        yield return S("Weapon: holding fire also drops 12-18 ink at our feet every 0.4s", Station.Lobby, FeetInk);
-        yield return S("Weapons: Inkshot fires slower, further and tighter than Airspray SE", Station.Lobby, WeaponVariety);
-        yield return S("Weapons: prefabs swapped in our hands, synced to remote copies; jumping doesn't carry into shots", Station.Lobby, WeaponPrefabs);
-        yield return S("LoadoutMenu: picks the weapon and sub, applies and remembers them, can't open mid-match", Station.Lobby, LoadoutMenuPicks);
-        yield return S("InkStrike: aimed on the map (cancel keeps the charge), marked, then inks the whole column down to the ground; lethal core, non-fatal edge", Station.Lobby, InkStrikeSpecial);
-        yield return S("Sprinkler: thrown, sticks, sprays both ways and winds down; one at a time; 30 HP; remote copies follow the owner", Station.Lobby, SprinklerSub);
-        yield return S("Curling bomb: slides inking a stripe, clips enemies (15) and carries on, bounces off walls, explodes on its fuse (45 in range); holding shortens the fuse", Station.Lobby, CurlingBombSub);
-        yield return S("HUD: rosters, death marks, match timer and turf bar track the game", Station.Lobby, Hud);
+        yield return S("Controls: every action bound for keyboard/mouse and gamepad; the right stick turns at a rate (same at any frame rate, faster at the edge); Recenter levels the view; B closes menus", Station.Lobby, Controls, "Input");
+        yield return S("Control icons: each action shows its key/button art for keyboard/mouse, Xbox, PlayStation and Switch (text where there's no art); the last device used picks them, mouse movement alone doesn't", Station.Lobby, ControlIcons, "Input,UI");
+        yield return S("Cursor: a ring placed directly by the mouse (or gyro, with Y to recentre), moved at a rate by the stick in the map, A clicks; a gamepad picks menu buttons instead", Station.Lobby, CursorControl, "Input,UI");
+        yield return S("Gyro (Steam Input): its calls resolve; it moves the view on a gamepad (the stick then only turns) and the cursor; Steam's pad types pick the icons", Station.Lobby, Gyro, "Input");
+        yield return S("Map on a gamepad: the west button toggles it (B closes it too); the d-pad Super Jumps to teammates, down to base, shown on their entries", Station.Lobby, MapPadButtons, "Input,Map");
+        yield return S("Pause menu: Esc/Select open it; settings scale mouse, stick, gyro X/Y, gyro off, saved; Y recentres under gyro; RT clicks", Station.Lobby, PauseAndSettings, "Input,UI");
+        yield return S("Lobby: switching form glides the camera instead of snapping", Station.Lobby, CameraFormSwitch, "Camera,Swim");
+        yield return S("Lobby: pooled projectiles splat where they land and are reused", Station.Lobby, ProjectilePooling, "Projectiles,Ink");
+        yield return S("Projectiles: speed/gravity curves retime a path without changing it (Ballistics.Faster too, with curves); fast shots can't skip hitboxes", Station.Lobby, ProjectileBallistics, "Projectiles");
+        yield return S("FlatWall: climb up and over the top", Station.FlatWall, ClimbUpAndOver, "Climb");
+        yield return S("FlatWall: no input on the wall slides slowly without letting go", Station.FlatWall, HoldStillOnWall, "Climb");
+        yield return S("FlatWall: climb down to the floor and swim away", Station.FlatWall, ClimbDownAndAway, "Climb,Swim");
+        yield return S("FlatWall: jump while climbing up boosts and stays on the wall", Station.FlatWall, JumpBoost, "Climb");
+        yield return S("FlatWall: jump while descending ejects from the wall", Station.FlatWall, JumpEject, "Climb");
+        yield return S("FlatWall: leaving swim form on the wall drops cleanly to the floor", Station.FlatWall, LeaveSwimOnWall, "Climb");
+        yield return S("Ledge: swimming off a ledge falls past the inked wall below", Station.Ledge, LedgeWalkOff, "Climb,Swim");
+        yield return S("Pillar: strafing around an outer corner keeps climbing", Station.Pillar, OuterCorner, "Climb");
+        yield return S("InnerCorner: strafing into an inner corner transfers to the side wall", Station.InnerCorner, InnerCorner, "Climb");
+        yield return S("NeutralWall: an unpainted wall can't be climbed", Station.NeutralWall, CannotClimb, "Climb");
+        yield return S("EnemyWall: an enemy-ink wall can't be climbed", Station.EnemyWall, CannotClimb, "Climb");
+        yield return S("PartialWall: reaching the top of own ink pops off, then re-grabs after 0.2s", Station.PartialWall, PartialWallPopOff, "Climb");
+        yield return S("PartialWall: holding up bobs at the ink edge without climbing past it", Station.PartialWall, PartialWallBob, "Climb");
+        yield return S("Ramp30: swims up a walkable slope without climb mode or jitter", Station.Ramp30, ShallowRampUp, "Climb,Swim");
+        yield return S("Ramp30: swims down a walkable slope without bouncing", Station.Ramp30, ShallowRampDown, "Climb,Swim", "SpawnTop");
+        yield return S("Ramp60: a steep slope is climbed", Station.Ramp60, SteepRamp, "Climb,Swim");
+        yield return S("Combat: replays are visual-only, hits route to the victim, damage kills and respawns", Station.Lobby, Combat, "Combat,Projectiles,Net");
+        yield return S("Death: the camera circles the spot while a popup says who and with what; back at spawn 4s later, held in swim form for 1s; falling out of bounds too", Station.Lobby, Death, "Combat,Camera,UI");
+        yield return S("HostMenu: percentages toggle, special fills, team editor moves players between teams and the bench", Station.Lobby, HostMenuTeams, "Match,UI");
+        yield return S("Map: holding opens it, lists our team with lines to markers, picking a teammate requests a Super Jump", Station.Lobby, MapTeam, "Map,UI");
+        yield return S("SuperJump: locked charge in swim form, high arc onto the teammate, unlocks on landing (swim kept only if held)", Station.Lobby, SuperJump, "Map,Swim");
+        yield return S("SuperJump: the landing spot locks on click, only our death cancels, spawn is always a target", Station.Lobby, SuperJumpLocking, "Map");
+        yield return S("Sub: a beacon costs 70% ink, shows on our map only, and a Super Jump onto it breaks it", Station.Lobby, SubBeacon, "Subs,Map");
+        yield return S("Beacon: 35 health from enemy fire only, expires, remote hits go to the owner", Station.Lobby, BeaconHealth, "Subs,Combat,Net");
+        yield return S("Special: charges from new turf and damage dealt; bubble shield refills ink and blocks damage for 5s", Station.Lobby, SpecialShield, "Specials,Combat");
+        yield return S("Loadout HUD: gauges follow ink and special charge, READY when full", Station.Lobby, LoadoutGauges, "UI,Subs,Specials");
+        yield return S("Special: half lost on death; charged state is synced and shown on the player bar", Station.Lobby, SpecialDeathAndSync, "Specials,Net");
+        yield return S("Lobby: swimming is fastest in our ink, slower on bare ground, slowest in enemy ink", Station.Lobby, SwimSpeeds, "Swim,Ink");
+        yield return S("Lobby: swimming raises a ring of ink around the squid and spraying side wakes that grow with speed; nothing while still", Station.Lobby, SwimWakeTrail, "Swim");
+        yield return S("LobbyMenu: hidden in dev mode, lists lobbies as rows, a failed join reports and refreshes", Station.Lobby, LobbyMenuList, "Match,UI");
+        yield return S("Colours: a random pair from the set each load, the host's pick reaches everyone and recolours ink, players and HUD", Station.Lobby, TeamColourPairs, "Match,Ink,Net");
+        yield return S("Match: countdown locks and resets everyone, final minute hides the bar (no banner), results fill to a suspense point then the real split", Station.Lobby, MatchFlow, "Match");
+        yield return S("Match: a mid-match joiner spectates the rest of the round, then gets their team back", Station.Lobby, LateJoin, "Match,Net");
+        yield return S("Spectating: no player of our own means the overhead view", Station.Lobby, SpectatorView, "Match,Camera");
+        yield return S("Weapon: holding fire also drops 12-18 ink at our feet every 0.4s (shooters and the Blaster)", Station.Lobby, FeetInk, "Weapons,Ink");
+        yield return S("Blaster: one straight shot that explodes at its range (or on a wall), inks around it; 125 direct, blast falls off with distance; replays are visual-only", Station.Lobby, BlasterWeapon, "Weapons,Projectiles,Blast,Combat,Net");
+        yield return S("Facing: the body turns to the way we move; firing (or a sub) turns it to the view at once, and the gun aims there; remotes see our facing", Station.Lobby, BodyFacing, "Facing,Weapons,Net");
+        yield return S("Swim exit: holding attack while leaving swim form fires (or flicks) at once", Station.Lobby, AttackOutOfSwim, "Weapons,Swim,Roller");
+        yield return S("Roller: a wide ground flick (into the rolling position) and a long air flick (frame on its side), aimed with the view, one hit per flick; held, it rolls a strip at 0.8x building to 1.2x speed facing the way we move, costs ink by the metre, runs enemies over (100); a jump lifts it; remotes see it down", Station.Lobby, RollerWeapon, "Weapons,Roller,Combat,Net,Facing");
+        yield return S("Weapons: Inkshot fires slower, further and tighter than Airspray SE", Station.Lobby, WeaponVariety, "Weapons,Projectiles");
+        yield return S("Weapons: prefabs swapped in our hands, synced to remote copies; jumping doesn't carry into shots", Station.Lobby, WeaponPrefabs, "Weapons,Net");
+        yield return S("LoadoutMenu: picks the weapon and sub, applies and remembers them, can't open mid-match", Station.Lobby, LoadoutMenuPicks, "Weapons,Subs,UI");
+        yield return S("InkStrike: aimed on the map (cancel keeps the charge), marked, then inks the whole column down to the ground; lethal core, non-fatal edge", Station.Lobby, InkStrikeSpecial, "Specials,Map,Combat");
+        yield return S("Sprinkler: thrown, sticks, sprays both ways and winds down; one at a time; 30 HP; remote copies follow the owner", Station.Lobby, SprinklerSub, "Subs,Projectiles,Net");
+        yield return S("Curling bomb on slopes: climbs a ramp slowing down (then rolls back), speeds up coming down, hugs and tilts with the surface", Station.Lobby, CurlingBombSlopes, "Subs");
+        yield return S("Curling bomb: slides inking a stripe, clips enemies (15) and carries on, bounces off walls, explodes on its fuse (45 in range); holding shortens the fuse", Station.Lobby, CurlingBombSub, "Subs,Blast,Combat");
+        yield return S("HUD: rosters, death marks, match timer and turf bar track the game", Station.Lobby, Hud, "UI,Match");
     }
 
     IEnumerator CameraFormSwitch()
@@ -678,6 +751,21 @@ public class ClimbTestRunner : MonoBehaviour
         Note($"plain landed after {landed[plain].age:F2}s, doubled after {landed[quick].age:F2}s, {pathError:F2}m apart (same path)");
         if (pathError > 0.25f) Fail("doubling speed and quadrupling gravity changed the path");
         if (Mathf.Abs(landed[quick].age / landed[plain].age - 0.5f) > 0.05f) Fail("doubled shot didn't take half the time");
+
+        // Ballistics.Faster(2) with twice the launch speed: the same path through shaped curves, in half the time.
+        var shaped = new Ballistics { velocityOverTime = AnimationCurve.Linear(0f, 1f, 1f, 0.6f), gravityOverTime = AnimationCurve.Linear(0f, 0.5f, 1f, 1.5f) };
+        landed.Clear();
+        ProjectileManager.Impact += onImpact;
+        Vector3 aside = station.TransformDirection(Vector3.left) * 3f;
+        ProjectileManager.Shot slow = ProjectileManager.Fire(projectilePrefab, from + aside * 2f, launch, 10, player.Team, ownerId: player.OwnerId, ballistics: shaped);
+        ProjectileManager.Shot fast = ProjectileManager.Fire(projectilePrefab, from + aside, launch * 2f, 10, player.Team, ownerId: player.OwnerId, ballistics: shaped.Faster(2f));
+        yield return HoldUntil(Still, false, 3f, "fly", f => landed.ContainsKey(slow) && landed.ContainsKey(fast));
+        ProjectileManager.Impact -= onImpact;
+        if (!landed.ContainsKey(slow) || !landed.ContainsKey(fast)) { Fail("paced shots didn't land"); NetGameManager.SendOverride = null; yield break; }
+        float pacedError = Vector3.Distance(landed[slow].point - aside, landed[fast].point);
+        Note($"shaped curves: {landed[slow].age:F2}s, Faster(2) {landed[fast].age:F2}s, {pacedError:F2}m apart");
+        if (pacedError > 0.25f) Fail("Ballistics.Faster changed the path");
+        if (Mathf.Abs(landed[fast].age / landed[slow].age - 0.5f) > 0.05f) Fail("Ballistics.Faster(2) didn't take half the time");
 
         // A very fast shot still can't skip past a hitbox between frames.
         SpawnRemote(FoeId, enemyTeam, station.TransformPoint(new Vector3(8f, 0.05f, 8f)), "Foe");
@@ -2432,6 +2520,556 @@ public class ClimbTestRunner : MonoBehaviour
         return shown;
     }
 
+    IEnumerator BlasterWeapon()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        int blasterIndex = -1;
+        for (int i = 0; i < loadout.Weapons.Count; i++) if (loadout.Weapons[i] is Blaster) blasterIndex = i;
+        if (blasterIndex < 0) { Fail("no Blaster in the player's weapons"); yield break; }
+        CaptureSends();
+        int weaponBefore = loadout.WeaponIndex;
+        loadout.SetMainWeapon(blasterIndex);
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        player.ScriptedInput.recenter = true; // aim level
+        yield return null;
+        player.ScriptedInput.recenter = false;
+        yield return Hold(Still, false, 0.4f, "aim");
+        yield return HoldUntil(Still, false, 3f, "ready", f => !player.IsSquid && !player.IsRespawning); // out of a respawn's swim hold
+        Blaster blaster = loadout.CurrentWeapon as Blaster;
+        if (blaster == null) { Fail("the Blaster didn't equip"); loadout.SetMainWeapon(weaponBefore); NetGameManager.SendOverride = null; yield break; }
+        // Fire dead level along our facing (in play it aims at what the camera's looking at).
+        WeaponCameraAim cameraAim = blaster.GetComponent<WeaponCameraAim>();
+        if (cameraAim != null) cameraAim.enabled = false;
+        blaster.transform.rotation = Quaternion.LookRotation(Vector3.ProjectOnPlane(player.transform.forward, Vector3.up));
+
+        var blasts = new List<(Vector3 point, float travelled, float time)>();
+        int blobs = 0;
+        Action<ProjectileManager.Shot, Vector3> onBlast = (shot, point) =>
+        {
+            if (shot.source != Blaster.Source || shot.blast == null) return; // not its feet ink
+            blasts.Add((point, shot.travelled, Time.time));
+            foreach (InkBlastEffect fx in FindObjectsByType<InkBlastEffect>(FindObjectsSortMode.None)) blobs = Mathf.Max(blobs, fx.BlobCount);
+        };
+        ProjectileManager.Impact += onBlast;
+        int OnFloor(Vector3 at)
+        {
+            if (!Physics.Raycast(new Vector3(at.x, station.position.y + 1f, at.z), Vector3.down, out RaycastHit hit, 2f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) return -1;
+            SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
+            return ink != null ? ink.getSurfaceTeam(ink.UVFromHit(hit)) : -1;
+        }
+        float DamageTo(ulong id) => sent.Where(m => m.id == NetMsg.Damage && m.to == id).Sum(m => ((DamageData)m.data).amount);
+
+        // Into the open: explodes in mid-air at its range, straight along its line, at its fire rate.
+        player.RefillInk();
+        int shotsBefore = blaster.Shots;
+        float firedAt = Time.time;
+        blaster.ScriptedFire = true;
+        yield return Hold(Still, false, 1.6f, "fire");
+        blaster.ScriptedFire = false;
+        yield return Hold(Still, false, 0.5f, "fire");
+        int fired = blaster.Shots - shotsBefore;
+        Vector3 muzzle = blaster.LastMuzzle, line = blaster.LastLaunch.normalized;
+        Vector3 expected = muzzle + line * blaster.Range;
+        var last = blasts.Count > 0 ? blasts[blasts.Count - 1] : (point: Vector3.zero, travelled: 0f, time: 0f);
+        float offLine = Vector3.Distance(last.point, expected);
+        float flight = blasts.Count > 0 ? blasts[0].time - firedAt : 0f;
+        bool inkedBelow = OnFloor(last.point) == player.Team;
+        int trail = 0, trailProbes = 0;
+        Vector3 level = Vector3.ProjectOnPlane(line, Vector3.up).normalized;
+        for (float x = 1f; x < blaster.Range - 1f; x += 0.5f) { trailProbes++; if (OnFloor(muzzle + level * x) == player.Team) trail++; }
+        Note($"{fired} shots in 1.6s; {blasts.Count} blasts, each {last.travelled:F2}m out (range {blaster.Range}), {offLine:F2}m from its line, {last.point.y - station.position.y:F1}m up; first after {flight:F2}s; floor under it {(inkedBelow ? "inked" : "not inked")}; {trail}/{trailProbes} points along its path inked; explosions of {blobs} blobs");
+        if (fired != Mathf.FloorToInt(1.6f / blaster.FireRate) + 1) Fail("didn't fire at its rate");
+        if (blasts.Count != fired || Mathf.Abs(last.travelled - blaster.Range) > 0.05f) Fail("shots didn't explode at their range");
+        if (offLine > 0.1f) Fail("the shot didn't fly straight (it dropped or slowed)");
+        if (Mathf.Abs(flight - blaster.Range / blaster.ShotSpeed) > 0.05f) Fail("the shot took the wrong time to reach its range");
+        if (!inkedBelow) Fail("the mid-air blast didn't ink the floor below it");
+        if (trailProbes == 0 || trail < trailProbes * 0.8f) Fail("the shot didn't leave a trail of ink under its path");
+        if (blobs < 4) Fail("the explosion isn't a burst of blobs");
+
+        // How far its ink spreads on the floor (ahead of and beside the blast, clear of the trail).
+        Vector3 under = new Vector3(last.point.x, station.position.y, last.point.z);
+        Vector3 sideways = Vector3.Cross(Vector3.up, level);
+        float spread = 0f;
+        var reaches = new List<string>();
+        foreach (Vector3 d in new[] { level, sideways, -sideways, (level + sideways).normalized, (level - sideways).normalized })
+        {
+            float reach = 0f;
+            for (float r = 0.25f; r <= 6f && OnFloor(under + d * r) == player.Team; r += 0.25f) reach = r; // the patch joined to it
+            reaches.Add(reach.ToString("F2"));
+            spread = Mathf.Max(spread, reach);
+        }
+        Note($"its ink reaches {spread:F2}m out across the floor (ahead, sides, diagonals: {string.Join("/", reaches)}; blast reach {blaster.Blast.radius}, ink reach {blaster.Blast.inkReach}); centre {OnFloor(under)}");
+        if (spread < 0.5f || spread > blaster.Blast.radius * 2f) Fail("the blast's ink didn't spread a sensible patch (tuning: Blast.inkReach and splashSize)");
+
+        // High in the air, out of its ink's reach: the ink falls to the floor below.
+        Vector3 high = station.TransformPoint(new Vector3(-6f, 3.5f, -6f));
+        Vector3 ground = new Vector3(high.x, station.position.y, high.z);
+        int belowBefore = OnFloor(ground);
+        sent.Clear();
+        InkExplosion.Detonate(high, blaster.Blast, player.Team, player.OwnerId, Blaster.Source, true, Color.white, null, projectilePrefab);
+        yield return Hold(Still, false, 0.6f, "falling ink");
+        int fell = 0, fellProbes = 0;
+        for (int i = 0; i < 8; i++) { fellProbes++; if (OnFloor(ground + Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward * 0.6f) == player.Team) fell++; }
+        bool fellUnder = OnFloor(ground) == player.Team;
+        Note($"a blast 3.5m up: floor under it {(belowBefore == player.Team ? "already ours" : "clear")} -> {(fellUnder ? "inked" : "not inked")}, {fell}/{fellProbes} points 0.6m around it; {sent.Count(m => m.id == NetMsg.Damage)} damage messages");
+        if (belowBefore == player.Team || !fellUnder || fell < fellProbes / 2) Fail("a blast's ink didn't fall to the floor below it");
+        if (sent.Any(m => m.id == NetMsg.Damage)) Fail("falling ink did damage");
+
+        // Into a wall: explodes on it, sooner.
+        GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        Vector3 flat = Vector3.ProjectOnPlane(line, Vector3.up).normalized;
+        wall.transform.position = muzzle + flat * 3f;
+        wall.transform.rotation = Quaternion.LookRotation(flat);
+        wall.transform.localScale = new Vector3(4f, 4f, 0.4f);
+        Physics.SyncTransforms();
+        blasts.Clear();
+        player.RefillInk();
+        yield return Hold(Still, false, blaster.FireRate, "wall"); // ready to fire again
+        blaster.ScriptedFire = true;
+        yield return Hold(Still, false, 0.1f, "wall");
+        blaster.ScriptedFire = false;
+        yield return Hold(Still, false, 0.5f, "wall");
+        Destroy(wall);
+        float wallAt = blasts.Count > 0 ? blasts[0].travelled : -1f;
+        Note($"into a wall 3m out: exploded {wallAt:F2}m out");
+        if (blasts.Count != 1 || wallAt < 2.5f || wallAt > 3f) Fail("didn't explode on the wall");
+        yield return Hold(Still, false, 0.6f, "wall");
+
+        // Damage: a direct hit does its full damage (and isn't splashed again); beside the blast, by distance; out of reach, nothing.
+        const ulong FoeDirect = 3101, FoeSide = 3102, FoeFar = 3103;
+        Vector3 ahead = muzzle + flat * 4f;
+        Vector3 floorUnder = new Vector3(ahead.x, station.position.y + 0.05f, ahead.z);
+        Vector3 side = Vector3.Cross(Vector3.up, flat);
+        SpawnRemote(FoeDirect, enemyTeam, floorUnder, "FoeDirect");
+        SpawnRemote(FoeSide, enemyTeam, floorUnder + side * 1.6f + flat * 0.6f, "FoeSide");
+        SpawnRemote(FoeFar, enemyTeam, floorUnder + side * (blaster.Blast.radius + 2f), "FoeFar");
+        yield return Hold(Still, false, 0.3f, "foes");
+        sent.Clear();
+        blasts.Clear();
+        player.RefillInk();
+        yield return Hold(Still, false, blaster.FireRate, "hit");
+        blaster.ScriptedFire = true;
+        yield return Hold(Still, false, 0.1f, "hit");
+        blaster.ScriptedFire = false;
+        yield return Hold(Still, false, 0.5f, "hit");
+        float direct = DamageTo(FoeDirect), beside = DamageTo(FoeSide), far = DamageTo(FoeFar);
+        bool inkedAround = OnFloor(floorUnder + side * 1f) == player.Team;
+        Note($"direct hit {direct:0}, beside the blast {beside:0} (core {blaster.Blast.coreDamage:0} -> edge {blaster.Blast.edgeDamage:0}), out of reach {far:0}");
+        if (Mathf.Abs(direct - blaster.DirectDamage) > 0.01f) Fail("a direct hit didn't do its damage (only)");
+        if (beside < blaster.Blast.edgeDamage - 0.01f || beside > blaster.Blast.coreDamage + 0.01f) Fail("the blast didn't hurt the enemy beside it by distance");
+        if (far > 0f) Fail("the blast hurt an enemy out of its reach");
+        if (!inkedAround) Fail("the blast didn't ink the floor around it");
+        foreach (ulong id in new[] { FoeDirect, FoeSide, FoeFar }) Despawn(id);
+
+        // Theirs: flies and explodes here too, painting and damaging nothing from our side.
+        const ulong Shooter = 3104;
+        Vector3 theirSpot = station.TransformPoint(new Vector3(6f, 0.05f, -6f));
+        SpawnRemote(Shooter, enemyTeam, theirSpot, "TheirBlaster");
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = Shooter, position = theirSpot, moveDir = Vector2.zero, team = enemyTeam, weapon = blasterIndex }, Shooter);
+        yield return Hold(Still, false, 0.3f, "theirs");
+        sent.Clear();
+        blasts.Clear();
+        gm.Receive(NetMsg.ProjectileSpawn, new ProjectileSpawnData
+        {
+            shooterSteamId = Shooter, team = enemyTeam, origin = theirSpot + Vector3.up * 1.2f, inherit = Vector3.zero,
+            velocities = new[] { 0f, 0f, blaster.ShotSpeed }, splashSizes = new[] { 22 }, visible = new[] { true }
+        }, Shooter);
+        yield return Hold(Still, false, blaster.Range / blaster.ShotSpeed + 0.4f, "theirs");
+        Note($"their shot: {blasts.Count} blast(s) {(blasts.Count > 0 ? $"{blasts[0].travelled:F2}m out" : "")}; we sent {sent.Count(m => m.id == NetMsg.Damage || m.id == NetMsg.Splat)} damage/splat messages");
+        if (blasts.Count != 1 || Mathf.Abs(blasts[0].travelled - blaster.Range) > 0.05f) Fail("their Blaster shot didn't explode at its range here");
+        if (sent.Any(m => m.id == NetMsg.Damage || m.id == NetMsg.Splat)) Fail("their shot painted or damaged from here");
+        Despawn(Shooter);
+
+        ProjectileManager.Impact -= onBlast;
+        if (cameraAim != null) cameraAim.enabled = true;
+        loadout.SetMainWeapon(weaponBefore);
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        yield return Hold(Still, false, 0.2f, "cleanup");
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator RollerWeapon()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        int rollerIndex = -1;
+        for (int i = 0; i < loadout.Weapons.Count; i++) if (loadout.Weapons[i] is Roller) rollerIndex = i;
+        if (rollerIndex < 0) { Fail("no Roller in the player's weapons"); yield break; }
+        CaptureSends();
+        int weaponBefore = loadout.WeaponIndex;
+        loadout.SetMainWeapon(rollerIndex);
+        SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        yield return Hold(Still, false, 0.3f, "equip");
+        Roller roller = loadout.CurrentWeapon as Roller;
+        if (roller == null) { Fail("the Roller didn't equip"); loadout.SetMainWeapon(weaponBefore); NetGameManager.SendOverride = null; yield break; }
+        Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
+        Vector3 forward = Flat(player.transform.forward).normalized;
+        int OnFloor(Vector3 at)
+        {
+            if (!Physics.Raycast(new Vector3(at.x, station.position.y + 1f, at.z), Vector3.down, out RaycastHit hit, 2f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) return -1;
+            SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
+            return ink != null ? ink.getSurfaceTeam(ink.UVFromHit(hit)) : -1;
+        }
+        float DamageTo(ulong id) => sent.Where(m => m.id == NetMsg.Damage && m.to == id).Sum(m => ((DamageData)m.data).amount);
+        int HitsTo(ulong id) => sent.Count(m => m.id == NetMsg.Damage && m.to == id);
+        var landed = new List<Vector3>();
+        Action<ProjectileManager.Shot, Vector3> onLand = (shot, point) => { if (shot.source == roller.Source) landed.Add(point); };
+        ProjectileManager.Impact += onLand;
+        float Spread(Vector3[] launches)
+        {
+            var yaws = launches.Select(v => Vector3.SignedAngle(forward, Flat(v), Vector3.up)).ToList();
+            return yaws.Max() - yaws.Min();
+        }
+        IEnumerator Tap() { roller.ScriptedFire = true; yield return null; roller.ScriptedFire = false; }
+
+        // Ground flick: a wide fan, short; the enemy in front takes its damage once, however many droplets land on them.
+        const ulong Foe = 3201;
+        Vector3 start = player.transform.position;
+        SpawnRemote(Foe, enemyTeam, new Vector3(start.x, station.position.y + 0.05f, start.z) + forward * 3f, "RollerFoe");
+        yield return Hold(Still, false, 0.3f, "foe");
+        player.RefillInk();
+        float ink0 = player.InkLevel;
+        sent.Clear();
+        landed.Clear();
+        yield return Tap();
+        float flickCost = ink0 - player.InkLevel; // before the tank refills any
+        yield return Hold(Still, false, 1.2f, "ground flick");
+        float groundSpread = Spread(roller.LastFlick ?? new Vector3[0]);
+        float groundReach = landed.Count > 0 ? landed.Max(p => Flat(p - start).magnitude) : 0f;
+        float launchSpeed = roller.LastFlick != null ? roller.LastFlick.Max(v => v.magnitude) : 0f;
+        Note($"droplets launched at up to {launchSpeed:F1} m/s ({roller.FlickPace}x pace), shown {roller.DropletScale}x size");
+        Note($"ground flick: {roller.LastFlick?.Length ?? 0} droplets across {groundSpread:F0}°, landing up to {groundReach:F1}m out; cost {flickCost * 100f:F1}% ink; the enemy 3m ahead took {DamageTo(Foe):0} in {HitsTo(Foe)} hit(s)");
+        if (roller.Flicks != 1 || roller.LastFlickInAir) Fail("pressing on the ground didn't do a ground flick");
+        if (groundSpread < 45f) Fail("the ground flick isn't a wide fan");
+        if (groundReach < 2f || groundReach > 7f) Fail("the ground flick's reach is off");
+        if (Mathf.Abs(flickCost - roller.FlickInkCost * 0.001f) > 0.005f) Fail("the flick didn't cost its ink");
+        if (HitsTo(Foe) != 1 || Mathf.Abs(DamageTo(Foe) - roller.GroundDamage) > 0.01f) Fail("the flick didn't hit the enemy exactly once for its damage");
+        Despawn(Foe);
+
+        // Aimed with the view: looking up raises the flick.
+        float Elevation(Vector3[] launches) => launches.Average(v => Mathf.Atan2(v.y, Flat(v).magnitude) * Mathf.Rad2Deg);
+        float levelElevation = Elevation(roller.LastFlick);
+        player.ScriptedInput.lookStick = new Vector2(0f, 1f);
+        yield return Hold(Still, false, 0.25f, "look up");
+        player.ScriptedInput.lookStick = Vector2.zero;
+        float lookedUp = -player.CameraPitch;
+        yield return Hold(Still, false, roller.FlickRate, "cooldown");
+        yield return Tap();
+        yield return Hold(Still, false, roller.Windup, "aimed flick");
+        float groundTurnAtTop = roller.FrameTurn;
+        yield return Hold(Still, false, roller.FollowThrough + 0.1f, "aimed flick");
+        float raisedElevation = Elevation(roller.LastFlick);
+        player.ScriptedInput.recenter = true;
+        yield return Hold(Still, false, 0.6f, "recenter");
+        player.ScriptedInput.recenter = false;
+        Note($"looking {lookedUp:F0}° up raised the flick from {levelElevation:F0}° to {raisedElevation:F0}°");
+        if (Mathf.Abs(raisedElevation - levelElevation - lookedUp) > 5f) Fail("looking up didn't raise the flick by as much");
+        yield return Hold(Still, false, 0.6f, "settle");
+
+        // Air flick: a narrow line, further.
+        yield return Hold(Still, false, roller.FlickRate, "cooldown");
+        landed.Clear();
+        player.PressJump();
+        yield return Hold(Still, false, 0.15f, "jump");
+        bool airborne = !player.IsGrounded;
+        yield return Tap();
+        yield return Hold(Still, false, roller.Windup, "air flick");
+        float turnedAtTop = roller.FrameTurn;
+        yield return Hold(Still, false, 1.6f - roller.Windup, "air flick");
+        float turnedAfter = roller.FrameTurn;
+        Note($"air flick: frame turned {turnedAtTop:F0}° at the top of the swing (ground flick {groundTurnAtTop:F0}°), {turnedAfter:F0}° after (folded idle)");
+        if (Mathf.Abs(turnedAtTop - roller.VerticalTurn) > 3f) Fail("the air flick didn't turn the frame on its side");
+        if (Mathf.Abs(groundTurnAtTop) > 3f) Fail("the ground flick didn't unfold the frame");
+        float airSpread = Spread(roller.LastFlick ?? new Vector3[0]);
+        float airReach = landed.Count > 0 ? landed.Max(p => Flat(p - start).magnitude) : 0f;
+        Note($"air flick ({(airborne ? "airborne" : "NOT airborne")}): {roller.LastFlick?.Length ?? 0} droplets across {airSpread:F0}°, landing up to {airReach:F1}m out");
+        if (!roller.LastFlickInAir) Fail("pressing in the air didn't do an air flick");
+        if (airSpread > 15f) Fail("the air flick isn't a narrow line");
+        if (airReach <= groundReach + 1f) Fail("the air flick doesn't reach further than the ground flick");
+
+        // Plain walking speed, for comparison.
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        start -= forward * 4f; // room to roll
+        player.PlaceAt(start, player.transform.eulerAngles.y);
+        yield return Hold(Fwd, false, 0.8f, "placed: walk");
+        Vector3 w0 = player.transform.position;
+        yield return Hold(Fwd, false, 0.4f, "walk");
+        float walkSpeed = Flat(player.transform.position - w0).magnitude / 0.4f;
+        yield return Hold(Still, false, 0.5f, "stop");
+        player.PlaceAt(start, player.transform.eulerAngles.y);
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        yield return Hold(Still, false, 0.3f, "placed: reset");
+
+        // Roll: flick, keep holding; down, ramping from 0.8x to 1.2x, inking a strip, ink by the metre.
+        player.RefillInk();
+        roller.ScriptedFire = true;
+        yield return HoldUntil(Still, false, 1f, "to roll", f => !roller.Flicking && roller.Flicks > 0);
+        float drumAfterFlick = roller.Drum.position.y - station.position.y;
+        yield return HoldUntil(Still, false, 0.3f, "to roll", f => roller.Down);
+        bool wentDown = roller.Down;
+        Note($"ground flick ended with the drum {drumAfterFlick:F2}m up (radius {roller.Drum.lossyScale.x * 0.225f:F2}), down {(wentDown ? "straight after" : "NEVER")}");
+        if (drumAfterFlick > 0.45f) Fail("the ground flick didn't come down into the rolling position");
+        float inkDown = roller.RollInkSpent;
+        Vector3 rollFrom = player.transform.position;
+        // An enemy on the way: run over for its damage, once, carrying on.
+        SpawnRemote(Foe, enemyTeam, new Vector3(rollFrom.x, station.position.y + 0.05f, rollFrom.z) + forward * 9f, "RollerFoe"); // past where the speed is measured
+        yield return Hold(Still, false, 0.3f, "foe");
+        sent.Clear();
+        yield return Hold(Fwd, false, 0.05f, "roll");
+        float earlyMul = player.WeaponSpeedMultiplier;
+        yield return Hold(Fwd, false, 0.75f, "roll");
+        float lateMul = player.WeaponSpeedMultiplier;
+        Vector3 r0 = player.transform.position;
+        yield return Hold(Fwd, false, 0.4f, "roll");
+        float rollSpeedSeen = Flat(player.transform.position - r0).magnitude / 0.4f;
+        Vector3 rollTo = player.transform.position;
+        float rolled = Flat(rollTo - rollFrom).magnitude;
+        float perMetre = (roller.RollInkSpent - inkDown) / Mathf.Max(rolled, 0.01f);
+        yield return Hold(Fwd, false, 0.6f, "run over");
+        Note($"ran over the enemy: {DamageTo(Foe):0} in {HitsTo(Foe)} hit(s)");
+        if (HitsTo(Foe) != 1 || Mathf.Abs(DamageTo(Foe) - roller.RollDamage) > 0.01f) Fail("rolling into the enemy didn't hit them once for its damage");
+        Despawn(Foe);
+        yield return Hold(Still, false, 0.2f, "roll");
+        // The strip: inked down the middle of the path and out to most of the drum's width.
+        Vector3 mid = Vector3.Lerp(rollFrom, rollTo, 0.5f);
+        Vector3 side = Vector3.Cross(Vector3.up, forward);
+        int along = 0, alongProbes = 0;
+        for (float d = 1.5f; d < rolled - 0.5f; d += 0.5f) { alongProbes++; if (OnFloor(rollFrom + forward * d) == player.Team) along++; }
+        float half = roller.RollerWidth * 0.5f;
+        bool edges = OnFloor(mid + side * half * 0.7f) == player.Team && OnFloor(mid - side * half * 0.7f) == player.Team;
+        Note($"down {(wentDown ? "after the flick" : "NEVER")}; speed x{earlyMul:F2} at first -> x{lateMul:F2} (walking {walkSpeed:F1} m/s, rolling {rollSpeedSeen:F1} m/s); rolled {rolled:F1}m: {along}/{alongProbes} points along it inked, {(edges ? "both" : "not both")} edges at 70% of the {roller.RollerWidth:F2}m drum; {perMetre * 1000f:F1}/1000 ink a metre (set {roller.RollInkPerMetre})");
+        if (!wentDown) Fail("holding after the flick didn't put the roller down");
+        if (earlyMul > roller.RollStartSpeed + 0.1f || Mathf.Abs(lateMul - roller.RollSpeed) > 0.01f) Fail("rolling speed didn't build from its start to its full speed");
+        if (Mathf.Abs(rollSpeedSeen / Mathf.Max(walkSpeed, 0.1f) - roller.RollSpeed) > 0.12f) Fail("full rolling speed isn't its multiple of walking speed");
+        if (alongProbes == 0 || along < alongProbes * 0.9f || !edges) Fail("rolling didn't ink a strip the drum's width");
+        if (Mathf.Abs(perMetre * 1000f - roller.RollInkPerMetre) > roller.RollInkPerMetre * 0.25f) Fail("rolling didn't cost its ink by the metre");
+
+        // Rolling faces the way we move: strafing turns the body, and the roller with it.
+        Vector3 rightOfView = Vector3.Cross(Vector3.up, Flat(player.transform.forward)).normalized;
+        yield return Hold(new Vector2(1f, 0f), false, 0.7f, "roll right");
+        float bodyTurn = Mathf.DeltaAngle(player.transform.eulerAngles.y, player.ModelYaw);
+        float drumSide = Vector3.Dot(Flat(roller.Drum.position - player.transform.position), rightOfView);
+        yield return Hold(Still, false, 0.2f, "roll right");
+        Note($"rolling to the right: body turned {bodyTurn:F0}° from the view, drum {drumSide:F2}m to the right, {(player.Aiming ? "aiming" : "not aiming")}");
+        if (Mathf.Abs(bodyTurn - 90f) > 12f || drumSide < 1f || player.Aiming) Fail("rolling didn't face (and roll) the way we move");
+
+        // A jump lifts it (no flick); landing with it held puts it back down.
+        int flicksBefore = roller.Flicks;
+        player.PressJump();
+        yield return Hold(Still, false, 0.15f, "jump");
+        bool liftedInAir = !player.IsGrounded && !roller.Down;
+        yield return HoldUntil(Still, false, 1.5f, "land", f => player.IsGrounded && roller.Down);
+        bool downAgain = roller.Down;
+        roller.ScriptedFire = false;
+        yield return Hold(Still, false, 0.1f, "release");
+        Note($"jump: {(liftedInAir ? "lifted in the air" : "NOT lifted")}, {(downAgain ? "down again on landing" : "NOT down again")}, {roller.Flicks - flicksBefore} flick(s); released: {(roller.Down ? "still down" : "up")}, speed x{player.WeaponSpeedMultiplier:F2}");
+        if (!liftedInAir || !downAgain || roller.Flicks != flicksBefore) Fail("a jump while rolling should just lift it, and landing put it back down");
+        if (roller.Down || player.WeaponSpeedMultiplier != 1f) Fail("letting go didn't lift it and give our speed back");
+        yield return Hold(Still, false, 0.5f, "idle");
+        Note($"idle: frame turned {roller.FrameTurn:F0}° (folded at {roller.VerticalTurn:F0}°), tilted {roller.Pitch:F0}° (held up at {roller.IdlePitch:F0}°)");
+        if (Mathf.Abs(roller.FrameTurn - roller.VerticalTurn) > 3f || Mathf.Abs(roller.Pitch - roller.IdlePitch) > 3f) Fail("not attacking or rolling, it didn't fold up and hold at our side");
+
+        // Theirs: down when their state says so; their flick flies here but paints and hurts nothing from our side.
+        const ulong Them = 3202;
+        Vector3 theirSpot = station.TransformPoint(new Vector3(6f, 0.05f, -6f));
+        SpawnRemote(Them, enemyTeam, theirSpot, "TheirRoller");
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = Them, position = theirSpot, moveDir = Vector2.zero, team = enemyTeam, weapon = rollerIndex, weaponDown = true }, Them);
+        yield return Hold(Still, false, 0.3f, "theirs");
+        PlayerController them = gm.GetPlayer(Them);
+        Roller theirRoller = them != null ? them.GetComponent<PlayerLoadout>().CurrentWeapon as Roller : null;
+        bool theirsDown = theirRoller != null && theirRoller.Down;
+        float drumHeight = theirRoller != null && theirRoller.Drum != null ? theirRoller.Drum.position.y - station.position.y : -1f;
+        sent.Clear();
+        landed.Clear();
+        gm.Receive(NetMsg.ProjectileSpawn, new ProjectileSpawnData
+        {
+            shooterSteamId = Them, team = enemyTeam, origin = theirSpot + Vector3.up * 1f, inherit = Vector3.zero,
+            velocities = new[] { 0f, 1f, 9f, 3f, 1f, 8f, -3f, 1f, 8f }, splashSizes = new[] { 14, 14, 14 }, visible = new[] { true, true, true }
+        }, Them);
+        yield return Hold(Still, false, 1f, "theirs");
+        Note($"their roller {(theirsDown ? "down" : "NOT down")} (drum {drumHeight:F2}m up); their flick: {landed.Count} droplet(s) landed, we sent {sent.Count(m => m.id == NetMsg.Damage || m.id == NetMsg.Splat)} damage/splat messages");
+        if (!theirsDown || drumHeight < 0f || drumHeight > roller.RollerWidth) Fail("their roller didn't show down");
+        if (landed.Count != 3) Fail("their flick didn't fly here");
+        if (sent.Any(m => m.id == NetMsg.Damage || m.id == NetMsg.Splat)) Fail("their flick painted or damaged from here");
+        Despawn(Them);
+
+        ProjectileManager.Impact -= onLand;
+        loadout.SetMainWeapon(weaponBefore);
+        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        yield return Hold(Still, false, 0.2f, "cleanup");
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator BodyFacing()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        int weaponBefore = loadout.WeaponIndex;
+        loadout.SetMainWeapon(0);
+        CaptureSends();
+        yield return Hold(Still, false, 0.3f, "equip");
+        WeaponShooter gun = loadout.CurrentWeapon as WeaponShooter;
+        if (gun == null) { Fail("no shooter to fire"); loadout.SetMainWeapon(weaponBefore); NetGameManager.SendOverride = null; yield break; }
+        float Turn() => Mathf.DeltaAngle(player.transform.eulerAngles.y, player.ModelYaw);
+
+        // Moving: the body turns to the way we go (here, right of the view), smoothly.
+        yield return Hold(new Vector2(1f, 0f), false, 0.8f, "strafe");
+        float strafing = Turn();
+        // Firing: straight round to the view, the gun aimed where we look.
+        gun.ScriptedFire = true;
+        yield return Hold(new Vector2(1f, 0f), false, 1f / 75f, "fire");
+        float firing = Turn();
+        int shotsBefore = gun.MainShots;
+        Vector3 aimDir = Vector3.zero;
+        Action<Vector3, Quaternion> onShot = (v, rot) => aimDir = rot * Vector3.forward;
+        gun.MainShotFired += onShot;
+        yield return Hold(new Vector2(1f, 0f), false, 0.4f, "fire");
+        gun.MainShotFired -= onShot;
+        float stillFacing = Turn();
+        float aimOff = Vector3.Angle(Vector3.ProjectOnPlane(aimDir, Vector3.up), Vector3.ProjectOnPlane(player.transform.forward, Vector3.up));
+        gun.ScriptedFire = false;
+        // Stopped firing: back to the way we move, after a moment.
+        yield return Hold(new Vector2(1f, 0f), false, 0.8f, "strafe");
+        float after = Turn();
+        // Standing still: keeps its heading.
+        yield return Hold(Still, false, 0.4f, "still");
+        float still = Turn();
+        PlayerStateData state = player.GetNetState(0, 0);
+        Note($"body vs view: strafing {strafing:F0}°, the frame firing starts {firing:F0}°, firing {stillFacing:F0}° (shots aimed {aimOff:F0}° off the view), after {after:F0}°, standing {still:F0}°; sent facing {Mathf.DeltaAngle(player.transform.eulerAngles.y, state.modelYaw):F0}°");
+        if (Mathf.Abs(strafing - 90f) > 10f) Fail("moving didn't turn the body to the way we move");
+        if (Mathf.Abs(firing) > 1f || Mathf.Abs(stillFacing) > 1f) Fail("firing didn't turn the body to the view at once");
+        if (gun.MainShots == shotsBefore || aimOff > 20f) Fail("shots while strafing didn't go where we look");
+        if (Mathf.Abs(after - 90f) > 10f) Fail("after firing the body didn't go back to the way we move");
+        if (Mathf.Abs(still - after) > 2f) Fail("standing still changed the body's heading");
+        if (Mathf.Abs(Mathf.DeltaAngle(state.modelYaw, player.ModelYaw)) > 0.1f) Fail("our state doesn't carry the body's facing");
+
+        // A sub turns it round to the view too.
+        yield return Hold(new Vector2(1f, 0f), false, 0.6f, "strafe");
+        player.RefillInk();
+        loadout.UseSub();
+        yield return Hold(new Vector2(1f, 0f), false, 1f / 75f, "sub");
+        float subTurn = Turn();
+        Note($"using the sub: body {subTurn:F0}° from the view");
+        if (Mathf.Abs(subTurn) > 1f) Fail("using the sub didn't turn the body to the view");
+        yield return Hold(Still, false, 0.6f, "settle");
+        foreach (SubDevice d in FindObjectsByType<SubDevice>(FindObjectsSortMode.None)) if (d.OwnerId == player.OwnerId) Destroy(d.gameObject);
+
+        // Theirs: their model faces what their state says.
+        const ulong Them = 3301;
+        Vector3 spot = station.TransformPoint(new Vector3(6f, 0.05f, -6f));
+        SpawnRemote(Them, player.Team == 1 ? 2 : 1, spot, "Facing");
+        yield return Hold(Still, false, 0.2f, "theirs");
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = Them, position = spot, moveDir = Vector2.zero, team = player.Team == 1 ? 2 : 1, bodyYaw = 0f, modelYaw = 120f }, Them);
+        yield return Hold(Still, false, 0.6f, "theirs");
+        PlayerController them = gm.GetPlayer(Them);
+        float theirs = them != null ? them.ModelYaw : -1f;
+        Note($"their body faces {theirs:F0}° (sent 120°, view 0°)");
+        if (Mathf.Abs(Mathf.DeltaAngle(theirs, 120f)) > 3f) Fail("their model didn't face what their state says");
+        Despawn(Them);
+
+        loadout.SetMainWeapon(weaponBefore);
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator AttackOutOfSwim()
+    {
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        int weaponBefore = loadout.WeaponIndex;
+        NetGameManager.SendOverride = (id, data, target) => { };
+        var waits = new List<string>();
+        for (int w = 0; w < loadout.Weapons.Count; w++)
+        {
+            loadout.SetMainWeapon(w);
+            yield return Hold(Still, false, 0.8f, "equip");
+            Weapon weapon = loadout.CurrentWeapon;
+            Func<int> count = weapon is WeaponShooter s ? () => s.MainShots : weapon is Blaster b ? () => b.Shots : weapon is Roller r ? () => r.Flicks : (Func<int>)null;
+            Action<bool> fire = on => { if (weapon is WeaponShooter s2) s2.ScriptedFire = on; else if (weapon is Blaster b2) b2.ScriptedFire = on; else if (weapon is Roller r2) r2.ScriptedFire = on; };
+            if (count == null) continue;
+            player.RefillInk();
+            yield return Hold(Still, true, 0.4f, "swim");
+            int atStart = count();
+            fire(true);
+            yield return Hold(Still, true, 0.6f, "swim, holding attack");
+            int before = count();
+            player.ScriptedInput.swim = false;
+            int frames = 0;
+            while (count() == before && frames < 60) { yield return null; Record("leave swim"); frames++; }
+            fire(false);
+            waits.Add($"{weapon.DisplayName} {(count() == before ? "never" : $"{frames} frame(s)")} ({before - atStart} while swimming)");
+            if (before != atStart) Fail($"{weapon.DisplayName} attacked while in swim form");
+            if (count() == before || frames > 3) Fail($"{weapon.DisplayName} didn't attack at once out of swim form");
+            yield return Hold(Still, false, 0.8f, "settle");
+        }
+        Note("first attack after leaving swim form: " + string.Join(", ", waits));
+        loadout.SetMainWeapon(weaponBefore);
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator CurlingBombSlopes()
+    {
+        CurlingBomb prefab = player.GetComponent<PlayerLoadout>()?.CurlingBombPrefab;
+        if (prefab == null) { Fail("player has no curling bomb"); yield break; }
+        Transform ramp = GameObject.Find(Name(Station.Ramp30)).transform;
+        Quaternion tilt = ramp.rotation * RampRotation(30f);
+        Vector3 normal = tilt * Vector3.up, upSlope = tilt * Vector3.forward;
+        Vector3 foot = ramp.TransformPoint(RampSurfacePoint(30f, Ramp30Length, 0f));
+
+        // Visual-only copies (not ours), so the station's ink stays as it is.
+        IEnumerator Run(Vector3 from, Vector3 velocity, float seconds, List<(float along, float gap, float speed, float upDot, bool onRamp)> track)
+        {
+            CurlingBomb b = Instantiate(prefab, from, Quaternion.identity);
+            b.Init(3099, 960 + track.GetHashCode() % 100, 2, ownedLocally: false);
+            b.Launch(velocity, seconds + 1f);
+            float end = Time.time + seconds;
+            while (Time.time < end && b != null)
+            {
+                yield return null;
+                Vector3 rel = b.transform.position - foot;
+                float along = Vector3.Dot(rel, upSlope);
+                bool onRamp = along > 0.5f && along < Ramp30Length - 0.5f && b.Grounded && Mathf.Abs(Vector3.Dot(rel, ramp.right)) < RampWidth / 2f - 0.5f;
+                track.Add((along, Vector3.Dot(rel, normal), b.Velocity.magnitude, Vector3.Dot(b.transform.up, normal), onRamp));
+            }
+            if (b != null) b.Remove();
+        }
+
+        // Up: thrown at the ramp from the floor.
+        var up = new List<(float along, float gap, float speed, float upDot, bool onRamp)>();
+        yield return Run(ramp.TransformPoint(new Vector3(0f, 0.02f, -3f)), ramp.forward * prefab.SlideSpeed, 2.5f, up);
+        var upOn = up.Where(t => t.onRamp).ToList();
+        float highest = up.Count > 0 ? up.Max(t => t.along) : 0f;
+        int peakAt = up.FindIndex(t => t.along >= highest - 1e-4f);
+        float speedLow = upOn.Count > 0 ? upOn.First().speed : 0f, speedHigh = upOn.Count > 0 ? upOn.Last(t => up.IndexOf(t) <= peakAt).speed : 0f;
+        float rolledBack = up.Count > 0 ? highest - up.Last().along : 0f;
+        float upGap = upOn.Count > 0 ? upOn.Max(t => Mathf.Abs(t.gap)) : 99f;
+        float upTilt = upOn.Count > 0 ? upOn.Min(t => t.upDot) : 0f;
+
+        // Down: let go near the top, heading downhill.
+        var down = new List<(float along, float gap, float speed, float upDot, bool onRamp)>();
+        Vector3 top = ramp.TransformPoint(RampSurfacePoint(30f, Ramp30Length, Ramp30Length - 2f)) + normal * 0.02f;
+        yield return Run(top, -ramp.forward * 3f, 2f, down);
+        var downOn = down.Where(t => t.onRamp).ToList();
+        float startSpeed = downOn.Count > 0 ? downOn.First().speed : 0f, bottomSpeed = downOn.Count > 0 ? downOn.Last().speed : 0f;
+        float downGap = downOn.Count > 0 ? downOn.Max(t => Mathf.Abs(t.gap)) : 99f;
+        float downTilt = downOn.Count > 0 ? downOn.Min(t => t.upDot) : 0f;
+        float pastFoot = down.Count > 0 ? -down.Last().along : 0f;
+
+        Note($"up: reached {highest:F1}m up the slope, {speedLow:F1} -> {speedHigh:F1} m/s on the way, rolled back {rolledBack:F1}m; furthest off the surface {upGap:F2}m, tilt match {upTilt:F2}");
+        Note($"down: {startSpeed:F1} -> {bottomSpeed:F1} m/s down the slope; furthest off the surface {downGap:F2}m, tilt match {downTilt:F2}; ended {pastFoot:F1}m out across the floor");
+        if (highest < 1.5f) Fail("didn't get up the ramp (bounced off its foot?)");
+        if (speedHigh >= speedLow - 1f) Fail("didn't slow down climbing the ramp");
+        if (rolledBack < 1f) Fail("didn't roll back down after running out of speed");
+        if (bottomSpeed <= startSpeed + 2f) Fail("didn't speed up sliding down the ramp");
+        if (upGap > 0.08f || downGap > 0.08f) Fail("left the surface while riding the ramp");
+        if (upTilt < 0.97f || downTilt < 0.97f) Fail("didn't tilt with the ramp");
+        if (pastFoot < 1f) Fail("didn't carry on across the floor after coming down");
+        yield return Hold(Still, false, 0.1f, "settle");
+    }
+
     IEnumerator CurlingBombSub()
     {
         NetGameManager gm = NetGameManager.Instance;
@@ -2807,30 +3445,39 @@ public class ClimbTestRunner : MonoBehaviour
 
     IEnumerator FeetInk()
     {
-        WeaponShooter weapon = player.GetComponentInChildren<WeaponShooter>();
-        if (weapon == null) { Fail("no WeaponShooter"); yield break; }
+        PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
+        int weaponBefore = loadout.WeaponIndex;
         NetGameManager.SendOverride = (id, data, target) => { };
         SurfaceInkManager floor = station.GetComponentsInChildren<SurfaceInkManager>().First(m => m.name == "Floor");
-        floor.FillRegion(new Rect(0, 0, 1, 1), 0);
-        player.RefillInk();
-        yield return Hold(Still, false, 0.3f, "ready");
-
-        int before = weapon.FeetShots;
-        weapon.ScriptedFire = true;
-        yield return Hold(Still, false, 1.3f, "fire");
-        weapon.ScriptedFire = false;
-        int drops = weapon.FeetShots - before;
-        yield return Hold(Still, false, 0.6f, "land");
-
-        int underfoot = -1;
-        if (Physics.Raycast(player.BodyCenter, Vector3.down, out RaycastHit hit, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore))
+        for (int w = 0; w < loadout.Weapons.Count; w++)
         {
-            SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
-            if (ink != null) underfoot = ink.getSurfaceTeam(ink.UVFromHit(hit));
+            if (!(loadout.Weapons[w] is WeaponShooter) && !(loadout.Weapons[w] is Blaster)) continue;
+            loadout.SetMainWeapon(w);
+            yield return null;
+            Weapon weapon = loadout.CurrentWeapon;
+            void SetFire(bool on) { if (weapon is WeaponShooter s) s.ScriptedFire = on; else if (weapon is Blaster b) b.ScriptedFire = on; }
+            floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+            player.RefillInk();
+            yield return Hold(Still, false, 0.8f, "ready"); // past any fire cooldown
+
+            int before = weapon.FeetShots;
+            SetFire(true);
+            yield return Hold(Still, false, 1.3f, "fire");
+            SetFire(false);
+            int drops = weapon.FeetShots - before;
+            yield return Hold(Still, false, 0.6f, "land");
+
+            int underfoot = -1;
+            if (Physics.Raycast(player.BodyCenter, Vector3.down, out RaycastHit hit, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore))
+            {
+                SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
+                if (ink != null) underfoot = ink.getSurfaceTeam(ink.UVFromHit(hit));
+            }
+            Note($"{weapon.DisplayName}: {drops} feet drops in 1.3s; ink underfoot team {underfoot}");
+            if (drops < 3 || drops > 4) Fail($"{weapon.DisplayName}: expected 3-4 feet drops in 1.3s (every 0.4s), got {drops}");
+            if (underfoot != player.Team) Fail($"{weapon.DisplayName}: not standing in our own ink after shooting");
         }
-        Note($"{drops} feet drops in 1.3s; ink underfoot team {underfoot}");
-        if (drops < 3 || drops > 4) Fail($"expected 3-4 feet drops in 1.3s (every 0.4s), got {drops}");
-        if (underfoot != player.Team) Fail("not standing in our own ink after shooting");
+        loadout.SetMainWeapon(weaponBefore);
         floor.FillRegion(new Rect(0, 0, 1, 1), 0);
         NetGameManager.SendOverride = null;
     }

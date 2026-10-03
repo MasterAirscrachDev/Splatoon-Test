@@ -765,18 +765,8 @@ public class NetGameManager : MonoBehaviour
         PlayerController shooter = GetPlayer(d.shooterSteamId);
         if (shooter == null) return;
         PlayerLoadout loadout = shooter.GetComponent<PlayerLoadout>();
-        WeaponShooter weapon = loadout != null && loadout.CurrentWeapon is WeaponShooter held ? held : shooter.GetComponentInChildren<WeaponShooter>(true);
-        if (weapon == null || weapon.ProjectilePrefab == null) return;
-
-        Vector3 origin = d.origin;
-        Vector3 inherit = d.inherit != null ? (Vector3)d.inherit : Vector3.zero;
-        int count = Mathf.Min(d.splashSizes.Length, d.visible.Length, d.velocities.Length / 3);
-        for (int i = 0; i < count; i++)
-        {
-            Vector3 v = new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]);
-            ProjectileManager.Fire(weapon.ProjectilePrefab, origin, v, d.splashSizes[i], d.team, d.visible[i],
-                                   authoritative: false, ownerId: d.shooterSteamId, ballistics: weapon.Ballistics, inherit: inherit);
-        }
+        Weapon weapon = loadout != null && loadout.CurrentWeapon != null ? loadout.CurrentWeapon : shooter.GetComponentInChildren<Weapon>(true);
+        if (weapon != null) weapon.Replay(d); // each weapon flies its own shots
     }
 
     void OnDamageMsg(object data, SteamId from)
