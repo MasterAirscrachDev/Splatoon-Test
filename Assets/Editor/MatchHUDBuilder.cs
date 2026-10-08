@@ -12,6 +12,8 @@ using UnityEngine.UI;
 public static class MatchHUDBuilder
 {
     const string PrefabPath = "Assets/Prefabs/UI/MatchHUD.prefab";
+    const string DamageInkShader = "UI/DamageInk";
+    const string DamageInkMatPath = "Assets/Materials/DamageInk.mat";
     const string CirclePath = "Assets/Art/UI/HudCircle.png";
     const string CapPath    = "Assets/Art/UI/HudCap.png";
     const string StripePath = "Assets/Art/UI/HudStripes.png";
@@ -77,6 +79,7 @@ public static class MatchHUDBuilder
         group.interactable = false;
         group.blocksRaycasts = false; // the HUD never takes clicks; the host menu has its own canvas
 
+        BuildDamageInk(root); // first: under everything else on the HUD
         MatchHUD hud = BuildHud(root);
         BuildLoadoutHud(root);
         BuildMatchFlow(root);
@@ -270,6 +273,47 @@ public static class MatchHUDBuilder
             PrefabUtility.UnloadPrefabContents(root);
         }
         Debug.Log($"[MatchHUD] Added the death popup to {PrefabPath}");
+    }
+
+    // Adds (or replaces) just the damage ink on the existing prefab, keeping the rest as it is.
+    [MenuItem("Tools/UI/Add Damage Ink To Match HUD")]
+    static void AddDamageInk()
+    {
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            Transform old = root.transform.Find("DamageInk");
+            if (old != null) Object.DestroyImmediate(old.gameObject);
+            BuildDamageInk(root);
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Added the damage ink to {PrefabPath}");
+    }
+
+    // Enemy ink over the screen's edges while hurt: a full-screen image under the rest of the HUD.
+    static void BuildDamageInk(GameObject root)
+    {
+        Material mat = AssetDatabase.LoadAssetAtPath<Material>(DamageInkMatPath);
+        if (mat == null)
+        {
+            mat = new Material(Shader.Find(DamageInkShader));
+            AssetDatabase.CreateAsset(mat, DamageInkMatPath);
+        }
+        var go = new GameObject("DamageInk", typeof(RectTransform), typeof(RawImage), typeof(DamageInkOverlay));
+        var rt = (RectTransform)go.transform;
+        rt.SetParent(root.transform, false);
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
+        rt.SetAsFirstSibling();
+        var image = go.GetComponent<RawImage>();
+        image.material = mat;
+        image.raycastTarget = false;
+        image.enabled = false; // shown while hurt
     }
 
     // Adds (or replaces) just the pause menu on the existing prefab, keeping the rest as it is.

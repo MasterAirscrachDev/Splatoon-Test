@@ -509,6 +509,7 @@ public partial class ClimbTestRunner : MonoBehaviour
         yield return S("Ramp30: swims down a walkable slope without bouncing", Station.Ramp30, ShallowRampDown, "Climb,Swim", "SpawnTop");
         yield return S("Ramp60: a steep slope is climbed", Station.Ramp60, SteepRamp, "Climb,Swim");
         yield return S("Combat: replays are visual-only, hits route to the victim, damage kills and respawns", Station.Lobby, Combat, "Combat,Projectiles,Net");
+        yield return S("Damage ink: enemy hits put their ink over our screen's edges, further the more we're hurt, gone once healed; a lethal hit floods it, then it drains", Station.Lobby, DamageInk, "Combat,UI");
         yield return S("Death: the camera circles the spot while a popup says who and with what; back at spawn 4s later, held in swim form for 1s; falling out of bounds too", Station.Lobby, Death, "Combat,Camera,UI");
         yield return S("HostMenu: percentages toggle, special fills, team editor moves players between teams and the bench", Station.Lobby, HostMenuTeams, "Match,UI");
         yield return S("Map: holding opens it, lists our team with lines to markers, picking a teammate requests a Super Jump", Station.Lobby, MapTeam, "Map,UI");

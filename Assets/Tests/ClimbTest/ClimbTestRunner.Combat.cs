@@ -15,6 +15,72 @@ using static ClimbTestLayout;
 public partial class ClimbTestRunner
 {
 
+    IEnumerator DamageInk()
+    {
+        DamageInkOverlay overlay = FindFirstObjectByType<DamageInkOverlay>(FindObjectsInactive.Include);
+        if (overlay == null) { Fail("no DamageInkOverlay on the HUD"); yield break; }
+        NetGameManager gm = NetGameManager.Instance;
+        NetGameManager.SendOverride = (id, data, target) => { };
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        UnityEngine.UI.RawImage image = overlay.GetComponent<UnityEngine.UI.RawImage>();
+        player.Hitbox.ResetHealth();
+        yield return Hold(Still, false, 0.5f, "full health");
+        float atFull = overlay.Amount;
+        bool hiddenAtFull = !image.enabled;
+
+        player.Hitbox.TakeDamage(40f, enemyTeam, 4242, "test");
+        yield return Hold(Still, false, 0.3f, "hit");
+        float after40 = overlay.Amount;
+        Color colour = overlay.InkColour;
+        player.Hitbox.TakeDamage(30f, enemyTeam, 4242, "test");
+        yield return Hold(Still, false, 0.3f, "hit");
+        float after70 = overlay.Amount;
+        bool shownHurt = image.enabled;
+        // What's actually drawn: the bottom-right corner (solid wash at 30 health) with and without the
+        // ink; the see-through ink's own colour is what it adds over the scene, scaled up by its opacity.
+        yield return new WaitForEndOfFrame();
+        Texture2D shot = ScreenCapture.CaptureScreenshotAsTexture();
+        Color withInk = shot.GetPixel(shot.width - 4, 4);
+        Destroy(shot);
+        overlay.enabled = false;
+        image.enabled = false;
+        yield return null;
+        yield return new WaitForEndOfFrame();
+        shot = ScreenCapture.CaptureScreenshotAsTexture();
+        Color scene = shot.GetPixel(shot.width - 4, 4);
+        Destroy(shot);
+        overlay.enabled = true;
+        float opacity = image.material.GetFloat("_Opacity");
+        Color corner = scene + (withInk - scene) / Mathf.Max(opacity, 0.05f);
+        Vector3 Hue(Color c) => new Vector3(Mathf.Max(c.r, 0f), Mathf.Max(c.g, 0f), Mathf.Max(c.b, 0f)).normalized;
+        float drawnMatch = Vector3.Dot(Hue(corner), Hue(gm.TeamColour(enemyTeam)));
+        float seeThrough = 1f - (withInk - scene).maxColorComponent / Mathf.Max(0.01f, (corner - scene).maxColorComponent);
+
+        player.Hitbox.Heal(100f);
+        yield return Hold(Still, false, 1.5f, "healed");
+        float healed = overlay.Amount;
+        bool hiddenHealed = !image.enabled;
+
+        player.Hitbox.TakeDamage(500f, enemyTeam, 4242, "test");
+        yield return Hold(Still, false, 0.1f, "splatted");
+        float flooded = overlay.Amount;
+        yield return Hold(Still, false, 1.3f, "splatted");
+        float drained = overlay.Amount;
+
+        Color want = gm.TeamColour(enemyTeam);
+        bool rightColour = Mathf.Abs(colour.r - want.r) + Mathf.Abs(colour.g - want.g) + Mathf.Abs(colour.b - want.b) < 0.01f;
+        Note($"ink: {atFull:F2} at full health ({(hiddenAtFull ? "hidden" : "SHOWN")}), {after40:F2} at 60 health, {after70:F2} at 30 ({(shownHurt ? "shown" : "HIDDEN")}), " +
+             $"{healed:F2} healed ({(hiddenHealed ? "hidden" : "SHOWN")}); lethal hit {flooded:F2}, {drained:F2} 1.3s later; colour {(rightColour ? "theirs" : $"WRONG {colour}")}, drawn ink {corner} (hue match {drawnMatch:F3}), {seeThrough:P0} see-through");
+        if (atFull > 0.01f || !hiddenAtFull) Fail("ink over the screen at full health");
+        if (after40 < 0.3f || after70 <= after40 || !shownHurt) Fail("hits didn't put more ink on the screen the more we were hurt");
+        if (!rightColour || drawnMatch < 0.95f) Fail("the ink isn't the colour of the team that hit us");
+        if (opacity > 0.5f) Fail("the ink isn't see-through");
+        if (healed > 0.02f || !hiddenHealed) Fail("the ink didn't go once we healed");
+        if (flooded < 0.8f || drained > 0.05f) Fail("a lethal hit didn't flood the screen and then drain");
+        yield return HoldUntil(Still, false, 8f, "respawn", f => !player.IsDead && !player.IsRespawning);
+        NetGameManager.SendOverride = null;
+    }
+
     IEnumerator Death()
     {
         NetGameManager gm = NetGameManager.Instance;

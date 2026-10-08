@@ -49,6 +49,7 @@ public class NetGameManager : MonoBehaviour
 
     public Color AlphaTeam => Colours.alpha;
     public Color BetaTeam  => Colours.beta;
+    public Color TeamColour(int team) => team == 2 ? BetaTeam : AlphaTeam;
     public int ColourPair => colourPair;
     public int ColourPairCount => colourPairs.Length;
     public string ColourPairName => Colours.name;

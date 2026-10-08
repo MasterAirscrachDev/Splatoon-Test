@@ -30,6 +30,7 @@ public class PlayerHitbox : MonoBehaviour
     public float Health => health;
     public float HealthNormalized => maxHealth > 0f ? health / maxHealth : 0f;
     public int Team => player != null ? player.Team : 0;
+    public int LastHitTeam { get; private set; } // whose hit we took last (the damage ink's colour)
 
     // A hit this hitbox accepted and applied (owner side): amount, source. See TargetDummy.
     public event System.Action<float, string> Damaged;
@@ -76,6 +77,7 @@ public class PlayerHitbox : MonoBehaviour
         if (health <= 0f) return false;
 
         lastDamageTime = Time.time;
+        LastHitTeam = fromTeam;
         Damaged?.Invoke(amount, source);
         health -= amount;
         if (health <= 0f)
