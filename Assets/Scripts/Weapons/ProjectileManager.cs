@@ -174,9 +174,11 @@ public class ProjectileManager : MonoBehaviour
         Vector3 dir = delta / length;
         int n = Physics.SphereCastNonAlloc(from, s.radius, dir, hits, length, hitMask, QueryTriggerInteraction.Collide);
         System.Array.Sort(hits, 0, n, ByDistance);
+        bool barrier = SpawnPad.Stops(s.team, from, dir, length, out float barrierAt, out SpawnPad pad); // the other team's spawn barrier
         for (int i = 0; i < n; i++)
         {
             RaycastHit h = hits[i];
+            if (barrier && h.distance > barrierAt) break; // the barrier's nearer
             Collider c = h.collider;
             bool overlapping = h.distance <= 0f && h.point == Vector3.zero; // the step started inside it
             Vector3 point = overlapping ? from : h.point;
@@ -204,6 +206,17 @@ public class ProjectileManager : MonoBehaviour
             if (s.blast != null) Detonate(s, overlapping ? from : h.point + h.normal * 0.1f, null);
             else Land(s, c, overlapping ? new Ray(from - dir * 0.5f, dir) : new Ray(h.point + h.normal * 0.5f, -h.normal));
             Impact?.Invoke(s, point);
+            return true;
+        }
+        if (barrier)
+        {
+            // Stopped on the barrier: no ink, no hit inside (a blast still goes off, out here).
+            Vector3 at = from + dir * barrierAt;
+            pad.Pulse(at);
+            Detonate(s, at - dir * 0.1f, null);
+            if (s.impactParticles && templates.TryGetValue(s.prefab, out ProjectileVisual t) && t != null)
+                InkParticles.Spawn(t.SplashParticles, at, Quaternion.FromToRotation(Vector3.up, (at - pad.Centre).normalized), s.colour);
+            Impact?.Invoke(s, at);
             return true;
         }
         return false;

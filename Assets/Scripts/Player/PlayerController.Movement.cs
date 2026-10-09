@@ -143,6 +143,15 @@ public partial class PlayerController
             controller.Move(velocity * Time.deltaTime);
         }
 
+        // The other team's spawn barrier: back out to its edge, losing any carried speed into it.
+        Vector3 pushOut = SpawnPad.PushOut(BodyCenter, controller.radius, team);
+        if (pushOut != Vector3.zero)
+        {
+            controller.Move(pushOut);
+            Vector3 outward = pushOut.normalized;
+            if (Vector3.Dot(airMomentum, outward) < 0f) airMomentum = Vector3.ProjectOnPlane(airMomentum, outward);
+        }
+
         bool onWallInk = effectivelyClimbing;
         bool inOwnInkNow = swimMode && team != 0 && (OnOwnSurfaceInk || onWallInk);
         Vector3 inkNormal = onWallInk ? climbNormal : groundNormal;

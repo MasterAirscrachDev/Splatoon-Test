@@ -169,6 +169,100 @@ public partial class ClimbTestRunner
         NetGameManager.SendOverride = null;
     }
 
+    IEnumerator SpawnBarrier()
+    {
+        int enemyTeam = player.Team == 1 ? 2 : 1;
+        float Flat(Vector3 v) => new Vector2(v.x, v.z).magnitude;
+        Vector3 forward = Vector3.ProjectOnPlane(player.transform.forward, Vector3.up).normalized;
+        Vector3 feet = player.transform.position;
+        const float R = 3f, Pad = 1.5f;
+
+        // The other team's pad 10m ahead: a sphere curving out of the pad's rim. Hidden from afar, it
+        // keeps us out walking and swimming, showing as we press.
+        var padGo = new GameObject("TestSpawnPad");
+        padGo.transform.position = new Vector3(feet.x, station.position.y, feet.z) + forward * 10f;
+        SpawnPad pad = padGo.AddComponent<SpawnPad>();
+        pad.Configure(enemyTeam, R, Pad);
+        yield return Hold(Still, false, 0.4f, "far");
+        float farVisible = pad.Visibility;
+        yield return Hold(Fwd, false, 3f, "walk in");
+        bool walkedIn = pad.Contains(player.BodyCenter);
+        float walkGap = Flat(player.transform.position - pad.Top), pressedVisible = pad.Visibility;
+        yield return Hold(Fwd, true, 1.5f, "swim in");
+        bool swamIn = pad.Contains(player.BodyCenter);
+        float swimGap = Flat(player.transform.position - pad.Top);
+        Note($"enemy barrier (sphere r {R} raised {pad.Lift:F2}m, meeting a {Pad}m pad): visibility {farVisible:F2} from 7m off, {pressedVisible:F2} against it; walking stopped {walkGap:F2}m from its centre, swimming {swimGap:F2}m");
+        if (farVisible > 0.05f) Fail("the barrier showed with no enemy near");
+        if (pressedVisible < 0.6f) Fail("the barrier didn't show with an enemy against it");
+        if (walkedIn || swamIn || swimGap < Pad) Fail("walked or swam into the other team's spawn");
+
+        // Our own team's: walk straight in.
+        pad.Configure(player.Team, R, Pad);
+        float ownGap = float.MaxValue;
+        yield return HoldUntil(Fwd, false, 1.5f, "own", f => (ownGap = Mathf.Min(ownGap, Flat(player.transform.position - pad.Top))) < 0.5f);
+        Note($"our own barrier: walked to {ownGap:F2}m from its centre");
+        if (ownGap > 1f) Fail("our own spawn's barrier kept us out");
+
+        // Inside it: hidden while nothing threatens it; an enemy shot stops on it and it lights up for
+        // us (under attack), then fades; nothing of theirs hurts us.
+        player.PlaceAt(new Vector3(pad.Top.x, station.position.y + 0.05f, pad.Top.z), player.transform.eulerAngles.y);
+        player.Hitbox.ResetHealth();
+        frames.Clear(); // the teleport isn't a movement glitch
+        yield return Hold(Still, false, 1f, "inside");
+        float quietVisible = pad.Visibility;
+        Vector3? stoppedAt = null;
+        Action<ProjectileManager.Shot, Vector3> onImpact = (shot, point) => { if (shot.team == enemyTeam) stoppedAt = point; };
+        ProjectileManager.Impact += onImpact;
+        Vector3 aim = player.BodyCenter;
+        Vector3 from = aim - forward * 9f;
+        var straight = new Ballistics { gravityOverTime = AnimationCurve.Constant(0f, 1f, 0f) };
+        ProjectileManager.Fire(projectilePrefab, from, (aim - from).normalized * 30f, 10, enemyTeam, ownerId: 4242, damage: 40f, ballistics: straight);
+        yield return HoldUntil(Still, false, 1f, "shot", f => stoppedAt.HasValue);
+        ProjectileManager.Impact -= onImpact;
+        yield return Hold(Still, false, 0.4f, "attacked");
+        float attackedVisible = pad.Visibility;
+        yield return Hold(Still, false, 3f, "calm");
+        float calmVisible = pad.Visibility;
+        float afterShot = player.Hitbox.Health;
+        bool hurtInside = player.Hitbox.TakeDamage(500f, enemyTeam, 4242, "Test");
+        float afterBlast = player.Hitbox.Health;
+        float stopR = stoppedAt.HasValue ? Vector3.Distance(stoppedAt.Value, pad.Centre) : -1f;
+        Note($"inside our spawn: shown {quietVisible:F2} while quiet; an enemy shot stopped {stopR:F2}m from the sphere's centre (r {R}), shown {attackedVisible:F2} under attack, {calmVisible:F2} 3s later; health {afterShot:0} after it and {afterBlast:0} after a 500 hit");
+        if (!stoppedAt.HasValue || Mathf.Abs(stopR - R) > 0.3f) Fail("an enemy shot wasn't stopped on the barrier");
+        if (quietVisible > 0.05f || attackedVisible < 0.6f || calmVisible > 0.05f) Fail("our own barrier didn't show while under attack (and only then)");
+        if (afterShot < 99f || afterBlast < 99f || hurtInside) Fail("we were hurt inside our own spawn");
+
+        // An enemy sub sliding at it breaks on the barrier.
+        CurlingBomb bombPrefab = player.GetComponent<PlayerLoadout>()?.CurlingBombPrefab;
+        if (bombPrefab != null)
+        {
+            Vector3 start = pad.Top - forward * 7f + Vector3.up * 0.05f;
+            CurlingBomb bomb = Instantiate(bombPrefab, start, Quaternion.identity);
+            bomb.Init(4242, 977, enemyTeam, ownedLocally: true);
+            bomb.Launch(forward * bombPrefab.SlideSpeed, 5f);
+            yield return HoldUntil(Still, false, 2f, "sub", f => SubDevice.Find(4242, 977) == null);
+            bool broke = SubDevice.Find(4242, 977) == null;
+            float reached = bomb != null ? Flat(bomb.transform.position - pad.Top) : -1f;
+            Note("an enemy curling bomb slid at it: " + (broke ? "broke on the barrier" : $"STILL THERE {reached:F1}m from the centre"));
+            if (!broke) { Fail("an enemy sub didn't break on the barrier"); if (bomb != null) bomb.Remove(); }
+        }
+        else Fail("no curling bomb prefab to test subs with");
+
+        pad.Configure(enemyTeam, R, Pad); // now we're in theirs: pushed out, and no longer shielded once out
+        yield return Hold(Still, false, 0.3f, "evicted");
+        frames.Clear(); // nor is being pushed out
+        bool stillIn = pad.Contains(player.BodyCenter);
+        player.Hitbox.TakeDamage(30f, enemyTeam, 4242, "Test");
+        float outsideHealth = player.Hitbox.Health;
+        Note($"in the other team's: pushed {Flat(player.transform.position - pad.Top):F2}m out; then hurt to {outsideHealth:0}");
+        if (stillIn) Fail("an enemy standing in a spawn wasn't pushed out");
+        if (outsideHealth > 75f) Fail("damage outside a spawn was blocked");
+
+        Destroy(padGo);
+        player.Hitbox.ResetHealth();
+        yield return Hold(Still, false, 0.1f, "done");
+    }
+
     IEnumerator SuperJumpLocking()
     {
         NetGameManager gm = NetGameManager.Instance;

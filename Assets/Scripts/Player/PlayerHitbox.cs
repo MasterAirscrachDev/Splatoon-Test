@@ -70,6 +70,7 @@ public class PlayerHitbox : MonoBehaviour
     {
         if(amount <= 0f) return false;
         if (player != null && (fromTeam == player.Team || player.IsDead || player.Shielded)) return false;
+        if (player != null && SpawnPad.Shields(player.BodyCenter, player.Team)) return false; // in their own spawn
         PlayerLoadout.ReportDamageDealt(attackerId, fromTeam, amount);
         if (player != null && !player.IsLocalPlayer) {
             NetGameManager.Instance?.SendDamage(player.OwnerId, amount, fromTeam, attackerId, source);

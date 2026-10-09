@@ -515,6 +515,7 @@ public partial class ClimbTestRunner : MonoBehaviour
         yield return S("Map: holding opens it, lists our team with lines to markers, picking a teammate requests a Super Jump", Station.Lobby, MapTeam, "Map,UI");
         yield return S("SuperJump: locked charge in swim form, high arc onto the teammate, unlocks on landing (swim kept only if held)", Station.Lobby, SuperJump, "Map,Swim");
         yield return S("SuperJump: the landing spot locks on click, only our death cancels, spawn is always a target", Station.Lobby, SuperJumpLocking, "Map");
+        yield return S("Spawn barrier: a sphere curving out of a small pad, hidden until the other team nears it or attacks it (then shown to both teams); keeps them out (walking, swimming, or pushed out), stops their shots, breaks their subs; nothing of theirs hurts us in our own spawn", Station.Lobby, SpawnBarrier, "Map,Combat,Spawn");
         yield return S("Sub: a beacon costs 70% ink, shows on our map only, and a Super Jump onto it breaks it", Station.Lobby, SubBeacon, "Subs,Map");
         yield return S("Beacon: 35 health from enemy fire only, expires, remote hits go to the owner", Station.Lobby, BeaconHealth, "Subs,Combat,Net");
         yield return S("Special: charges from new turf and damage dealt; bubble shield refills ink and blocks damage for 5s", Station.Lobby, SpecialShield, "Specials,Combat");
