@@ -290,6 +290,8 @@ MonoBehaviour:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
+  flickPace: 2
+  dropletScale: 2
   aimInfluence: 1
   flickPitchLimits: {x: -40, y: 60}
   groundDroplets: 12
@@ -297,18 +299,62 @@ MonoBehaviour:
   groundPitch: 25
   groundSpeed: {x: 4.5, y: 7}
   groundDamage:
-    maxDamage: 125
-    minDamage: 35
-    scaleTime: 0.5
+    damage: 150
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: -1.44
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.5
+        value: 0.28
+        inSlope: -1.44
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
   groundSplat: 14
   airDroplets: 12
   airFan: 7
   airPitch: 20
   airSpeed: {x: 0, y: 12}
   airDamage:
-    maxDamage: 80
-    minDamage: 30
-    scaleTime: 0.5
+    damage: 160
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: -1.25
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.5
+        value: 0.375
+        inSlope: -1.25
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
   airSplat: 12
   rollDamage: 100
   rollStartSpeed: 0.8
@@ -324,6 +370,8 @@ MonoBehaviour:
   rollerWidth: 2.620509
   rollShift: {x: -0.53, y: 0, z: 0}
   carryPitch: 15
+  idlePitch: -70
+  idleOffset: {x: 0.1, y: 0, z: -0.35}
   raisedPitch: -80
   verticalTurn: 90
   poseSpeed: 18

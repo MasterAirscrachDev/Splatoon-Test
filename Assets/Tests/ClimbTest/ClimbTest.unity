@@ -187,8 +187,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 40
-  splatScale: 1
+  pixelsPerUnit: 18.383173
+  splatScale: 1.1140623
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &136049533
@@ -528,8 +528,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 13.333333
-  splatScale: 1
+  pixelsPerUnit: 10.066632
+  splatScale: 2.034444
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &443558301
@@ -679,8 +679,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 40
-  splatScale: 1
+  pixelsPerUnit: 18.383173
+  splatScale: 1.1140623
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &482631033
@@ -861,8 +861,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 13.333333
-  splatScale: 1
+  pixelsPerUnit: 10.066632
+  splatScale: 2.034444
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &524141154
@@ -1325,8 +1325,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 13.333333
-  splatScale: 1
+  pixelsPerUnit: 10.066632
+  splatScale: 2.034444
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &748966830
@@ -1743,8 +1743,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 50
-  splatScale: 1
+  pixelsPerUnit: 24.318653
+  splatScale: 0.84215194
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &831734795
@@ -2139,8 +2139,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 33.333332
-  splatScale: 1
+  pixelsPerUnit: 30.570461
+  splatScale: 0.6699278
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1255729825
@@ -2387,8 +2387,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 13.333333
-  splatScale: 1
+  pixelsPerUnit: 10.066632
+  splatScale: 2.034444
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1341680167
@@ -2812,8 +2812,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 13.333333
-  splatScale: 1
+  pixelsPerUnit: 10.066632
+  splatScale: 2.034444
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1400683103
@@ -2997,8 +2997,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 13.333333
-  splatScale: 1
+  pixelsPerUnit: 10.066632
+  splatScale: 2.034444
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1484331795
@@ -3148,8 +3148,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 40
-  splatScale: 1
+  pixelsPerUnit: 27.792746
+  splatScale: 0.7368829
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1520601461
@@ -3335,8 +3335,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 50
-  splatScale: 1
+  pixelsPerUnit: 37.099083
+  splatScale: 0.5520353
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1618780833
@@ -3618,8 +3618,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 13.333333
-  splatScale: 1
+  pixelsPerUnit: 10.066632
+  splatScale: 2.034444
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1714781833
@@ -3779,8 +3779,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 40
-  splatScale: 1
+  pixelsPerUnit: 18.383173
+  splatScale: 1.1140623
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1766190547
@@ -4169,8 +4169,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 40
-  splatScale: 1
+  pixelsPerUnit: 31.560051
+  splatScale: 0.64892167
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1870218330
@@ -4320,8 +4320,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 13.333333
-  splatScale: 1
+  pixelsPerUnit: 10.066632
+  splatScale: 2.034444
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1907605951
@@ -4471,8 +4471,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 13.333333
-  splatScale: 1
+  pixelsPerUnit: 10.066632
+  splatScale: 2.034444
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1911978625
@@ -4622,8 +4622,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 13.333333
-  splatScale: 1
+  pixelsPerUnit: 10.066632
+  splatScale: 2.034444
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1915636373
@@ -4773,8 +4773,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 40
-  splatScale: 1
+  pixelsPerUnit: 28.080761
+  splatScale: 0.729325
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1920699516
@@ -5198,8 +5198,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 53e8c72bf8e2fc54a9d703580a148bfa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
-  pixelsPerUnit: 40
-  splatScale: 1
+  pixelsPerUnit: 18.383173
+  splatScale: 1.1140623
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &2087775056

@@ -14,7 +14,7 @@ public class WeaponShooter : Weapon
     [SerializeField] int fillerShots = 5;        // shorter shots per volley, spaced between us and the main shot
     [SerializeField] Ballistics ballistics = new Ballistics(); // its speed and gravity over its flight
     [SerializeField] int splashSize = 11;
-    [SerializeField] float damage = 30f;
+    [SerializeField] DamageFalloff damage = new DamageFalloff(30f, DamageFalloff.HoldThenFall(0.25f, 0.5f, 0.5f)); // per shot, by how long it's flown
     [SerializeField] float inkCostPerShot = 16f; // x0.001 of a full tank
     [SerializeField] GameObject projectile;
     [SerializeField] Transform muzzle;
@@ -127,7 +127,7 @@ public class WeaponShooter : Weapon
     {
         Vector3 launch = rotation * Vector3.forward * speed;
         ProjectileManager.Fire(projectile, muzzle.position, launch, size, player.Team, visible,
-                               ownerId: player.OwnerId, damage: dealDamage? damage : 0, ballistics: ballistics, inherit: inherit, source: DisplayName);
+                               ownerId: player.OwnerId, falloff: dealDamage ? damage : null, damage: 0f, ballistics: ballistics, inherit: inherit, source: DisplayName);
 
         volleyVelocities.Add(launch.x); volleyVelocities.Add(launch.y); volleyVelocities.Add(launch.z);
         volleySizes.Add(size);

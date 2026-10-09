@@ -159,14 +159,40 @@ public static class ClimbTestSceneBuilder
         go.AddComponent<MeshCollider>().sharedMesh = mesh; // non-convex, so raycasts report textureCoord
 
         SurfaceInkManager ink = go.AddComponent<SurfaceInkManager>();
-        SerializedObject so = new SerializedObject(ink);
-        // ~512² ink texture whatever the box size.
-        so.FindProperty("pixelsPerUnit").floatValue = 400f / Mathf.Max(size.x, size.y, size.z);
-        so.FindProperty("splatScale").floatValue = 1f;
-        so.ApplyModifiedPropertiesWithoutUndo();
+        SetInkSizing(ink, mesh);
 
         if (fill != null)
             go.AddComponent<TestInkFill>().regions = fill;
+    }
+
+    // A 512² ink texture whatever the box size, with splats as big in the world as one texel per
+    // splash-size unit at that resolution (what the stations' tests were tuned for).
+    const int InkTextureSize = 512;
+    static void SetInkSizing(SurfaceInkManager ink, Mesh mesh)
+    {
+        float span = SurfaceInkManager.UVSpanMetres(mesh, ink.transform);   // metres per UV unit
+        SerializedObject so = new SerializedObject(ink);
+        so.FindProperty("pixelsPerUnit").floatValue = InkTextureSize * 0.8f / span;
+        so.FindProperty("splatScale").floatValue = SurfaceInkManager.ReferenceTexelsPerMetre * span / InkTextureSize;
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    // Migration: the scene's surfaces to the UV-based texture size and world-space splat sizes.
+    [MenuItem("Tools/Climb Test/Migrate Ink Sizing")]
+    public static void MigrateInkSizing()
+    {
+        Scene scene = EditorSceneManager.OpenScene(ScenePath);
+        int n = 0;
+        foreach (SurfaceInkManager ink in Object.FindObjectsByType<SurfaceInkManager>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            MeshCollider mc = ink.GetComponent<MeshCollider>();
+            if (mc == null || mc.sharedMesh == null) continue;
+            SetInkSizing(ink, mc.sharedMesh);
+            n++;
+        }
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene);
+        Debug.Log($"[ClimbTest] Migrated ink sizing on {n} surfaces.");
     }
 
     static void Marker(string name, Transform parent, Vector3 localPos, float yaw)

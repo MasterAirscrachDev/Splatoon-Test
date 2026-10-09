@@ -57,12 +57,13 @@ MonoBehaviour:
   radius: 0.3
   trailSplash: 7
   trailSpacing: 0.3
-  passDamage: 25
+  passDamage: 30
   fuse: 2.8
-  minFuse: 0.4
-  blastRadius: 2
-  blastDamage: 55
-  blastSplash: 18
+  minFuse: 0.6
+  cookRate: 2.5
+  blastRadius: 2.2
+  blastDamage: 180
+  blastSplash: 22
   blastEffect: {fileID: 7185872467873977352, guid: 11a8dd7a6c667b74b89b51781565ea33, type: 3}
   blinker: {fileID: 1138203960468566452}
   body: {fileID: 2112102138575536369}

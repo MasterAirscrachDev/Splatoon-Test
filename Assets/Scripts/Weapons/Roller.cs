@@ -31,7 +31,7 @@ public class Roller : Weapon
     [SerializeField] float groundFan = 70f;           // degrees across
     [SerializeField] float groundPitch = 5f;          // degrees up
     [SerializeField] Vector2 groundSpeed = new Vector2(4.5f, 7f);
-    [SerializeField] DamageFalloff groundDamage = new DamageFalloff(125f, 35f, 0.5f); // once per enemy per flick, weaker the further it's flown
+    [SerializeField] DamageFalloff groundDamage = new DamageFalloff(125f, DamageFalloff.HoldThenFall(0f, 0.5f, 0.28f)); // once per enemy per flick, weaker the further it's flown
     [SerializeField] int groundSplat = 14;
 
     [Header("Air flick: narrow and long")]
@@ -39,7 +39,7 @@ public class Roller : Weapon
     [SerializeField] float airFan = 6f;
     [SerializeField] float airPitch = 20f;
     [SerializeField] Vector2 airSpeed = new Vector2(9f, 17f); // spread nearest to furthest, so they land along a line
-    [SerializeField] DamageFalloff airDamage = new DamageFalloff(80f, 30f, 0.5f);
+    [SerializeField] DamageFalloff airDamage = new DamageFalloff(80f, DamageFalloff.HoldThenFall(0f, 0.5f, 0.375f));
     [SerializeField] int airSplat = 12;
 
     [Header("Rolling")]
@@ -302,7 +302,7 @@ public class Roller : Weapon
 
     void Fire(Vector3 from, Vector3 launch, Vector3 inherit, int size, int team, ulong ownerId, bool authoritative, DamageFalloff damage, HashSet<Object> hits)
     {
-        ProjectileManager.Fire(projectile, from, launch, size, team, true, authoritative, ownerId, damage?.maxDamage ?? 0f,
+        ProjectileManager.Fire(projectile, from, launch, size, team, true, authoritative, ownerId, 0f,
                                ballistics: paced ?? ballistics, falloff: damage, inherit: inherit, source: Source, hitGroup: hits, visualScale: dropletScale);
     }
 

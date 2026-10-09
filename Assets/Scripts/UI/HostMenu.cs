@@ -7,8 +7,8 @@ using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
 // Host-only menu (G): reset the map, edit teams, toggle coverage percentages, fill our special
-// (for testing), start the game.
-// During a match only "End match" is available.
+// (for testing), start the game, and change map (everyone in the lobby goes, see
+// NetGameManager.SwitchMap). During a match only "End match" is available.
 public class HostMenu : MonoBehaviour
 {
     [System.Serializable]
@@ -29,6 +29,12 @@ public class HostMenu : MonoBehaviour
     [SerializeField] SlotButton[] betaSlots = new SlotButton[4];
     [SerializeField] SlotButton[] spectateSlots = new SlotButton[2];
     [SerializeField] SlotButton[] benchSlots = new SlotButton[2];
+    [Header("Change map")]
+    [SerializeField] Button mapsButton;
+    [SerializeField] GameObject mapPanel;
+    [SerializeField] Button mapButtonTemplate;   // cloned per scene in the build settings
+    [SerializeField] Button mapsBackButton;
+
     [SerializeField] Color slotColour = new Color(0.2f, 0.2f, 0.26f, 1f);
     [SerializeField] Color selectedColour = new Color(1f, 0.82f, 0.25f, 1f);
 
@@ -41,6 +47,10 @@ public class HostMenu : MonoBehaviour
 
     public bool IsOpen => open;
     public bool TeamEditorOpen => open && teamPanel.activeSelf;
+    public bool MapPanelOpen => open && mapPanel != null && mapPanel.activeSelf;
+    public Button MapsButton => mapsButton;
+    readonly List<Button> mapButtons = new List<Button>();
+    public IReadOnlyList<Button> MapButtons => mapButtons; // tests
 
     void Awake()
     {
@@ -74,6 +84,11 @@ public class HostMenu : MonoBehaviour
         });
         closeButton.onClick.AddListener(() => SetOpen(false));
         teamsBackButton.onClick.AddListener(() => { teamPanel.SetActive(false); mainPanel.SetActive(true); });
+
+        if (mapsButton != null) mapsButton.onClick.AddListener(OpenMaps);
+        if (mapsBackButton != null) mapsBackButton.onClick.AddListener(() => { mapPanel.SetActive(false); mainPanel.SetActive(true); });
+        if (mapButtonTemplate != null) mapButtonTemplate.gameObject.SetActive(false);
+        if (mapPanel != null) mapPanel.SetActive(false);
 
         mainPanel.SetActive(false);
         teamPanel.SetActive(false);
@@ -115,6 +130,7 @@ public class HostMenu : MonoBehaviour
         open = value;
         mainPanel.SetActive(value);
         teamPanel.SetActive(false);
+        if (mapPanel != null) mapPanel.SetActive(false);
         selectedColumn = selectedSlot = -1;
         InputGate.Blocked = value;
         if (value) GameCursor.Open(this, GameCursor.Use.Menu); else GameCursor.Close(this);
@@ -125,9 +141,40 @@ public class HostMenu : MonoBehaviour
         NetGameManager gm = NetGameManager.Instance;
         bool inMatch = gm != null && gm.InMatch;
         resetButton.interactable = teamsButton.interactable = percentButton.interactable = fillSpecialButton.interactable = !inMatch;
-        string start = inMatch ? "End match" : "Start game";
+        bool canStart = gm != null && gm.CanStartMatch;
+        string start = inMatch ? "End match" : canStart ? "Start game" : "Change map to play";
         if (startButtonLabel.text != start) startButtonLabel.text = start;
+        startButton.interactable = inMatch || canStart;
         if (inMatch && teamPanel.activeSelf) { teamPanel.SetActive(false); mainPanel.SetActive(true); }
+        bool canSwitch = !inMatch && gm != null && gm.CanSwitchMap;
+        if (mapsButton != null) mapsButton.interactable = canSwitch;
+        if (!canSwitch && MapPanelOpen) { mapPanel.SetActive(false); mainPanel.SetActive(true); }
+    }
+
+    // ── Change map ─────────────────────────────────────────────────────────
+    // A button per scene in the build (the one we're in can't be picked): everyone goes there.
+    public void OpenMaps()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        if (mapPanel == null || mapButtonTemplate == null || gm == null || !gm.CanSwitchMap || gm.InMatch) return;
+        foreach (Button b in mapButtons) if (b != null) Destroy(b.gameObject);
+        mapButtons.Clear();
+        int current = UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex;
+        var template = (RectTransform)mapButtonTemplate.transform;
+        for (int i = 0; i < NetGameManager.SceneCount; i++)
+        {
+            Button b = Instantiate(mapButtonTemplate, template.parent);
+            b.gameObject.SetActive(true);
+            ((RectTransform)b.transform).anchoredPosition = template.anchoredPosition - new Vector2(0f, 66f * i);
+            TMP_Text label = b.GetComponentInChildren<TMP_Text>(true);
+            if (label != null) label.text = NetGameManager.SceneName(i) + (i == current ? "  (here)" : "");
+            b.interactable = i != current;
+            int index = i;
+            b.onClick.AddListener(() => { NetGameManager.Instance?.SwitchMap(index); SetOpen(false); });
+            mapButtons.Add(b);
+        }
+        mainPanel.SetActive(false);
+        mapPanel.SetActive(true);
     }
 
     void TogglePercentages()

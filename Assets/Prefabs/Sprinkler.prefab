@@ -176,7 +176,7 @@ MonoBehaviour:
   fireIntervalEnd: 0.45
   shotLift: 0.35
   splashSize: 8
-  shotDamage: 15
+  shotDamage: 20
 --- !u!1 &2340795449010023044
 GameObject:
   m_ObjectHideFlags: 0

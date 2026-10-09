@@ -10,7 +10,7 @@ public class Blaster : Weapon
     [SerializeField] float fireRate = 0.75f;          // seconds between shots
     [SerializeField] float shotSpeed = 30f;
     [SerializeField] float range = 6.5f;              // explodes after flying this far
-    [SerializeField] float directDamage = 125f;       // to whoever it hits
+    [SerializeField] DamageFalloff directDamage = new DamageFalloff(125f, DamageFalloff.HoldThenFall(0.2f, 0.3f, 0.8f)); // to whoever it hits, by how long it's flown
     [SerializeField] float inkCostPerShot = 80f;      // x0.001 of a full tank
     [SerializeField] int shotSize = 22;               // how big the shot looks
     [SerializeField] float trailSpacing = 0.45f;      // the shot drips ink along its path this often (metres)
@@ -32,7 +32,7 @@ public class Blaster : Weapon
     public float FireRate => fireRate;
     public float ShotSpeed => shotSpeed;
     public float Range => range;
-    public float DirectDamage => directDamage;
+    public DamageFalloff DirectDamage => directDamage;
     public float TrailSpacing => trailSpacing;
     public InkBlast Blast => blast;
     public Transform Muzzle => muzzle;
@@ -81,7 +81,7 @@ public class Blaster : Weapon
 
     void Fire(Vector3 from, Vector3 launch, Vector3 inherit, int team, ulong ownerId, bool authoritative)
     {
-        ProjectileManager.Fire(projectile, from, launch, shotSize, team, true, authoritative, ownerId, directDamage,
+        ProjectileManager.Fire(projectile, from, launch, shotSize, team, true, authoritative, ownerId, 0f, falloff: directDamage,
                                impactParticles: false, ballistics: ballistics, inherit: inherit, source: Source,
                                maxDistance: range, blast: blast, trailSpacing: trailSpacing, trailSize: trailSize);
     }

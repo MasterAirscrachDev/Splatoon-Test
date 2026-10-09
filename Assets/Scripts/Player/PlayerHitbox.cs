@@ -28,6 +28,7 @@ public class PlayerHitbox : MonoBehaviour
     CapsuleCollider capsule;
 
     public float Health => health;
+    public float HealDelay => healDelay;
     public float HealthNormalized => maxHealth > 0f ? health / maxHealth : 0f;
     public int Team => player != null ? player.Team : 0;
     public int LastHitTeam { get; private set; } // whose hit we took last (the damage ink's colour)

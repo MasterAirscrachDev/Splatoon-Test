@@ -94,7 +94,7 @@ public class ProjectileManager : MonoBehaviour
         s.ballistics = ballistics ?? Ballistics.Default;
         s.prefab = prefab;
         s.radius = template != null ? template.HitRadius : 0.12f;
-        s.damage = falloff != null ? falloff.maxDamage : damage;
+        s.damage = falloff != null ? falloff.damage : damage;
         s.falloff = falloff;
         s.splashSize = splashSize;
         s.team = team;

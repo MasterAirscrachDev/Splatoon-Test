@@ -133,7 +133,7 @@ GameObject:
   - component: {fileID: 1265196042155242072}
   - component: {fileID: 114069460458977127}
   m_Layer: 0
-  m_Name: Solar Blaster
+  m_Name: SolarBlaster
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -192,7 +192,32 @@ MonoBehaviour:
   fireRate: 0.9
   shotSpeed: 30
   range: 6
-  directDamage: 110
+  directDamage:
+    damage: 110
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.2
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
   inkCostPerShot: 80
   shotSize: 22
   trailSpacing: 0.45

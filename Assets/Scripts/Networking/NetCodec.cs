@@ -24,6 +24,7 @@ public static class NetCodec
         typeof(PlayerStateData), typeof(PlayerSpawnData), typeof(SplatData), typeof(SplatBatchData),
         typeof(TeleportData), typeof(ProjectileSpawnData), typeof(DamageData), typeof(SubData),
         typeof(SubDamageData), typeof(InkStrikeData), typeof(TeamAssignData), typeof(MatchEventData),
+        typeof(SceneLoadData),
     };
 
     const byte NullTag = 0;               // tags start at 1

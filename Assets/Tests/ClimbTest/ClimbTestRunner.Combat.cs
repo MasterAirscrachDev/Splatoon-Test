@@ -236,12 +236,13 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.1f, "hit");
         if (player.Hitbox.Health < fullHealth) Fail("friendly or misaddressed Damage was applied");
 
-        // Healing: none for 0.5s after a hit, then full in 6s (16.7/s), or 1.5s (66.7/s) submerged.
+        // Healing: none for the heal delay after a hit, then full in 6s (16.7/s), or 1.5s (66.7/s) submerged.
+        float delay = player.Hitbox.HealDelay;
         for (int i = 0; i < 2; i++)
             gm.Receive(NetMsg.Damage, new DamageData { targetSteamId = player.OwnerId, attackerSteamId = RemoteId, amount = amount, fromTeam = enemyTeam }, RemoteId);
         yield return Hold(Still, false, 0.05f, "heal");
         float hurt = player.Hitbox.Health;
-        yield return Hold(Still, false, 0.4f, "heal");
+        yield return Hold(Still, false, delay - 0.1f, "heal");
         if (player.Hitbox.Health > hurt + 0.01f) Fail($"healed during the cooldown ({hurt:F1} -> {player.Hitbox.Health:F1})");
 
         yield return Hold(Still, false, 0.2f, "heal");

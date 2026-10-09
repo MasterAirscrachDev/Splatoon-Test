@@ -491,7 +491,7 @@ public partial class ClimbTestRunner : MonoBehaviour
         yield return S("Frame rate: a jump peaks at the same height at 30, 75 and 144 fps; standing stays grounded every frame even at 1000 fps", Station.Lobby, FrameRateIndependence, "FrameRate,Swim");
         yield return S("Lobby: switching form glides the camera instead of snapping", Station.Lobby, CameraFormSwitch, "Camera,Swim");
         yield return S("Lobby: pooled projectiles splat where they land and are reused", Station.Lobby, ProjectilePooling, "Projectiles,Ink");
-        yield return S("Projectiles: speed/gravity curves retime a path without changing it (Ballistics.Faster too, with curves); fast shots can't skip hitboxes", Station.Lobby, ProjectileBallistics, "Projectiles");
+        yield return S("Projectiles: speed/gravity curves retime a path without changing it (Ballistics.Faster too, with curves); fast shots can't skip hitboxes; damage falls off along a curve over flight time", Station.Lobby, ProjectileBallistics, "Projectiles");
         yield return S("FlatWall: climb up and over the top", Station.FlatWall, ClimbUpAndOver, "Climb");
         yield return S("FlatWall: no input on the wall slides slowly without letting go", Station.FlatWall, HoldStillOnWall, "Climb");
         yield return S("FlatWall: climb down to the floor and swim away", Station.FlatWall, ClimbDownAndAway, "Climb,Swim");
@@ -529,6 +529,7 @@ public partial class ClimbTestRunner : MonoBehaviour
         yield return S("Spectating: no player of our own means the overhead view", Station.Lobby, SpectatorView, "Match,Camera");
         yield return S("Weapon: holding fire also drops 12-18 ink at our feet every 0.4s (shooters and the Blaster)", Station.Lobby, FeetInk, "Weapons,Ink");
         yield return S("Blaster: one straight shot that explodes at its range (or on a wall), inks around it; 125 direct, blast falls off with distance; replays are visual-only", Station.Lobby, BlasterWeapon, "Weapons,Projectiles,Blast,Combat,Net");
+        yield return S("Lobby flow: the kiosk opens the online menu as we walk up and closes it as we leave; the host's map switch sends everyone and loads it; no matches on the lobby map; a LoadScene loads it here; a scene's spare GameCore is destroyed", Station.Lobby, LobbyFlow, "Match,Net");
         yield return S("Net codec: every message type survives the trip byte for byte, far smaller than BinaryFormatter; unknown, cut-short, oversized or padded messages and unlisted types are refused", Station.Lobby, NetCodecMessages, "Net");
         yield return S("Ink seams: a splat near where two surfaces meet carries on across the join (same centre and size), not past its circle; far from it, or switched off, it stops at its own edge", Station.Lobby, SeamBridging, "Ink");
         yield return S("Ink on the GPU: a frame's splats paint in grouped dispatches (one per cluster, readbacks likewise), in the order they came", Station.Lobby, SplatGrouping, "Ink");

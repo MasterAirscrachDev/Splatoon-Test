@@ -2,11 +2,16 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using Steamworks;
 
 // Game manager: lobby, player spawning, team colours, scoring and network message routing.
 // Steam callbacks arrive off the main thread, so handlers touching Unity objects enqueue to
 // mainThread, drained in Update.
+// It lives for the whole game, on GameCore (see GameCoreBootstrap), and each scene that loads is
+// set up afresh: its surfaces, and our player: on our own outside a Steam lobby (free roam; the
+// lobby scene's kiosk hosts or joins), networked in one. Joining loads the host's scene; the host
+// moves everyone between scenes (SwitchMap); leaving goes back to the lobby scene, alone.
 public class NetGameManager : MonoBehaviour
 {
     public static NetGameManager Instance { get; private set; }
@@ -104,14 +109,11 @@ public class NetGameManager : MonoBehaviour
 
     void Awake()
     {
+        if (Instance != null && Instance != this) { Destroy(transform.root.gameObject); return; } // the game already has one
         Instance = this;
-        colourPair = RandomColourPair(); // this load's colours (joiners take the host's from its roster)
-
-        var all = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None); // sorted by path so ids match on every client
-        System.Array.Sort(all, (a, b) => HierarchyPath(a.transform).CompareTo(HierarchyPath(b.transform)));
-        surfaceManagers = all;
-        for (int i = 0; i < surfaceManagers.Length; i++)
-            surfaceManagers[i].SurfaceId = i;
+        if (!devMode) DontDestroyOnLoad(transform.root.gameObject); // GameCore, for the whole game
+        colourPair = RandomColourPair(); // this game's colours (joiners take the host's from its roster)
+        ScanSurfaces();
 
         if (devMode) Steam = SteamStatus.Unavailable;
         else
@@ -124,20 +126,17 @@ public class NetGameManager : MonoBehaviour
 
     void Start()
     {
+        if (Instance != this) return;
         input = new ControlLayer();
         input.Enable();
         input.GameControl.GameStart.performed += _ => OnGameStart();
-
-        if (devMode)
-        {
-            localPlayer = InstantiateEntity(Vector3.zero, PlayerMode.Client, 1, LocalPlayerName(), localId);
-            LocalPlayer = localPlayer;
-            players[localId] = localPlayer;
-        }
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        StartScene();
     }
 
     void OnDestroy()
     {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
         if (Instance == this) { Instance = null; LocalPlayer = null; }
         if (steamNet != null) steamNet.onSteamSetup -= OnSteamSetup;
         input?.Disable();
@@ -146,6 +145,7 @@ public class NetGameManager : MonoBehaviour
 
     void OnEnable()
     {
+        if (Instance != this) return; // a duplicate, on its way out
         SteamGlobal.OnLobbyUpdate += HandleLobbyUpdate;
         SteamGlobal.Bind((ushort)NetMsg.PlayerSpawn,   OnPlayerSpawnMsg);
         SteamGlobal.Bind((ushort)NetMsg.PlayerDespawn, OnPlayerDespawnMsg);
@@ -162,6 +162,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.Bind((ushort)NetMsg.SubDestroy,    OnSubDestroyMsg);
         SteamGlobal.Bind((ushort)NetMsg.SubDamage,     OnSubDamageMsg);
         SteamGlobal.Bind((ushort)NetMsg.InkStrike,     OnInkStrikeMsg);
+        SteamGlobal.Bind((ushort)NetMsg.LoadScene,     OnLoadSceneMsg);
         SurfaceInkManager.OnSplatApplied += OnLocalSplat;
     }
 
@@ -183,6 +184,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.UnBind((ushort)NetMsg.SubDestroy,    OnSubDestroyMsg);
         SteamGlobal.UnBind((ushort)NetMsg.SubDamage,     OnSubDamageMsg);
         SteamGlobal.UnBind((ushort)NetMsg.InkStrike,     OnInkStrikeMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.LoadScene,     OnLoadSceneMsg);
         SurfaceInkManager.OnSplatApplied -= OnLocalSplat;
     }
 
@@ -190,7 +192,7 @@ public class NetGameManager : MonoBehaviour
     public enum SteamStatus { Connecting, Ready, Unavailable }
     public SteamStatus Steam { get; private set; } = SteamStatus.Connecting;
     public bool DevMode => devMode;
-    public bool InLobby => localPlayer != null;
+    public bool InLobby => !devMode && SteamGlobal.thisLobby.Id.Value != 0; // a Steam lobby (not dev mode's local game)
 
     public struct LobbyInfo
     {
@@ -238,10 +240,105 @@ public class NetGameManager : MonoBehaviour
         return result;
     }
 
+    // Back to the lobby scene, on our own.
     public void LeaveLobby()
     {
-        SteamGlobal.LeaveLobby();
+        if (InLobby) SteamGlobal.LeaveLobby();
         ClearAll();
+        SceneLoader(LobbySceneIndex);
+    }
+
+    // ── Scenes ─────────────────────────────────────────────────────────────
+    public const int LobbySceneIndex = 0;                                       // first in the build settings
+    public static System.Action<int> SceneLoader = index => SceneManager.LoadScene(index); // tests stand in for it
+    public bool CanSwitchMap => IsHost && (InLobby || devMode);                // the host of a lobby (not on our own)
+    public static int SceneCount => SceneManager.sceneCountInBuildSettings;
+    public static string SceneName(int index) => System.IO.Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(index));
+
+    // Host: everyone to another scene, in free roam there (the match starts from the host menu).
+    public void SwitchMap(int buildIndex)
+    {
+        if (!CanSwitchMap || buildIndex < 0 || buildIndex >= SceneCount) return;
+        Send(NetMsg.LoadScene, new SceneLoadData { buildIndex = buildIndex });
+        SceneLoader(buildIndex);
+    }
+
+    void OnLoadSceneMsg(object data, SteamId from)
+    {
+        if (data is SceneLoadData d)
+            mainThread.Enqueue(() =>
+            {
+                if (!devMode && from != SteamGlobal.hostID) return; // only the host moves everyone
+                if (d.buildIndex < 0 || d.buildIndex >= SceneCount) return;
+                SceneLoader(d.buildIndex);
+            });
+    }
+
+    // Each scene: our player (dev mode's local one; on our own outside a lobby; networked in one).
+    void StartScene()
+    {
+        if (devMode)
+        {
+            localPlayer = InstantiateEntity(Vector3.zero, PlayerMode.Client, 1, LocalPlayerName(), localId);
+            LocalPlayer = localPlayer;
+            players[localId] = localPlayer;
+        }
+        else if (InLobby)
+        {
+            SpawnLocalPlayer(); // its spawn message starts the handshake with everyone else here
+            if (SteamGlobal.isHost) _ = SteamGlobal.UpdateLobbyData(); // joiners come to this scene
+        }
+        else SpawnSoloPlayer();
+    }
+
+    // The previous scene took its players with it: start this one afresh, in free roam.
+    void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        if (mode != LoadSceneMode.Single) return;
+        players.Clear();
+        lateJoiners.Clear();
+        localPlayer = null;
+        LocalPlayer = null;
+        pendingSplats.Clear();
+        if (InMatch) EnterPhase(new MatchEventData { phase = MatchPhase.FreeRoam, colourPair = colourPair });
+        InputGate.MatchLocked = false;
+        ScanSurfaces();
+        StartScene();
+    }
+
+    void ScanSurfaces()
+    {
+        var all = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None); // sorted by path so ids match on every client
+        System.Array.Sort(all, (a, b) => HierarchyPath(a.transform).CompareTo(HierarchyPath(b.transform)));
+        surfaceManagers = all;
+        for (int i = 0; i < surfaceManagers.Length; i++)
+            surfaceManagers[i].SurfaceId = i;
+    }
+
+    // Outside a lobby: just us, free to roam.
+    void SpawnSoloPlayer()
+    {
+        localId = 0;
+        localPlayer = InstantiateEntity(PickSpawnPoint(1), PlayerMode.Client, 1, LocalPlayerName(), localId);
+        LocalPlayer = localPlayer;
+        players[localId] = localPlayer;
+    }
+
+    void DropSoloPlayer()
+    {
+        if (localPlayer == null) return;
+        players.Remove(localId);
+        DestroyEntity(localPlayer);
+        localPlayer = null;
+        LocalPlayer = null;
+    }
+
+    // Just joined: to wherever the host is (the scene their lobby says), fresh.
+    void LoadHostScene()
+    {
+        int index = int.TryParse(SteamGlobal.thisLobby.GetData("scene"), out int i) && i >= 0 && i < SceneCount ? i : LobbySceneIndex;
+        DropSoloPlayer();
+        SceneLoader(index);
     }
 
     // ── Scoring ────────────────────────────────────────────────────────────
@@ -301,9 +398,11 @@ public class NetGameManager : MonoBehaviour
     // The host runs the timeline and broadcasts each phase; every client (host included) enters
     // it the same way. Results carry the host's final turf, so everyone sees the same outcome.
 
+    public bool CanStartMatch => IsHost && MapSettings.MatchesAllowed; // not on the lobby map
+
     public void StartGame()
     {
-        if (!IsHost || InMatch) return;
+        if (!CanStartMatch || InMatch) return;
         SetColourPair(RandomColourPair()); // new game, new colours (sent with the phase)
         BroadcastPhase(MatchPhase.Countdown, countdownTime);
     }
@@ -455,15 +554,18 @@ public class NetGameManager : MonoBehaviour
         {
             switch (ev)
             {
-                case LobbyEvent.LobbyCreated:
-                case LobbyEvent.JoinedLobby:
+                case LobbyEvent.LobbyCreated: // hosting, here: our solo player becomes the lobby's first
+                    DropSoloPlayer();
                     SpawnLocalPlayer();
+                    break;
+                case LobbyEvent.JoinedLobby:
+                    LoadHostScene();
                     break;
                 case LobbyEvent.PlayerLeft:
                     DespawnPlayer(who);
                     break;
-                case LobbyEvent.LobbyClosed:
-                    ClearAll();
+                case LobbyEvent.LobbyClosed: // the host left: back to the lobby, alone
+                    LeaveLobby();
                     break;
             }
         });
@@ -922,6 +1024,7 @@ public class NetGameManager : MonoBehaviour
         SteamId sender = (SteamId)from;
         switch (id)
         {
+            case NetMsg.LoadScene:       OnLoadSceneMsg(data, sender); break;
             case NetMsg.PlayerSpawn:     OnPlayerSpawnMsg(data, sender); break;
             case NetMsg.PlayerDespawn:   OnPlayerDespawnMsg(data, sender); break;
             case NetMsg.PlayerState:     OnPlayerStateMsg(data, sender); break;

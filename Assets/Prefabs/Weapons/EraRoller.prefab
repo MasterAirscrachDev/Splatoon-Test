@@ -299,18 +299,62 @@ MonoBehaviour:
   groundPitch: 25
   groundSpeed: {x: 4.5, y: 7}
   groundDamage:
-    maxDamage: 31.25
-    minDamage: 8.75
-    scaleTime: 0.5
+    damage: 31.25
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: -1.44
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.5
+        value: 0.28
+        inSlope: -1.44
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
   groundSplat: 14
   airDroplets: 12
   airFan: 7
   airPitch: 20
   airSpeed: {x: 0, y: 12}
   airDamage:
-    maxDamage: 20
-    minDamage: 7.5
-    scaleTime: 0.5
+    damage: 20
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: -1.25
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.5
+        value: 0.375
+        inSlope: -1.25
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
   airSplat: 12
   rollDamage: 25
   rollStartSpeed: 1.2

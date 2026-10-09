@@ -47,7 +47,8 @@ public enum NetMsg : ushort
     SubSpawn,        // a player placed/threw a sub (beacon, sprinkler), or it landed
     SubDestroy,      // a sub broke, expired, or (beacon) was landed on
     SubDamage,       // a hit on someone's sub, sent to its owner
-    InkStrike        // a player called in an Inkstrike (special)
+    InkStrike,       // a player called in an Inkstrike (special)
+    LoadScene        // the host moving everyone to another scene (SceneLoadData)
 }
 
 // Where a player sits in the roster. Alpha/Beta match the team numbers used everywhere else.
@@ -96,6 +97,13 @@ public class SplatData
     public NVector2 uv;
     public int splashSize;
     public int team;
+}
+
+// The host's map switch: everyone loads this scene (build index).
+[System.Serializable]
+public class SceneLoadData
+{
+    public int buildIndex;
 }
 
 // A net tick's worth of our splats in one message, as compact flat arrays (index i is one splat).

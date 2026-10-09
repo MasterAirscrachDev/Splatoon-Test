@@ -196,7 +196,41 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   splashSize: 11
-  damage: 24
+  damage:
+    damage: 24
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.25
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.65179443
+        value: 0.80249023
+        inSlope: -1.2062225
+        outSlope: -1.2062225
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0.10210308
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
   inkCostPerShot: 16
   projectile: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   muzzle: {fileID: 1508700717447438630}

@@ -619,7 +619,8 @@ public static class MatchHUDBuilder
         Button percent = MenuButton("Percentages", main, "Show percentages", new Vector2(0, -240), new Vector2(360, 58), out TextMeshProUGUI percentLabel);
         Button fill    = MenuButton("FillSpecial", main, "Fill special",     new Vector2(0, -310), new Vector2(360, 58), out _);
         Button start   = MenuButton("StartGame",   main, "Start game",       new Vector2(0, -380), new Vector2(360, 58), out TextMeshProUGUI startLabel);
-        Button close   = MenuButton("Close",       main, "Close",            new Vector2(0, -462), new Vector2(180, 46), out _);
+        Button close   = MenuButton("Close",       main, "Close",            new Vector2(0, -532), new Vector2(180, 46), out _);
+        main.sizeDelta = new Vector2(440, 620);
         TextMeshProUGUI hint = Text("Hint", main, "G / Esc to close", 16, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
         Prompt(hint, "{GameControl/GameStart} / {GameControl/Cancel} to close");
         Place(hint.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0, 10), new Vector2(300, 24));
@@ -673,6 +674,58 @@ public static class MatchHUDBuilder
 
         main.gameObject.SetActive(false);
         teamPanel.gameObject.SetActive(false);
+        BuildMapSwitch(menuRoot, main, menu);
+    }
+
+    // The host menu's "Change map" button (under Start game) and its panel: a button per scene in
+    // the build, cloned at runtime from a template.
+    static void BuildMapSwitch(RectTransform menuRoot, RectTransform main, HostMenu menu)
+    {
+        Button maps = MenuButton("ChangeMap", main, "Change map", new Vector2(0, -450), new Vector2(360, 58), out _);
+        RectTransform panel = Panel("MapPanel", menuRoot, new Vector2(440, 520));
+        Title(panel, "CHANGE MAP");
+        TextMeshProUGUI note = Text("Hint", panel, "Everyone in the lobby goes there", 18, new Color(1f, 1f, 1f, 0.6f), TextAlignmentOptions.Center, false, useOutline: false);
+        Place(note.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -68), new Vector2(400, 26));
+        Button template = MenuButton("MapButton", panel, "Map", new Vector2(0, -120), new Vector2(360, 58), out _);
+        Button back = MenuButton("Back", panel, "Back", new Vector2(0, -462), new Vector2(180, 46), out _);
+        var so = new SerializedObject(menu);
+        so.FindProperty("mapsButton").objectReferenceValue = maps;
+        so.FindProperty("mapPanel").objectReferenceValue = panel.gameObject;
+        so.FindProperty("mapButtonTemplate").objectReferenceValue = template;
+        so.FindProperty("mapsBackButton").objectReferenceValue = back;
+        so.ApplyModifiedPropertiesWithoutUndo();
+        template.gameObject.SetActive(false);
+        panel.gameObject.SetActive(false);
+    }
+
+    // Adds the map switch to the existing prefab's host menu, keeping the rest as it is.
+    [MenuItem("Tools/UI/Add Map Switch To Host Menu")]
+    static void AddMapSwitch()
+    {
+        circle  = EnsureCircleSprite();
+        rounded = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        outline = AssetDatabase.LoadAssetAtPath<Material>(OutlineMat);
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            var menuRoot = (RectTransform)root.transform.Find("HostMenu");
+            var main = (RectTransform)menuRoot.Find("MainPanel");
+            Transform oldButton = main.Find("ChangeMap");
+            if (oldButton != null) Object.DestroyImmediate(oldButton.gameObject);
+            Transform oldPanel = menuRoot.Find("MapPanel");
+            if (oldPanel != null) Object.DestroyImmediate(oldPanel.gameObject);
+            // Room for one more button: the panel grows, Close moves down.
+            main.sizeDelta = new Vector2(main.sizeDelta.x, 620);
+            var close = (RectTransform)main.Find("Close");
+            if (close != null) close.anchoredPosition = new Vector2(close.anchoredPosition.x, -532);
+            BuildMapSwitch(menuRoot, main, menuRoot.GetComponent<HostMenu>());
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Added the map switch to {PrefabPath}");
     }
 
     // ── Map (hold Tab) ─────────────────────────────────────────────────────

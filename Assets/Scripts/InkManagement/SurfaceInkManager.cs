@@ -5,13 +5,14 @@ using UnityEngine.Rendering;
 // ink normal map, and scoring.
 public class SurfaceInkManager : MonoBehaviour
 {
-    [SerializeField] float pixelsPerUnit = 32f;
-    [SerializeField] float splatScale = 1.0f;   // splat radius multiplier for this surface
+    [SerializeField] float pixelsPerUnit = 32f;  // ink texels per metre of the UV layout (up to MaxTextureSize)
+    [SerializeField] float splatScale = 1.0f;   // splat size multiplier (2.5 on Map1: in world terms, see TexelRadius)
     [SerializeField] float maxFloorAngle = 50f; // steeper faces count as walls (excluded from top-down score)
 
     float inkNormalStrength = 0.5f;             // 0 disables the dynamic normal map
     const float ReferencePixelsPerUnit = 32f;   // inkNormalStrength was tuned at this density
-    float inkNoiseScale;                        // derived from splatScale, see CalculateNoiseScale
+    float inkNoiseScale;                        // derived from the splat size in texels, see CalculateNoiseScale
+    float texelScale = 1f;                      // splatScale converted to this surface's texels (see TexelRadius)
     const float InkSeamHeight = 0.7f;           // ridge where two teams' ink meets, relative to full coverage
     public float PixelsPerUnit => pixelsPerUnit;
 
@@ -59,19 +60,11 @@ public class SurfaceInkManager : MonoBehaviour
         gameManager = NetGameManager.Instance;
 
         Renderer rend = GetComponent<Renderer>();
-        if (rend != null)
-        {
-            Bounds b = rend.bounds;
-            float maxSide = Mathf.Max(b.size.x, b.size.y, b.size.z);
-            size = Mathf.Clamp(Mathf.NextPowerOfTwo(Mathf.CeilToInt(maxSide * pixelsPerUnit)), 64, 2048);
-        }
-        else
-        {
-            size = 256;
-        }
+        size = TextureSizeFor(GetSharedMesh(), transform, rend, pixelsPerUnit);
 
-        inkNoiseScale = CalculateNoiseScale(splatScale);
         BuildCoverageMasks();
+        texelScale = splatScale * (TexelsPerMetre > 0f ? TexelsPerMetre / ReferenceTexelsPerMetre : 1f);
+        inkNoiseScale = CalculateNoiseScale(texelScale);
         InitializeSplatCompute();
         if (rend != null)
         {
@@ -89,6 +82,54 @@ public class SurfaceInkManager : MonoBehaviour
         rend.material.SetColor("_AlphaColor", gameManager.AlphaTeam);
         rend.material.SetColor("_BetaColor", gameManager.BetaTeam);
     }
+
+    // ── Ink resolution ───────────────────────────────────────────────────────
+    // The texture is sized from how many metres its UV square covers (the UV layout's scale), not
+    // from the object's size: surfaces laid out at the same UV density (Map1's convention: 80m per
+    // UV unit) get the same texels per metre, so the same ink sharpness and, as splat radii are in
+    // texels (splashSize x splatScale), the same splat size in the world, however big the object.
+    // And splat sizes are converted through this surface's actual texels per metre: a splat is the
+    // same size in the world on any surface (whatever its scale, UV density or texture size), as it
+    // is on Map1's reference resolution; resolution only changes how sharp the ink is.
+    public const int MaxTextureSize = 2048;
+    public const float ReferenceTexelsPerMetre = 25.6f; // Map1: 2048 texels over its 80m UV square
+
+    // A splat's radius here, in texels.
+    int TexelRadius(float splashSize) => Mathf.RoundToInt(splashSize * texelScale);
+    public float SplatMetresPerSize => splatScale / ReferenceTexelsPerMetre; // a splat's radius per unit of splash size, in the world
+
+    // Metres of the surface per UV unit (from the mesh's areas); 0 without usable UVs.
+    public static float UVSpanMetres(Mesh mesh, Transform t)
+    {
+        if (mesh == null || !mesh.isReadable) return 0f;
+        Vector2[] uvs = mesh.uv;
+        Vector3[] verts = mesh.vertices;
+        int[] tris = mesh.triangles;
+        if (uvs == null || uvs.Length != verts.Length) return 0f;
+        double world = 0, uv = 0;
+        for (int i = 0; i < tris.Length; i += 3)
+        {
+            Vector3 a = t.TransformPoint(verts[tris[i]]), b = t.TransformPoint(verts[tris[i + 1]]), c = t.TransformPoint(verts[tris[i + 2]]);
+            world += Vector3.Cross(b - a, c - a).magnitude * 0.5;
+            Vector2 ua = uvs[tris[i]], ub = uvs[tris[i + 1]], uc = uvs[tris[i + 2]];
+            uv += Mathf.Abs((ub.x - ua.x) * (uc.y - ua.y) - (uc.x - ua.x) * (ub.y - ua.y)) * 0.5;
+        }
+        return uv > 1e-9 ? (float)System.Math.Sqrt(world / uv) : 0f;
+    }
+
+    // The texture's side: the UV square's metres x texels per metre (falling back on the object's
+    // size without UVs), a power of two, at most MaxTextureSize.
+    public static int TextureSizeFor(Mesh mesh, Transform t, Renderer rend, float texelsPerMetre)
+    {
+        float span = UVSpanMetres(mesh, t);
+        if (span <= 0f && rend != null) { Bounds b = rend.bounds; span = Mathf.Max(b.size.x, b.size.y, b.size.z); }
+        if (span <= 0f) return 256;
+        return Mathf.Clamp(Mathf.NextPowerOfTwo(Mathf.CeilToInt(span * texelsPerMetre)), 64, MaxTextureSize);
+    }
+
+    public float SplatScale => splatScale;
+    public float TexelsPerMetre => texelArea > 0f ? 1f / Mathf.Sqrt(texelArea) : 0f;
+    public int TextureSize => size;
 
     // Linear fit through splatScale 5 -> 0.025 and 1.5 -> 0.05, keeping bump grain proportional to splat size.
     static float CalculateNoiseScale(float splatScale)
@@ -312,7 +353,7 @@ public class SurfaceInkManager : MonoBehaviour
         pendingSplats.Add(new PendingSplat
         {
             x = Mathf.FloorToInt(texCoords.x * size), y = Mathf.FloorToInt(texCoords.y * size), // may be off the texture (bridged)
-            radius = Mathf.RoundToInt(splashSize * splatScale), team = team,
+            radius = TexelRadius(splashSize), team = team,
             turfTeam = broadcast ? team : 0, // our own splats charge our special
         });
 
@@ -396,7 +437,7 @@ public class SurfaceInkManager : MonoBehaviour
         FlushSplats(); // ink first, so its normals don't overwrite this indent later
         int x = (int)(texCoords.x * size);
         int y = (int)(texCoords.y * size);
-        int texRadius = Mathf.Max(1, Mathf.RoundToInt(radius * splatScale));
+        int texRadius = Mathf.Max(1, TexelRadius(radius));
 
         ComputeBounds(x, y, texRadius + 2, out int minX, out int minY, out int groupsX, out int groupsY);
 
@@ -542,8 +583,8 @@ public class SurfaceInkManager : MonoBehaviour
     void Bridge(Vector3 centre, Vector3 normal, int splashSize, int team)
     {
         if (TexelSize <= 0f) return;
-        float radius = splashSize * splatScale * TexelSize;            // metres
-        float reach = (splashSize * splatScale * 1.4f + 4f) * TexelSize; // with the warp and feather (see SplatBox)
+        float radius = TexelRadius(splashSize) * TexelSize;            // metres
+        float reach = (TexelRadius(splashSize) * 1.4f + 4f) * TexelSize; // with the warp and feather (see SplatBox)
         int n = Physics.OverlapSphereNonAlloc(centre, reach, nearbySurfaces, 1 << gameObject.layer, QueryTriggerInteraction.Ignore);
         for (int i = 0; i < n; i++)
         {
@@ -551,7 +592,7 @@ public class SurfaceInkManager : MonoBehaviour
             if (other == null || other == this || other.TexelSize <= 0f) continue;
             if (!other.NearestHit(nearbySurfaces[i], centre, normal, reach, out RaycastHit near)) continue;
             if (Vector3.Dot(near.normal, normal) < BridgeFacing) continue;
-            int size = Mathf.RoundToInt(radius / other.TexelSize / other.splatScale);
+            int size = Mathf.RoundToInt(radius / other.TexelSize / other.texelScale);
             if (size > 0) other.Splat(other.UVToward(near, centre), size, team);
         }
     }

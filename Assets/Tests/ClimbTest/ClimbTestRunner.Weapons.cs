@@ -101,6 +101,25 @@ public partial class ClimbTestRunner
         Note($"150 m/s shot: {(sent.Any(m => m.id == NetMsg.Damage && m.to == FoeId) ? "hit" : "missed")} (moves 2m per frame)");
         if (!sent.Any(m => m.id == NetMsg.Damage && m.to == FoeId)) Fail("a 150 m/s shot passed through the hitbox");
 
+        // Damage falls off with flight time, along the weapon's curve: full close up, the curve's floor far off.
+        var falloff = new DamageFalloff(40f, DamageFalloff.HoldThenFall(0.1f, 0.4f, 0.5f));
+        var straight = new Ballistics { gravityOverTime = AnimationCurve.Constant(0f, 1f, 0f) };
+        float Hit(float distance)
+        {
+            float before = sent.Where(m => m.id == NetMsg.Damage && m.to == FoeId).Sum(m => ((DamageData)m.data).amount);
+            ProjectileManager.Fire(projectilePrefab, foe.BodyCenter - across * distance, across * 24f, 10, player.Team, ownerId: player.OwnerId, ballistics: straight, falloff: falloff);
+            return before;
+        }
+        float DamageSince(float before) => sent.Where(m => m.id == NetMsg.Damage && m.to == FoeId).Sum(m => ((DamageData)m.data).amount) - before;
+        float b0 = Hit(1f);
+        yield return Hold(Still, false, 0.3f, "falloff");
+        float near = DamageSince(b0);
+        float b1 = Hit(14f);
+        yield return Hold(Still, false, 0.9f, "falloff");
+        float farHit = DamageSince(b1);
+        Note($"falloff 40 x (1 until 0.1s, 0.5 from 0.4s): 1m away took {near:0.#}, 14m away (0.58s) took {farHit:0.#}");
+        if (Mathf.Abs(near - 40f) > 0.5f || Mathf.Abs(farHit - 20f) > 0.5f) Fail("shot damage didn't follow its falloff curve");
+
         // Grates let ink through (the Projectile layer ignores MapGrate in the physics matrix).
         GameObject grate = GameObject.CreatePrimitive(PrimitiveType.Cube);
         grate.layer = LayerMask.NameToLayer("MapGrate");
@@ -261,7 +280,7 @@ public partial class ClimbTestRunner
         float direct = DamageTo(FoeDirect), beside = DamageTo(FoeSide), far = DamageTo(FoeFar);
         bool inkedAround = OnFloor(floorUnder + side * 1f) == player.Team;
         Note($"direct hit {direct:0}, beside the blast {beside:0} (core {blaster.Blast.coreDamage:0} -> edge {blaster.Blast.edgeDamage:0}), out of reach {far:0}");
-        if (Mathf.Abs(direct - blaster.DirectDamage) > 0.01f) Fail("a direct hit didn't do its damage (only)");
+        if (Mathf.Abs(direct - blaster.DirectDamage.damage) > 0.01f) Fail("a close direct hit didn't do its full damage (only)");
         if (beside < blaster.Blast.edgeDamage - 0.01f || beside > blaster.Blast.coreDamage + 0.01f) Fail("the blast didn't hurt the enemy beside it by distance");
         if (far > 0f) Fail("the blast hurt an enemy out of its reach");
         if (!inkedAround) Fail("the blast didn't ink the floor around it");
@@ -353,8 +372,8 @@ public partial class ClimbTestRunner
         if (Mathf.Abs(flickCost - roller.FlickInkCost * 0.001f) > 0.005f) Fail("the flick didn't cost its ink");
         DamageFalloff groundDamage = roller.GroundDamage;
         if (HitsTo(Foe) != 1) Fail("the flick didn't hit the enemy exactly once");
-        if (DamageTo(Foe) > groundDamage.maxDamage + 0.01f || DamageTo(Foe) < groundDamage.minDamage - 0.01f) Fail("the flick's damage is outside its falloff range");
-        if (groundDamage.scaleTime > 0f && DamageTo(Foe) >= groundDamage.maxDamage - 0.01f) Fail("the flick didn't lose damage on its way 3m out");
+        if (DamageTo(Foe) > groundDamage.damage + 0.01f || DamageTo(Foe) < groundDamage.MinDamage - 0.01f) Fail("the flick's damage is outside its falloff range");
+        if (groundDamage.MinDamage < groundDamage.damage && DamageTo(Foe) >= groundDamage.damage - 0.01f) Fail("the flick didn't lose damage on its way 3m out");
         Despawn(Foe);
 
         // Aimed with the view: looking up raises the flick.

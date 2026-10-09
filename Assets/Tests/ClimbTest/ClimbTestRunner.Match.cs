@@ -447,7 +447,7 @@ public partial class ClimbTestRunner
         for (int i = 0; i < 3; i++) yield return null; // their Start
         RaycastHit Down(Vector3 at, SurfaceInkManager on) { on.GetComponent<Collider>().Raycast(new Ray(at + Vector3.up, Vector3.down), out RaycastHit h, 2f); return h; }
         int TeamAt(SurfaceInkManager on, Vector3 at) { RaycastHit h = Down(at, on); return h.collider != null ? on.getSurfaceTeam(on.UVFromHit(h)) : -1; }
-        int size = Mathf.RoundToInt(1f / a.TexelSize); // about 1m across... in radius: splatScale 1
+        int size = Mathf.RoundToInt(1f / a.SplatMetresPerSize); // a splat about 1m in radius
 
         // 0.4m from the join: it carries on over it.
         Vector3 near = origin + right * 4.6f + forward * 2f;
@@ -462,7 +462,7 @@ public partial class ClimbTestRunner
         SurfaceInkManager.BridgeSeams = true;
         yield return Hold(Still, false, 0.3f, "readback");
 
-        float radius = size * a.TexelSize;
+        float radius = size * a.SplatMetresPerSize;
         int ours = player.Team;
         var probes = new (string what, int team, int want)[]
         {
@@ -521,6 +521,106 @@ public partial class ClimbTestRunner
         if (atFirst != enemyTeam || atSecond != player.Team) Fail("splats in one frame didn't paint in order");
         if (atCleared != 0) Fail("a fill after a splat didn't clear it");
         floor.FillRegion(new Rect(0, 0, 1, 1), 0);
+        NetGameManager.SendOverride = null;
+    }
+
+    IEnumerator LobbyFlow()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        LobbyMenu menu = FindFirstObjectByType<LobbyMenu>(FindObjectsInactive.Include);
+        if (menu == null) { Fail("no LobbyMenu in the scene"); yield break; }
+        CaptureSends();
+        var loads = new List<int>();
+        System.Action<int> realLoader = NetGameManager.SceneLoader;
+        NetGameManager.SceneLoader = i => loads.Add(i); // no real loads here: this scene is the test
+
+        // The kiosk: walk up, it opens; walk away, it closes.
+        Vector3 forward = Vector3.ProjectOnPlane(player.transform.forward, Vector3.up).normalized;
+        var kioskGo = new GameObject("TestKiosk");
+        kioskGo.transform.position = player.transform.position + forward * 5f;
+        kioskGo.SetActive(false);
+        LobbyKiosk kiosk = kioskGo.AddComponent<LobbyKiosk>();
+        typeof(LobbyKiosk).GetField("menu", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(kiosk, menu);
+        kioskGo.SetActive(true);
+        yield return Hold(Still, false, 0.2f, "kiosk");
+        bool closedAway = !menu.IsOpen;
+        yield return HoldUntil(Fwd, false, 2f, "walk up", f => kiosk.PlayerInside);
+        yield return Hold(Still, false, 0.1f, "kiosk");
+        bool openedAt = menu.IsOpen;
+        yield return HoldUntil(Back, false, 2f, "walk away", f => !kiosk.PlayerInside);
+        yield return Hold(Still, false, 0.1f, "kiosk");
+        bool closedLeaving = !menu.IsOpen;
+        Destroy(kioskGo);
+        Note($"kiosk: {(closedAway ? "closed" : "OPEN")} from afar, {(openedAt ? "opened" : "NOT opened")} walking up, {(closedLeaving ? "closed" : "STILL OPEN")} walking away");
+        if (!closedAway || !openedAt || !closedLeaving) Fail("the kiosk didn't open the online menu at it, and close it away from it");
+
+        // The host's map switch: everyone told, and loaded here.
+        HostMenu host = FindFirstObjectByType<HostMenu>(FindObjectsInactive.Include);
+        int scenes = NetGameManager.SceneCount;
+        string mapList = "";
+        if (host != null && gm.CanSwitchMap && scenes > 0)
+        {
+            host.SetOpen(true);
+            host.OpenMaps();
+            yield return null;
+            mapList = string.Join(", ", host.MapButtons.Select(b => b.GetComponentInChildren<TMPro.TMP_Text>().text));
+            int buttons = host.MapButtons.Count;
+            sent.Clear();
+            host.MapButtons[scenes - 1].onClick.Invoke();
+            yield return null;
+            var told = sent.Where(m => m.id == NetMsg.LoadScene).Select(m => ((SceneLoadData)m.data).buildIndex).ToList();
+            Note($"host menu maps: {mapList}; picking the last sent {string.Join(",", told)} and loaded {string.Join(",", loads)}; menu {(host.IsOpen ? "OPEN" : "closed")}");
+            if (buttons != scenes) Fail("the host menu doesn't list every scene in the build");
+            if (told.Count != 1 || told[0] != scenes - 1 || loads.Count != 1 || loads[0] != scenes - 1) Fail("switching map didn't tell everyone and load it");
+            if (host.IsOpen) { host.SetOpen(false); Fail("the host menu stayed open after switching map"); }
+        }
+        else Fail($"no map switch to test (host menu {(host != null)}, can switch {gm.CanSwitchMap}, scenes {scenes})");
+
+        // On the lobby map (no matches): Start game is off, and starting does nothing.
+        if (host != null)
+        {
+            var lobbyMap = new GameObject("TestLobbyMap").AddComponent<MapSettings>();
+            lobbyMap.Set(false);
+            host.SetOpen(true);
+            yield return null;
+            bool offInLobby = !host.StartButton.interactable, couldStart = gm.CanStartMatch;
+            string label = host.StartButtonText;
+            gm.StartGame();
+            yield return null;
+            bool started = gm.InMatch;
+            if (started) gm.EndMatch();
+            Destroy(lobbyMap.gameObject);
+            yield return null;
+            bool onAgain = host.StartButton.interactable && gm.CanStartMatch;
+            host.SetOpen(false);
+            Note($"lobby map: start button {(offInLobby ? "off" : "ON")} (\"{label}\"), StartGame {(started ? "STARTED a match" : "did nothing")}; on another map it's {(onAgain ? "on" : "STILL OFF")}");
+            if (!offInLobby || couldStart || started) Fail("a match could be started on the lobby map");
+            if (!onAgain) Fail("Start game stayed off after leaving the lobby map");
+        }
+
+        // A LoadScene from the host loads it here; nonsense indices don't.
+        loads.Clear();
+        gm.Receive(NetMsg.LoadScene, new SceneLoadData { buildIndex = 0 }, 4401);
+        gm.Receive(NetMsg.LoadScene, new SceneLoadData { buildIndex = 999 }, 4401);
+        yield return null;
+        Note($"received LoadScene 0 and 999: loaded {string.Join(",", loads)}");
+        if (loads.Count != 1 || loads[0] != 0) Fail("a LoadScene message didn't load just the valid scene");
+
+        // A scene's GameCore, with one already running: destroyed, not started.
+        var spare = new GameObject("SpareGameCore");
+        spare.SetActive(false);
+        var bootGo = new GameObject("SpareBoot");
+        bootGo.SetActive(false);
+        GameCoreBootstrap boot = bootGo.AddComponent<GameCoreBootstrap>();
+        typeof(GameCoreBootstrap).GetField("gameCore", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(boot, spare);
+        bootGo.SetActive(true);
+        yield return null;
+        bool spareGone = spare == null;
+        Note($"spare GameCore {(spareGone ? "destroyed" : "STILL THERE")}, the game's manager {(NetGameManager.Instance == gm ? "unchanged" : "REPLACED")}");
+        if (!spareGone || NetGameManager.Instance != gm) Fail("a scene's spare GameCore wasn't destroyed");
+        Destroy(bootGo);
+
+        NetGameManager.SceneLoader = realLoader;
         NetGameManager.SendOverride = null;
     }
 

@@ -3,9 +3,9 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Placeholder front end until there's a hub: host a public lobby, or join one from the list.
-// Shown while not in a lobby (never in dev mode). With autoHostInEditor, the editor hosts as soon
-// as Steam is ready, skipping the menu.
+// The online menu, opened at the lobby scene's kiosk (LobbyKiosk) and closed by walking away or
+// Cancel (never in dev mode). On our own: host a public lobby, or join one from the list. In a
+// lobby: who it belongs to, and leaving it (back to the lobby scene, alone).
 public class LobbyMenu : MonoBehaviour
 {
     [SerializeField] GameObject screen;
@@ -13,31 +13,47 @@ public class LobbyMenu : MonoBehaviour
     [SerializeField] TMP_Text status;
     [SerializeField] LobbyRow rowTemplate;  // cloned per lobby, under the list content
     [SerializeField] GameObject emptyLabel; // shown when the list is empty
-    [SerializeField] bool autoHostInEditor;
     [SerializeField] float autoRefreshInterval = 10f;
 
     readonly List<LobbyRow> rows = new List<LobbyRow>();
-    bool busy, refreshing, wasReady, autoHosted;
+    bool busy, refreshing, wasReady, opened;
     float nextRefresh;
+    ControlLayer input; // Cancel closes it
+    TMP_Text hostLabel;
 
     public bool ForceShow { get; set; } // tests: show regardless (dev mode always has a local player)
     public bool IsShown => screen.activeSelf;
+    public bool IsOpen => opened;
+    public string HostButtonText => hostLabel != null ? hostLabel.text : "";
+
+    public void Open() => opened = true;
+    public void Close() => opened = false;
     public bool EmptyShown => emptyLabel.activeSelf;
     public IReadOnlyList<LobbyRow> Rows => rows;
     public string Status => status.text;
 
     void Awake()
     {
-        hostButton.onClick.AddListener(Host);
+        hostButton.onClick.AddListener(HostOrLeave);
         refreshButton.onClick.AddListener(Refresh);
+        hostLabel = hostButton.GetComponentInChildren<TMP_Text>(true);
         rowTemplate.gameObject.SetActive(false);
         screen.SetActive(false);
+        input = new ControlLayer();
+        input.GameControl.Enable();
+    }
+
+    void OnDestroy()
+    {
+        GameCursor.Close(this);
+        input?.Dispose();
     }
 
     void Update()
     {
         NetGameManager gm = NetGameManager.Instance;
-        bool show = ForceShow || gm != null && !gm.InLobby && !gm.DevMode;
+        if (opened && input.GameControl.Cancel.WasPressedThisFrame()) opened = false;
+        bool show = ForceShow || opened && gm != null && !gm.DevMode;
         if (screen.activeSelf != show)
         {
             screen.SetActive(show);
@@ -46,6 +62,10 @@ public class LobbyMenu : MonoBehaviour
         if (!show) return;
 
         if (ForceShow || gm == null) return; // tests drive the list directly
+
+        if (gm.InLobby) { ShowOwnLobby(); return; }
+        refreshButton.gameObject.SetActive(true);
+        SetHostLabel("Host");
 
         bool ready = gm.Steam == NetGameManager.SteamStatus.Ready;
         hostButton.interactable = refreshButton.interactable = ready && !busy;
@@ -58,10 +78,34 @@ public class LobbyMenu : MonoBehaviour
         if (!wasReady)
         {
             wasReady = true;
-            if (autoHostInEditor && Application.isEditor && !autoHosted) { autoHosted = true; Host(); return; }
             Refresh();
         }
         else if (!busy && !refreshing && Time.unscaledTime >= nextRefresh) Refresh();
+    }
+
+    // In a lobby: whose it is, and a way out (the list is for finding one).
+    void ShowOwnLobby()
+    {
+        foreach (LobbyRow row in rows) row.gameObject.SetActive(false);
+        emptyLabel.SetActive(false);
+        refreshButton.gameObject.SetActive(false);
+        hostButton.interactable = true;
+        SetHostLabel("Leave lobby");
+        string host = SteamGlobal.thisLobby.GetData("host");
+        int count = NetGameManager.Instance.Players.Count;
+        SetStatus($"In {(SteamGlobal.isHost ? "your" : string.IsNullOrEmpty(host) ? "a" : host + "'s")} lobby: {count} player{(count == 1 ? "" : "s")}.");
+    }
+
+    void SetHostLabel(string text)
+    {
+        if (hostLabel != null && hostLabel.text != text) hostLabel.text = text;
+    }
+
+    void HostOrLeave()
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        if (gm != null && gm.InLobby) { opened = false; gm.LeaveLobby(); return; }
+        Host();
     }
 
     async void Host()
