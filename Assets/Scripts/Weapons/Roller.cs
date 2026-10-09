@@ -31,7 +31,7 @@ public class Roller : Weapon
     [SerializeField] float groundFan = 70f;           // degrees across
     [SerializeField] float groundPitch = 5f;          // degrees up
     [SerializeField] Vector2 groundSpeed = new Vector2(4.5f, 7f);
-    [SerializeField] float groundDamage = 80f;        // once per enemy per flick
+    [SerializeField] DamageFalloff groundDamage = new DamageFalloff(125f, 35f, 0.5f); // once per enemy per flick, weaker the further it's flown
     [SerializeField] int groundSplat = 14;
 
     [Header("Air flick: narrow and long")]
@@ -39,7 +39,7 @@ public class Roller : Weapon
     [SerializeField] float airFan = 6f;
     [SerializeField] float airPitch = 20f;
     [SerializeField] Vector2 airSpeed = new Vector2(9f, 17f); // spread nearest to furthest, so they land along a line
-    [SerializeField] float airDamage = 60f;
+    [SerializeField] DamageFalloff airDamage = new DamageFalloff(80f, 30f, 0.5f);
     [SerializeField] int airSplat = 12;
 
     [Header("Rolling")]
@@ -93,8 +93,8 @@ public class Roller : Weapon
     public float RollInkSpent { get; private set; } // tests
     public bool LastFlickInAir { get; private set; }
     public Vector3[] LastFlick { get; private set; } // launch velocities of the last flick (tests)
-    public float GroundDamage => groundDamage;
-    public float AirDamage => airDamage;
+    public DamageFalloff GroundDamage => groundDamage;
+    public DamageFalloff AirDamage => airDamage;
     public float RollDamage => rollDamage;
     public float RollSpeed => rollSpeed;
     public float RollStartSpeed => rollStartSpeed;
@@ -300,10 +300,10 @@ public class Roller : Weapon
         NetGameManager.Instance?.BroadcastShots(player, origin, inherit, velocities, sizes, visible);
     }
 
-    void Fire(Vector3 from, Vector3 launch, Vector3 inherit, int size, int team, ulong ownerId, bool authoritative, float damage, HashSet<Object> hits)
+    void Fire(Vector3 from, Vector3 launch, Vector3 inherit, int size, int team, ulong ownerId, bool authoritative, DamageFalloff damage, HashSet<Object> hits)
     {
-        ProjectileManager.Fire(projectile, from, launch, size, team, true, authoritative, ownerId, damage,
-                               ballistics: paced ?? ballistics, inherit: inherit, source: Source, hitGroup: hits, visualScale: dropletScale);
+        ProjectileManager.Fire(projectile, from, launch, size, team, true, authoritative, ownerId, damage?.maxDamage ?? 0f,
+                               ballistics: paced ?? ballistics, falloff: damage, inherit: inherit, source: Source, hitGroup: hits, visualScale: dropletScale);
     }
 
     // Their flick, visual-only here, with the swing played from the top (the droplets leave at the
@@ -328,7 +328,7 @@ public class Roller : Weapon
             Flicks++;
         }
         for (int i = 0; i < n; i++)
-            Fire(d.origin, new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]), inherit, d.splashSizes[i], d.team, d.shooterSteamId, false, 0f, null);
+            Fire(d.origin, new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]), inherit, d.splashSizes[i], d.team, d.shooterSteamId, false, null, null);
     }
 
     // A row of splats across the drum, onto whatever's under it.

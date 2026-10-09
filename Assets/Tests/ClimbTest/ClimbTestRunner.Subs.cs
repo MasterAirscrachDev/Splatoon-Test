@@ -335,7 +335,8 @@ public partial class ClimbTestRunner
         // Holding the button runs the fuse down; held to its end it goes by itself.
         player.RefillInk();
         if (!loadout.PressSub() || loadout.HeldBomb == null) Fail("pressing didn't take a bomb in hand");
-        yield return Hold(Still, false, 1.5f, "cook");
+        const float CookHold = 0.5f; // short of running it down: it cooks CookRate times as fast
+        yield return Hold(Still, false, CookHold, "cook");
         loadout.ReleaseSub();
         CurlingBomb cooked = loadout.LastBomb;
         float cookedFuse = cooked != null ? cooked.FuseLeft : 0f;
@@ -345,8 +346,8 @@ public partial class ClimbTestRunner
         float pressed = Time.time;
         yield return HoldUntil(Still, false, prefab.Fuse, "cook", f => loadout.HeldBomb == null);
         CurlingBomb overcooked = loadout.LastBomb;
-        Note($"held 1.5s: thrown with {cookedFuse:F2}s left; held on: thrown by itself after {Time.time - pressed:F2}s with {(overcooked != null ? overcooked.FuseLeft : 0f):F2}s left");
-        if (Mathf.Abs(cookedFuse - (prefab.Fuse - 1.5f)) > 0.15f) Fail("holding didn't shorten the fuse");
+        Note($"held {CookHold}s at {prefab.CookRate}x: thrown with {cookedFuse:F2}s left; held on: thrown by itself after {Time.time - pressed:F2}s with {(overcooked != null ? overcooked.FuseLeft : 0f):F2}s left");
+        if (Mathf.Abs(cookedFuse - (prefab.Fuse - CookHold * prefab.CookRate)) > 0.25f) Fail("holding didn't shorten the fuse at its cook rate");
         if (overcooked == cooked || overcooked == null || Mathf.Abs(overcooked.FuseLeft - prefab.MinFuse) > 0.15f) Fail("holding on didn't throw it at its shortest fuse");
         if (overcooked != null) overcooked.Break();
 

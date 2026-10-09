@@ -22,7 +22,7 @@ public class Blaster : Weapon
     [Header("Blast")]
     [SerializeField] InkBlast blast = new InkBlast();
 
-    public const string Source = "Blaster";
+    public string Source => DisplayName; // "splatted with"
 
     ControlLayer input;
     CharacterController body;

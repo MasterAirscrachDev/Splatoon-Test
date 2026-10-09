@@ -158,7 +158,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -5081792898505675300, guid: da59be24c9759434a94f46e15d443cc0, type: 3}
+  - {fileID: 2100000, guid: 2164c5d43984bea428b7caf3ea6ffc73, type: 2}
   - {fileID: 6406686144898381966, guid: da59be24c9759434a94f46e15d443cc0, type: 3}
   - {fileID: -6574231839348478092, guid: da59be24c9759434a94f46e15d443cc0, type: 3}
   m_StaticBatchInfo:
@@ -195,7 +195,7 @@ GameObject:
   - component: {fileID: 3649981995808550906}
   - component: {fileID: 3969233499896776995}
   m_Layer: 0
-  m_Name: Inkroller
+  m_Name: EraRoller
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -229,16 +229,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f3f778b33d699054f9f061e31a07c7c1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Roller
-  displayName: Inkroller
-  description: Flick ink in a wide arc (or a long line from the air), then hold to
-    roll a strip of ink and run enemies over.
+  displayName: Era Roller
+  description: A light roller that rolls half as fast again and flicks quicker, for
+    a quarter of the damage.
   feetShotInterval: 0.4
   feetShotMinSize: 12
   feetShotMaxSize: 18
   feetShotDropSpeed: 6
-  flickRate: 0.6
-  windup: 0.2
-  followThrough: 0.15
+  flickRate: 0.4
+  windup: 0.13
+  followThrough: 0.1
   flickInkCost: 90
   projectile: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   ballistics:
@@ -290,6 +290,8 @@ MonoBehaviour:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
+  flickPace: 2
+  dropletScale: 2
   aimInfluence: 1
   flickPitchLimits: {x: -40, y: 60}
   groundDroplets: 12
@@ -297,8 +299,8 @@ MonoBehaviour:
   groundPitch: 25
   groundSpeed: {x: 4.5, y: 7}
   groundDamage:
-    maxDamage: 125
-    minDamage: 35
+    maxDamage: 31.25
+    minDamage: 8.75
     scaleTime: 0.5
   groundSplat: 14
   airDroplets: 12
@@ -306,15 +308,15 @@ MonoBehaviour:
   airPitch: 20
   airSpeed: {x: 0, y: 12}
   airDamage:
-    maxDamage: 80
-    minDamage: 30
+    maxDamage: 20
+    minDamage: 7.5
     scaleTime: 0.5
   airSplat: 12
-  rollDamage: 100
-  rollStartSpeed: 0.8
-  rollSpeed: 1.2
+  rollDamage: 25
+  rollStartSpeed: 1.2
+  rollSpeed: 1.8
   rollRampTime: 0.5
-  rollInkPerMetre: 18
+  rollInkPerMetre: 20
   rollPaintSpacing: 0.5
   rollSplatPoints: 3
   rollSplatSize: 8
@@ -324,6 +326,8 @@ MonoBehaviour:
   rollerWidth: 2.620509
   rollShift: {x: -0.53, y: 0, z: 0}
   carryPitch: 15
+  idlePitch: -70
+  idleOffset: {x: 0.1, y: 0, z: -0.35}
   raisedPitch: -80
   verticalTurn: 90
   poseSpeed: 18
@@ -486,7 +490,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -5081792898505675300, guid: da59be24c9759434a94f46e15d443cc0, type: 3}
+  - {fileID: 2100000, guid: 2164c5d43984bea428b7caf3ea6ffc73, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

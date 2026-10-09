@@ -128,7 +128,7 @@ public partial class ClimbTestRunner
         NetGameManager gm = NetGameManager.Instance;
         PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
         int blasterIndex = -1;
-        for (int i = 0; i < loadout.Weapons.Count; i++) if (loadout.Weapons[i] is Blaster) blasterIndex = i;
+        for (int i = 0; i < loadout.Weapons.Count; i++) if (loadout.Weapons[i] is Blaster && blasterIndex < 0) blasterIndex = i; // the first: Solar Blaster
         if (blasterIndex < 0) { Fail("no Blaster in the player's weapons"); yield break; }
         CaptureSends();
         int weaponBefore = loadout.WeaponIndex;
@@ -152,7 +152,7 @@ public partial class ClimbTestRunner
         int blobs = 0;
         Action<ProjectileManager.Shot, Vector3> onBlast = (shot, point) =>
         {
-            if (shot.source != Blaster.Source || shot.blast == null) return; // not its feet ink
+            if (shot.source != blaster.Source || shot.blast == null) return; // not its feet ink
             blasts.Add((point, shot.travelled, Time.time));
             foreach (InkBlastEffect fx in FindObjectsByType<InkBlastEffect>(FindObjectsSortMode.None)) blobs = Mathf.Max(blobs, fx.BlobCount);
         };
@@ -212,7 +212,7 @@ public partial class ClimbTestRunner
         Vector3 ground = new Vector3(high.x, station.position.y, high.z);
         int belowBefore = OnFloor(ground);
         sent.Clear();
-        InkExplosion.Detonate(high, blaster.Blast, player.Team, player.OwnerId, Blaster.Source, true, Color.white, null, projectilePrefab);
+        InkExplosion.Detonate(high, blaster.Blast, player.Team, player.OwnerId, blaster.Source, true, Color.white, null, projectilePrefab);
         yield return Hold(Still, false, 0.6f, "falling ink");
         int fell = 0, fellProbes = 0;
         for (int i = 0; i < 8; i++) { fellProbes++; if (OnFloor(ground + Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward * 0.6f) == player.Team) fell++; }
@@ -299,7 +299,7 @@ public partial class ClimbTestRunner
         NetGameManager gm = NetGameManager.Instance;
         PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
         int rollerIndex = -1;
-        for (int i = 0; i < loadout.Weapons.Count; i++) if (loadout.Weapons[i] is Roller) rollerIndex = i;
+        for (int i = 0; i < loadout.Weapons.Count; i++) if (loadout.Weapons[i] is Roller && rollerIndex < 0) rollerIndex = i; // the first: Inkroller
         if (rollerIndex < 0) { Fail("no Roller in the player's weapons"); yield break; }
         CaptureSends();
         int weaponBefore = loadout.WeaponIndex;
@@ -351,7 +351,10 @@ public partial class ClimbTestRunner
         if (groundSpread < 45f) Fail("the ground flick isn't a wide fan");
         if (groundReach < 2f || groundReach > 9f) Fail("the ground flick's reach is off");
         if (Mathf.Abs(flickCost - roller.FlickInkCost * 0.001f) > 0.005f) Fail("the flick didn't cost its ink");
-        if (HitsTo(Foe) != 1 || Mathf.Abs(DamageTo(Foe) - roller.GroundDamage) > 0.01f) Fail("the flick didn't hit the enemy exactly once for its damage");
+        DamageFalloff groundDamage = roller.GroundDamage;
+        if (HitsTo(Foe) != 1) Fail("the flick didn't hit the enemy exactly once");
+        if (DamageTo(Foe) > groundDamage.maxDamage + 0.01f || DamageTo(Foe) < groundDamage.minDamage - 0.01f) Fail("the flick's damage is outside its falloff range");
+        if (groundDamage.scaleTime > 0f && DamageTo(Foe) >= groundDamage.maxDamage - 0.01f) Fail("the flick didn't lose damage on its way 3m out");
         Despawn(Foe);
 
         // Aimed with the view: looking up raises the flick.

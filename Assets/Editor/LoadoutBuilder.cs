@@ -12,7 +12,7 @@ public static class LoadoutBuilder
     const string ColumnMaterialPath = "Assets/Materials/InkShape.mat";
     const string SprinklerPath = "Assets/Prefabs/Sprinkler.prefab";
     const string CurlingBombPath = "Assets/Prefabs/CurlingBomb.prefab";
-    const string BlasterPath = "Assets/Prefabs/Weapons/Blaster.prefab";
+    const string BlasterPath = "Assets/Prefabs/Weapons/SolarBlaster.prefab";
     const string InkBlastPath = "Assets/Prefabs/InkBlast.prefab";
     const string RollerPath = "Assets/Prefabs/Weapons/Inkroller.prefab";
     const string RollerModelPath = "Assets/Models/Inkroller.fbx";
@@ -251,12 +251,12 @@ public static class LoadoutBuilder
         GameObject c = PrefabUtility.LoadPrefabContents(AirsprayPath);
         try
         {
-            c.name = "Blaster";
+            c.name = "Solar Blaster";
             Transform muzzle = c.transform.Find("BulletSpawn");
             Object.DestroyImmediate(c.GetComponent<WeaponShooter>());
             Blaster blaster = c.AddComponent<Blaster>();
             var so = new SerializedObject(blaster);
-            so.FindProperty("displayName").stringValue = "Blaster";
+            so.FindProperty("displayName").stringValue = "Solar Blaster";
             so.FindProperty("description").stringValue = "Slow, short-ranged shots that explode at the end of their flight or on whatever they hit.";
             so.FindProperty("muzzle").objectReferenceValue = muzzle;
             so.FindProperty("projectile").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ProjectilePath);

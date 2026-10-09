@@ -23,6 +23,7 @@ public class CurlingBomb : SubDevice
     [Header("Fuse and blast")]
     [SerializeField] float fuse = 4f;             // from the throw, if it wasn't held
     [SerializeField] float minFuse = 1f;          // holding the button runs it down to this, then it's thrown
+    [SerializeField] float cookRate = 3f;         // while held, the fuse runs this many times as fast
     [SerializeField] float blastRadius = 3f;
     [SerializeField] float blastDamage = 45f;
     [SerializeField] int blastSplash = 26;        // splats around the blast
@@ -50,6 +51,7 @@ public class CurlingBomb : SubDevice
     public override SubType Type => SubType.CurlingBomb;
     public float Fuse => fuse;
     public float MinFuse => minFuse;
+    public float CookRate => cookRate;
     public float SlideSpeed => slideSpeed;
     public float BlastRadius => blastRadius;
     public float BlastDamage => blastDamage;
@@ -58,7 +60,7 @@ public class CurlingBomb : SubDevice
     public bool Launched => launched;
     public bool Grounded => grounded;
     public bool Exploded => exploded;
-    public float FuseLeft => exploded ? 0f : launched ? Mathf.Max(0f, explodeAt - Time.time) : holdStart >= 0f ? Mathf.Max(0f, fuse - (Time.time - holdStart)) : fuse;
+    public float FuseLeft => exploded ? 0f : launched ? Mathf.Max(0f, explodeAt - Time.time) : holdStart >= 0f ? Mathf.Max(0f, fuse - (Time.time - holdStart) * cookRate) : fuse;
     public Vector3 Centre => transform.position + transform.up * radius;
 
     void Awake()

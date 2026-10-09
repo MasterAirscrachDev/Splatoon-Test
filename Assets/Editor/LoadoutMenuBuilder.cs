@@ -13,7 +13,7 @@ public static class LoadoutMenuBuilder
 {
     const string PrefabPath = "Assets/Prefabs/UI/LoadoutMenu.prefab";
     const float ColumnWidth = 360, InfoHeight = 120;
-    const int Rows = 4;                               // buttons in the longest column
+    const int Rows = 6;                               // buttons in the longest column
     const float RowStep = 68, InfoTop = -156 - (Rows - 1) * RowStep - 86; // descriptions under the last row
     const float CloseY = InfoTop - 160, PanelHeight = -CloseY + 90;
 
@@ -45,7 +45,7 @@ public static class LoadoutMenuBuilder
         Place(note.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0, -64), new Vector2(900, 26));
 
         float[] x = { -(ColumnWidth + 40), 0, ColumnWidth + 40 };
-        Button[] weapons = Column(panel, "MAIN WEAPON", x[0], new[] { "Airspray SE", "Inkshot", "Blaster", "Inkroller" }, out TextMeshProUGUI weaponInfo);
+        Button[] weapons = Column(panel, "MAIN WEAPON", x[0], new[] { "Airspray SE", "Inkshot", "Solar Blaster", "Inkroller", "Artemis Blaster", "Era Roller" }, out TextMeshProUGUI weaponInfo);
         Button[] subs = Column(panel, "SUB", x[1], new[] { "Beacon", "Ink Sprinkler", "Curling Bomb" }, out TextMeshProUGUI subInfo);
         Button[] specials = Column(panel, "SPECIAL", x[2], new[] { "Bubble Shield", "InkStrike" }, out TextMeshProUGUI specialInfo);
 

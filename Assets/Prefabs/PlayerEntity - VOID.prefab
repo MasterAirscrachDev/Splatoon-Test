@@ -70,7 +70,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerHitbox
   player: {fileID: 2728856683148836943}
   maxHealth: 100
-  healDelay: 0.5
+  healDelay: 1
   healPerSecond: 16.666666
   healPerSecondSubmerged: 66.666664
   standHeight: 1.92
@@ -5654,6 +5654,8 @@ MonoBehaviour:
   - {fileID: 1680705428740658682, guid: 66bb45dbe338dbf428fa6876f82e5523, type: 3}
   - {fileID: 114069460458977127, guid: 0115cd5a0c8cbc54695cf17c91f3e318, type: 3}
   - {fileID: 3969233499896776995, guid: f33754660fb4f9a47a37795ebe372655, type: 3}
+  - {fileID: 114069460458977127, guid: bb3d459a3fa5467c80614de6615bfa8e, type: 3}
+  - {fileID: 3969233499896776995, guid: 7a7aa6a385394dd3b12f09beccfcff90, type: 3}
   weaponMount: {fileID: 2034416416101227102}
   beaconPrefab: {fileID: 7517210129143154419, guid: 841058bcdcffb02499cdd9a726fa1d86, type: 3}
   maxBeacons: 3

@@ -32,8 +32,10 @@ public class ProjectileManager : MonoBehaviour
         public float trailSpacing, sinceDrip; // drops a drip of ink every trailSpacing metres it flies (0: none)
         public int trailSize;
         public HashSet<Object> hitGroup;      // shots sharing one: each target takes damage from the first of them only
+        public DamageFalloff falloff;         // damage over its age (null: always `damage`)
         public Color colour;
 
+        public float DamageNow => falloff != null ? falloff.At(age) : damage;
         public Vector3 Velocity => launch * ballistics.velocityOverTime.Evaluate(age) + inherit + fallVelocity;
     }
 
@@ -78,7 +80,8 @@ public class ProjectileManager : MonoBehaviour
                             bool visible = true, bool authoritative = true, ulong ownerId = 0, float damage = 30f,
                             bool impactParticles = true, Ballistics ballistics = null, Vector3 inherit = default,
                             string source = null, float maxDistance = 0f, InkBlast blast = null,
-                            float trailSpacing = 0f, int trailSize = 0, HashSet<Object> hitGroup = null, float visualScale = 1f)
+                            float trailSpacing = 0f, int trailSize = 0, HashSet<Object> hitGroup = null, float visualScale = 1f,
+                            DamageFalloff falloff = null)
     {
         ProjectileManager m = Instance;
         ProjectileVisual template = m.Template(prefab);
@@ -91,7 +94,8 @@ public class ProjectileManager : MonoBehaviour
         s.ballistics = ballistics ?? Ballistics.Default;
         s.prefab = prefab;
         s.radius = template != null ? template.HitRadius : 0.12f;
-        s.damage = damage;
+        s.damage = falloff != null ? falloff.maxDamage : damage;
+        s.falloff = falloff;
         s.splashSize = splashSize;
         s.team = team;
         s.authoritative = authoritative;
@@ -181,7 +185,7 @@ public class ProjectileManager : MonoBehaviour
             if (device != null)
             {
                 if (device.Team == s.team || s.damage <= 0f) continue; // drips fall through
-                if (s.authoritative && FirstHit(s, device)) device.TakeDamage(s.damage, s.team, s.ownerId);
+                if (s.authoritative && FirstHit(s, device)) device.TakeDamage(s.DamageNow, s.team, s.ownerId);
                 Detonate(s, from + dir * Mathf.Max(0f, h.distance), device);
                 Impact?.Invoke(s, point);
                 return true;
@@ -190,7 +194,7 @@ public class ProjectileManager : MonoBehaviour
             if (hitbox != null)
             {
                 if (hitbox.Team == s.team || s.damage <= 0f) continue; // teammates and the shooter; drips fall through
-                if (s.authoritative && FirstHit(s, hitbox)) hitbox.TakeDamage(s.damage, s.team, s.ownerId, s.source);
+                if (s.authoritative && FirstHit(s, hitbox)) hitbox.TakeDamage(s.DamageNow, s.team, s.ownerId, s.source);
                 Detonate(s, from + dir * Mathf.Max(0f, h.distance), hitbox); // they took the direct hit
                 Impact?.Invoke(s, point);
                 return true;

@@ -28,6 +28,7 @@ public partial class PlayerController
         velocity = Vector3.zero;
         velocityY = 0f;
         HideModels();
+        if (Hitbox != null) Hitbox.ResetHealth(); // a fall skips the hitbox, so respawn healthy anyway
         KilledBy = killerId;
         KilledWith = cause;
         deathSpot = fell ? lastGroundPos : transform.position;

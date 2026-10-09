@@ -139,6 +139,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   displayName: Airspray SE
   description: Fast, wide spray that covers the ground quickly up close.
+  feetShotInterval: 0.4
+  feetShotMinSize: 12
+  feetShotMaxSize: 18
+  feetShotDropSpeed: 6
   fireRate: 0.1
   shotSpeed: 10
   fillerShots: 5
@@ -192,17 +196,13 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   splashSize: 11
-  damage: 15
+  damage: 24
   inkCostPerShot: 16
   projectile: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   muzzle: {fileID: 1508700717447438630}
   yawSpread: 15
   pitchSpread: 2
   fillerSpread: 10
-  feetShotInterval: 0.4
-  feetShotMinSize: 12
-  feetShotMaxSize: 18
-  feetShotDropSpeed: 6
 --- !u!114 &6254649009625286876
 MonoBehaviour:
   m_ObjectHideFlags: 0

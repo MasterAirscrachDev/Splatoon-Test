@@ -73,10 +73,17 @@ public class LoadoutMenu : MonoBehaviour
         Refresh();
     }
 
+    bool warnedButtons;
+
     void Refresh()
     {
         PlayerLoadout loadout = PlayerLoadout.Local;
         if (loadout == null) return;
+        if (loadout.Weapons.Count > weaponButtons.Length && !warnedButtons)
+        {
+            warnedButtons = true;
+            Debug.LogWarning($"[LoadoutMenu] {loadout.Weapons.Count} weapons but {weaponButtons.Length} buttons: rebuild with Tools > UI > Build Loadout Menu Prefab");
+        }
         for (int i = 0; i < weaponButtons.Length; i++)
         {
             bool exists = i < loadout.Weapons.Count;
@@ -109,7 +116,7 @@ public class LoadoutMenu : MonoBehaviour
         if (loadout.Sub == SubType.CurlingBomb && loadout.CurlingBombPrefab != null)
         {
             CurlingBomb c = loadout.CurlingBombPrefab;
-            return $"Slides along the ground inking a stripe, bouncing off walls; {c.PassDamage:0} damage to anyone it passes. Explodes after {c.Fuse:0}s for {c.BlastDamage:0} damage. Hold the button to shorten the fuse.";
+            return $"Slides along the ground inking a stripe, bouncing off walls; {c.PassDamage:0} damage to anyone it passes. Explodes after {c.Fuse:0}s for {c.BlastDamage:0} damage. Hold the button to cook it: the fuse runs {c.CookRate:0.#}x as fast.";
         }
         return "";
     }

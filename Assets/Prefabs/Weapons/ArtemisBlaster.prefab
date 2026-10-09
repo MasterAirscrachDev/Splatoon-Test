@@ -31,6 +31,96 @@ Transform:
   m_Children: []
   m_Father: {fileID: 8220360676899808288}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2425979189580091531
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3781312305411879457}
+  - component: {fileID: 2001765966325962097}
+  - component: {fileID: 1805274234248270883}
+  m_Layer: 0
+  m_Name: Cylinder (2)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3781312305411879457
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2425979189580091531}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.7071066, y: -0, z: -0, w: 0.707107}
+  m_LocalPosition: {x: 0, y: 0.09, z: 0.444}
+  m_LocalScale: {x: 0.3, y: 0.042461, z: 0.3}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8220360676899808288}
+  m_LocalEulerAnglesHint: {x: 90, y: 0, z: 0}
+--- !u!33 &2001765966325962097
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2425979189580091531}
+  m_Mesh: {fileID: 10206, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!23 &1805274234248270883
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2425979189580091531}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 10303, guid: 0000000000000000f000000000000000, type: 0}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_MaskInteraction: 0
+  m_AdditionalVertexStreams: {fileID: 0}
 --- !u!1 &3271960336181735296
 GameObject:
   m_ObjectHideFlags: 0
@@ -58,8 +148,8 @@ Transform:
   m_GameObject: {fileID: 3271960336181735296}
   serializedVersion: 2
   m_LocalRotation: {x: 0.7071066, y: -0, z: -0, w: 0.707107}
-  m_LocalPosition: {x: 0, y: 0.09, z: 0.296}
-  m_LocalScale: {x: 0.3, y: 0.1, z: 0.3}
+  m_LocalPosition: {x: 0, y: 0.09, z: 0.234}
+  m_LocalScale: {x: 0.3, y: 0.042461, z: 0.3}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 8220360676899808288}
@@ -133,7 +223,7 @@ GameObject:
   - component: {fileID: 1265196042155242072}
   - component: {fileID: 114069460458977127}
   m_Layer: 0
-  m_Name: Blaster
+  m_Name: ArtemisBlaster
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -155,6 +245,7 @@ Transform:
   - {fileID: 6464432039994988910}
   - {fileID: 8118089161163471276}
   - {fileID: 5933645259339437459}
+  - {fileID: 3781312305411879457}
   - {fileID: 890469012585911961}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -182,13 +273,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e167f270d139ee7448ba5588164290ed, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Blaster
-  displayName: Blaster
-  description: Slow, short-ranged shots that explode at the end of their flight or
-    on whatever they hit.
-  fireRate: 0.9
+  displayName: Artemis Blaster
+  description: Lighter, quicker shots that fly half as far again before exploding,
+    for half the damage.
+  feetShotInterval: 0.4
+  feetShotMinSize: 12
+  feetShotMaxSize: 18
+  feetShotDropSpeed: 6
+  fireRate: 0.75
   shotSpeed: 30
-  range: 6.5
-  directDamage: 110
+  range: 9
+  directDamage: 55
   inkCostPerShot: 80
   shotSize: 22
   trailSpacing: 0.45
@@ -247,8 +342,8 @@ MonoBehaviour:
   blast:
     radius: 2.4
     coreRadius: 1
-    coreDamage: 50
-    edgeDamage: 35
+    coreDamage: 25
+    edgeDamage: 17.5
     inkReach: 1.2
     splashSize: 17
     fallingDrops: 5
@@ -320,7 +415,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 10303, guid: 0000000000000000f000000000000000, type: 0}
+  - {fileID: 2100000, guid: b6537215f59962449867acbd5453d623, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -371,8 +466,8 @@ Transform:
   m_GameObject: {fileID: 9197715823268842593}
   serializedVersion: 2
   m_LocalRotation: {x: 0.7071066, y: -0, z: -0, w: 0.707107}
-  m_LocalPosition: {x: 0, y: 0.09, z: 0.001}
-  m_LocalScale: {x: 0.1, y: 0.3286, z: 0.1}
+  m_LocalPosition: {x: -0, y: 0.09, z: 0.1028}
+  m_LocalScale: {x: 0.1, y: 0.43043315, z: 0.1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 8220360676899808288}
@@ -410,7 +505,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 10303, guid: 0000000000000000f000000000000000, type: 0}
+  - {fileID: 2100000, guid: b6537215f59962449867acbd5453d623, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

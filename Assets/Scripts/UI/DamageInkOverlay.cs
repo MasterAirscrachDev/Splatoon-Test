@@ -13,6 +13,7 @@ public class DamageInkOverlay : MonoBehaviour
     [SerializeField] float splashFade = 3f;      // the splash dies away this fast (per second)
     [SerializeField] float deathFlood = 1f;      // a lethal hit covers this much...
     [SerializeField] float deathDrain = 0.8f;    // ...then drains over this long
+    [SerializeField] Color fallColour = new Color(0.08f, 0.08f, 0.1f); // falling out of bounds: no team's ink
 
     static readonly int AmountId = Shader.PropertyToID("_Amount");
     static readonly int AspectId = Shader.PropertyToID("_Aspect");
@@ -34,6 +35,9 @@ public class DamageInkOverlay : MonoBehaviour
         image.material = material;
         material.SetFloat(SeedId, Random.Range(0f, 100f));
     }
+
+    void OnEnable() => PlayerController.Splatted += OnSplatted;
+    void OnDisable() => PlayerController.Splatted -= OnSplatted;
 
     void OnDestroy()
     {
@@ -74,5 +78,13 @@ public class DamageInkOverlay : MonoBehaviour
         if (gm != null && team != 0) image.color = gm.TeamColour(team);
         splash = Mathf.Min(0.5f, splash + hitSplash * amount / 100f);
         if (hitbox.Health - amount <= 0f) flood = deathFlood; // this one's lethal
+    }
+
+    // Deaths that skip the hitbox (falling out of bounds) flood too, in neutral ink: nobody hit us.
+    void OnSplatted(PlayerController who, ulong by, string with)
+    {
+        if (who != NetGameManager.LocalPlayer) return;
+        if (with == PlayerController.FellCause) image.color = fallColour;
+        flood = deathFlood;
     }
 }
