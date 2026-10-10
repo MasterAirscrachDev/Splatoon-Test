@@ -50,7 +50,7 @@ public class Blaster : Weapon
         cameraAim = GetComponent<WeaponCameraAim>();
     }
 
-    void OnDestroy() { input?.Disable(); input?.Dispose(); }
+    protected override void OnDestroy() { base.OnDestroy(); input?.Disable(); input?.Dispose(); }
 
     void Update()
     {

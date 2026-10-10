@@ -15,7 +15,7 @@ public static class LoadoutBuilder
     const string BlasterPath = "Assets/Prefabs/Weapons/SolarBlaster.prefab";
     const string InkBlastPath = "Assets/Prefabs/InkBlast.prefab";
     const string RollerPath = "Assets/Prefabs/Weapons/Inkroller.prefab";
-    const string RollerModelPath = "Assets/Models/Inkroller.fbx";
+    const string RollerModelPath = "Assets/Models/Weapons/W_Roller.fbx";
     const string BlastMatPath = "Assets/Materials/SwimWakeLit.mat"; // the curling bomb's blast: lit ink
     const string InkStrikePath = "Assets/Prefabs/InkStrike.prefab";
     const string ProjectilePath = "Assets/Prefabs/Projectile.prefab";
@@ -276,7 +276,8 @@ public static class LoadoutBuilder
     }
 
     // The roller, around its model: the Inkroller set up in the open scene if there is one (it carries
-    // the materials), else the bare model. Its drum is RollerFrame/Roller; its width the drum's.
+    // the materials), else the bare model. Its drum is Handle/RollerFrame/Roller, its axle the drum's
+    // X; the model keeps its own rotation (its children are in Blender's axes under it).
     internal static Weapon CreateRoller()
     {
         GameObject source = GameObject.Find("Inkroller");
@@ -286,11 +287,10 @@ public static class LoadoutBuilder
         GameObject model = Object.Instantiate(source, root.transform);
         model.name = "Model";
         model.transform.localPosition = Vector3.zero;
-        model.transform.localRotation = Quaternion.identity;
         model.transform.localScale = Vector3.one;
         foreach (Collider c in model.GetComponentsInChildren<Collider>(true)) Object.DestroyImmediate(c);
         foreach (Renderer r in model.GetComponentsInChildren<Renderer>(true)) r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-        Transform drum = model.transform.Find("RollerFrame/Roller");
+        Transform drum = model.transform.Find("Handle/RollerFrame/Roller");
 
         Roller roller = root.AddComponent<Roller>();
         var so = new SerializedObject(roller);
@@ -301,9 +301,11 @@ public static class LoadoutBuilder
         if (drum != null && drum.TryGetComponent(out MeshFilter mf) && mf.sharedMesh != null)
         {
             Vector3 size = Vector3.Scale(mf.sharedMesh.bounds.size, drum.lossyScale);
-            so.FindProperty("rollerWidth").floatValue = size.y;            // the drum's axis is its mesh's Y
-            so.FindProperty("rollerRadius").floatValue = size.x * 0.5f;
+            so.FindProperty("rollerWidth").floatValue = size.x;            // the drum's axle is its mesh's X
+            so.FindProperty("rollerRadius").floatValue = size.y * 0.5f;
         }
+        so.FindProperty("spinAxis").vector3Value = Vector3.left;          // as the old model turned
+        so.FindProperty("turnAxis").vector3Value = Vector3.back;          // the world's up, in the frame's Blender axes
         so.ApplyModifiedPropertiesWithoutUndo();
         PrefabUtility.SaveAsPrefabAsset(root, RollerPath);
         Object.DestroyImmediate(root);

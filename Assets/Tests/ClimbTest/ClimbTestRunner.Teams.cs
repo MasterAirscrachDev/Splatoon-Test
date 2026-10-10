@@ -82,9 +82,28 @@ public partial class ClimbTestRunner
         float fromGammaSpawn = Vector3.Distance(new Vector3(player.transform.position.x, 0f, player.transform.position.z), new Vector3(gammaSpawn.transform.position.x, 0f, gammaSpawn.transform.position.z));
         Color rollerInk = RollerInk();
         bool tinted = rollerIndex < 0 || rollerInk == gm.TeamColour(3);
-        Note($"as Gamma: team {player.Team}, {fromGammaSpawn:F2}m from Gamma's spawn; roller ink {(rollerIndex < 0 ? "no roller" : tinted ? "Gamma's colour" : "STILL THE OLD TEAM'S")}");
+        // Every weapon with ink parts (tanks, drums) wears its team's colour when equipped.
+        var untinted = new System.Collections.Generic.List<string>();
+        int inked = 0;
+        for (int w = 0; w < loadout.Weapons.Count; w++)
+        {
+            loadout.SetMainWeapon(w);
+            yield return null;
+            var block = new MaterialPropertyBlock();
+            foreach (Renderer r in loadout.CurrentWeapon.GetComponentsInChildren<Renderer>(true))
+                for (int i = 0; i < r.sharedMaterials.Length; i++)
+                {
+                    if (r.sharedMaterials[i] == null || !r.sharedMaterials[i].name.StartsWith("Ink")) continue;
+                    r.GetPropertyBlock(block, i);
+                    if (block.GetColor("_Color") != gm.TeamColour(3)) untinted.Add($"{loadout.CurrentWeapon.DisplayName}/{r.name}[{i}]");
+                    else inked++;
+                }
+        }
+        Note($"as Gamma: team {player.Team}, {fromGammaSpawn:F2}m from Gamma's spawn; roller ink {(rollerIndex < 0 ? "no roller" : tinted ? "Gamma's colour" : "STILL THE OLD TEAM'S")}; " +
+             $"{inked} ink parts across the weapons in Gamma's colour{(untinted.Count > 0 ? ", NOT: " + string.Join(", ", untinted) : "")}");
         if (player.Team != 3 || fromGammaSpawn > 1.5f) Fail("joining Gamma didn't put us on Gamma's team and spawn");
         if (!tinted) Fail("the weapon kept its old team's colour after we changed team");
+        if (untinted.Count > 0 || inked == 0) Fail("some weapons' ink parts aren't in the team colour");
         loadout.SetMainWeapon(weaponBefore);
 
         // The HUD and the host's team editor show the extra teams, and only while the map has them.

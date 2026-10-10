@@ -62,7 +62,9 @@ public class Roller : Weapon
     [SerializeField] float idlePitch = -70f;          // not attacking or rolling: folded (vertical mode) and held up...
     [SerializeField] Vector3 idleOffset = new Vector3(0.1f, 0f, -0.35f); // ...at our side
     [SerializeField] float raisedPitch = -80f;        // the top of a flick's swing
-    [SerializeField] float verticalTurn = 90f;        // the frame's turn (on its local y) for the air flick
+    [SerializeField] float verticalTurn = 90f;        // the frame's turn (on turnAxis) for the air flick
+    [SerializeField] Vector3 spinAxis = Vector3.up;   // the drum's axle, in the drum's own space (models differ)
+    [SerializeField] Vector3 turnAxis = Vector3.up;   // the frame's turn axis, in its own space: the world's up when held level
     [SerializeField] float poseSpeed = 18f;           // how fast it eases between poses
     [SerializeField] float spinDirection = 1f;        // flip if the drum turns the wrong way
 
@@ -85,7 +87,6 @@ public class Roller : Weapon
     HashSet<Object> flickHits;
     readonly HashSet<Object> underRoller = new HashSet<Object>();
     static readonly Collider[] overlaps = new Collider[16];
-    MaterialPropertyBlock block;
 
     public bool ScriptedFire { get; set; } // tests: hold the trigger
     public bool Down { get; private set; }  // rolling: on the floor
@@ -143,36 +144,14 @@ public class Roller : Weapon
         fold = 1f;
         paced = ballistics.Faster(flickPace);
         if (Owner != null) { lastPos = Owner.transform.position; body = Owner.GetComponent<CharacterController>(); }
-        Tint();
-        NetGameManager.TeamColoursChanged += Tint;
-        if (Owner != null) Owner.TeamChanged += Tint; // reassigned to another team: its colour
     }
 
-    void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         input?.Disable();
         input?.Dispose();
-        NetGameManager.TeamColoursChanged -= Tint;
-        if (Owner != null) Owner.TeamChanged -= Tint;
         if (Owner != null && local) { Owner.WeaponSpeedMultiplier = 1f; Owner.WeaponDown = false; }
-    }
-
-    // The ink-coloured parts (materials named Ink...) in the team colour.
-    void Tint()
-    {
-        if (Owner == null) return;
-        block ??= new MaterialPropertyBlock();
-        foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
-        {
-            Material[] mats = r.sharedMaterials;
-            for (int i = 0; i < mats.Length; i++)
-            {
-                if (mats[i] == null || !mats[i].name.StartsWith("Ink")) continue;
-                r.GetPropertyBlock(block, i);
-                block.SetColor("_Color", Owner.TeamColour);
-                r.SetPropertyBlock(block, i);
-            }
-        }
     }
 
     void Update()
@@ -195,7 +174,7 @@ public class Roller : Weapon
         if (roller != null && Down)
         {
             spin += Vector3.Dot(moved, BodyForward(player)) / rollerRadius * Mathf.Rad2Deg * spinDirection;
-            roller.localRotation = rollerHome * Quaternion.AngleAxis(spin, Vector3.up);
+            roller.localRotation = rollerHome * Quaternion.AngleAxis(spin, spinAxis);
         }
     }
 
@@ -409,7 +388,7 @@ public class Roller : Weapon
         pitch = snap ? targetPitch : Mathf.Lerp(pitch, targetPitch, ease);
         shift = Mathf.Lerp(shift, targetShift, ease);
         if (!snap) { turn = Mathf.Lerp(turn, targetTurn, ease); fold = Mathf.Lerp(fold, targetFold, ease); }
-        if (frame != null) frame.localRotation = frameHome * Quaternion.AngleAxis(turn, Vector3.up);
+        if (frame != null) frame.localRotation = frameHome * Quaternion.AngleAxis(turn, turnAxis);
         transform.localPosition = homePos + rollShift * shift + idleOffset * fold;
         transform.rotation = Quaternion.Euler(pitch, BodyYaw(player), 0f); // along the body (which faces the view while flicking)
     }

@@ -38,12 +38,40 @@ public abstract class Weapon : MonoBehaviour
                                visible: false, ownerId: player.OwnerId, damage: 0, impactParticles: false, source: DisplayName);
     }
 
-    // Called right after it's created under its owner.
+    // Called right after it's created under its owner (on every copy: ours and other players').
     public virtual void Equip(PlayerController owner)
     {
         Owner = owner;
         enabled = owner.IsLocalPlayer;
         WeaponCameraAim aim = GetComponent<WeaponCameraAim>();
         if (aim != null) aim.enabled = true; // remote copies tilt with their synced aim
+        Tint();
+        NetGameManager.TeamColoursChanged += Tint;
+        owner.TeamChanged += Tint; // reassigned to another team: its colour
+    }
+
+    protected virtual void OnDestroy()
+    {
+        NetGameManager.TeamColoursChanged -= Tint;
+        if (Owner != null) Owner.TeamChanged -= Tint;
+    }
+
+    // The ink-coloured parts (material slots named Ink...) in the owner's team colour.
+    MaterialPropertyBlock tintBlock;
+    void Tint()
+    {
+        if (Owner == null) return;
+        tintBlock ??= new MaterialPropertyBlock();
+        foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
+        {
+            Material[] mats = r.sharedMaterials;
+            for (int i = 0; i < mats.Length; i++)
+            {
+                if (mats[i] == null || !mats[i].name.StartsWith("Ink")) continue;
+                r.GetPropertyBlock(tintBlock, i);
+                tintBlock.SetColor("_Color", Owner.TeamColour);
+                r.SetPropertyBlock(tintBlock, i);
+            }
+        }
     }
 }
