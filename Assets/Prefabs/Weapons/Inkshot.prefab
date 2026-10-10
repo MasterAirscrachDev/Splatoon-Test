@@ -51,6 +51,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   displayName: Inkshot
   description: Narrow stream with more reach, at a slower rate of fire.
+  icon: {fileID: 21300000, guid: c432ba868b9a9e844850beb69f00076f, type: 3}
   feetShotInterval: 0.4
   feetShotMinSize: 12
   feetShotMaxSize: 18

@@ -84,6 +84,7 @@ public static class MatchHUDBuilder
         BuildLoadoutHud(root);
         BuildMatchFlow(root);
         BuildDeathPopup(root);
+        BuildKillFeed(root);
         BuildHostMenu(root, hud);
         BuildPauseMenu(root);
         BuildMapScreen(root);
@@ -496,6 +497,7 @@ public static class MatchHUDBuilder
 
         TextMeshProUGUI initial = Text("Initial", slotRect, "", 30, new Color(0.08f, 0.08f, 0.12f), TextAlignmentOptions.Center, true, useOutline: false);
         Stretch(initial.rectTransform);
+        Image weapon = WeaponIcon(slotRect);
 
         TextMeshProUGUI dead = Text("Dead", slotRect, "X", 54, new Color(1f, 1f, 1f, 0.95f), TextAlignmentOptions.Center, true);
         Stretch(dead.rectTransform);
@@ -510,7 +512,7 @@ public static class MatchHUDBuilder
         playerName.textWrappingMode = TextWrappingModes.NoWrap;
         playerName.overflowMode = TextOverflowModes.Ellipsis;
 
-        return new MatchHUD.PlayerSlot { icon = icon, initial = initial, playerName = playerName, deadMark = dead.gameObject, localMark = localRing, specialMark = special };
+        return new MatchHUD.PlayerSlot { icon = icon, initial = initial, weapon = weapon, playerName = playerName, deadMark = dead.gameObject, localMark = localRing, specialMark = special };
     }
 
     static void AssignHudSlots(SerializedProperty array, MatchHUD.PlayerSlot[] slots)
@@ -521,6 +523,7 @@ public static class MatchHUDBuilder
             SerializedProperty e = array.GetArrayElementAtIndex(i);
             e.FindPropertyRelative("icon").objectReferenceValue = slots[i].icon;
             e.FindPropertyRelative("initial").objectReferenceValue = slots[i].initial;
+            e.FindPropertyRelative("weapon").objectReferenceValue = slots[i].weapon;
             e.FindPropertyRelative("playerName").objectReferenceValue = slots[i].playerName;
             e.FindPropertyRelative("deadMark").objectReferenceValue = slots[i].deadMark;
             e.FindPropertyRelative("localMark").objectReferenceValue = slots[i].localMark;
@@ -548,6 +551,7 @@ public static class MatchHUDBuilder
         ready.rectTransform.anchoredPosition = new Vector2(-114, 54); // up and left of the gauge
         ready.gameObject.SetActive(false);
         // Names stand in for icons; key hints sit on the gauges' outer lower corners.
+        Image specialImage = GaugeIcon(specialFrame, "SpecialIcon", 104);
         TextMeshProUGUI specialIcon = Text("Icon", specialFrame, "BUBBLE", 17, Color.white, TextAlignmentOptions.Center, true);
         Place(specialIcon.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(2.4f, 88), new Vector2(170, 24));
         specialIcon.textWrappingMode = TextWrappingModes.NoWrap; // the special's name changes with the loadout
@@ -565,6 +569,7 @@ public static class MatchHUDBuilder
         TextMeshProUGUI subKey = Text("Key", subFrame, "[E]", 15, Color.white, TextAlignmentOptions.Center, true);
         Prompt(subKey, "{Weapon/Sub}");
         Place(subKey.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(32.4f, 19.2f), new Vector2(34.6f, 22));
+        Image subImage = GaugeIcon(subFrame, "SubIcon", 66);
         TextMeshProUGUI subIcon = Text("Icon", subFrame, "BEACON", 15, Color.white, TextAlignmentOptions.Center, true);
         Place(subIcon.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 1f), new Vector2(3.1f, 56.5f), new Vector2(74.8f, 22));
         subIcon.textWrappingMode = TextWrappingModes.NoWrap; // the sub's name changes with the loadout
@@ -581,6 +586,8 @@ public static class MatchHUDBuilder
         so.FindProperty("specialFrame").objectReferenceValue = specialFrame;
         so.FindProperty("specialReady").objectReferenceValue = ready.gameObject;
         so.FindProperty("subLabel").objectReferenceValue = subIcon;
+        so.FindProperty("subIcon").objectReferenceValue = subImage;
+        so.FindProperty("specialIcon").objectReferenceValue = specialImage;
         so.FindProperty("specialLabel").objectReferenceValue = specialIcon;
         so.ApplyModifiedPropertiesWithoutUndo();
     }
@@ -1279,6 +1286,7 @@ public static class MatchHUDBuilder
             SerializedProperty e = arr.GetArrayElementAtIndex(i);
             e.FindPropertyRelative("icon").objectReferenceValue = slot.GetComponent<Image>();
             e.FindPropertyRelative("initial").objectReferenceValue = slot.Find("Initial").GetComponent<TMP_Text>();
+            e.FindPropertyRelative("weapon").objectReferenceValue = slot.Find("Weapon") is Transform w ? w.GetComponent<Image>() : null;
             e.FindPropertyRelative("playerName").objectReferenceValue = slot.Find("Name").GetComponent<TMP_Text>();
             e.FindPropertyRelative("deadMark").objectReferenceValue = slot.Find("Dead").gameObject;
             e.FindPropertyRelative("localMark").objectReferenceValue = slot.GetComponent<Outline>();
@@ -1396,5 +1404,134 @@ public static class MatchHUDBuilder
             PrefabUtility.UnloadPrefabContents(root);
         }
         Debug.Log($"[MatchHUD] Gamma and Delta got wavy edges: {PrefabPath}");
+    }
+
+    // ── Icons in place of letters and names ────────────────────────────────
+
+    // The weapon in a player's slot: inside the circle, over the initial it replaces.
+    static Image WeaponIcon(RectTransform slot)
+    {
+        RectTransform rt = Rect("Weapon", slot, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
+        StretchInset(rt, 5);
+        Image img = Img(rt.gameObject, null, Color.white, sliced: false);
+        img.preserveAspect = true;
+        img.enabled = false; // until there's a weapon to show
+        Shadow shadow = rt.gameObject.AddComponent<Shadow>(); // lifts it off the team colour
+        shadow.effectColor = new Color(0f, 0f, 0f, 0.45f);
+        shadow.effectDistance = new Vector2(1.5f, -1.5f);
+        return img;
+    }
+
+    // The sub or special on its gauge, over the liquid.
+    static Image GaugeIcon(RectTransform gauge, string name, float size)
+    {
+        RectTransform rt = Rect(name, gauge, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(size, size));
+        Image img = Img(rt.gameObject, null, Color.white, sliced: false);
+        img.preserveAspect = true;
+        img.enabled = false;
+        Shadow shadow = rt.gameObject.AddComponent<Shadow>();
+        shadow.effectColor = new Color(0f, 0f, 0f, 0.5f);
+        shadow.effectDistance = new Vector2(2f, -2f);
+        return img;
+    }
+
+    [MenuItem("Tools/UI/Add Loadout Icons To Match HUD")]
+    public static void AddLoadoutIcons()
+    {
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        int slots = 0;
+        try
+        {
+            MatchHUD hud = root.GetComponentInChildren<MatchHUD>(true);
+            var so = new SerializedObject(hud);
+            foreach (string team in new[] { "alphaSlots", "betaSlots", "gammaSlots", "deltaSlots" })
+            {
+                SerializedProperty arr = so.FindProperty(team);
+                for (int i = 0; i < arr.arraySize; i++)
+                {
+                    SerializedProperty e = arr.GetArrayElementAtIndex(i);
+                    var icon = e.FindPropertyRelative("icon").objectReferenceValue as Image;
+                    if (icon == null) continue;
+                    DestroyChild(icon.transform, "Weapon");
+                    Image weapon = WeaponIcon((RectTransform)icon.transform);
+                    Transform initial = icon.transform.Find("Initial");
+                    if (initial != null) weapon.transform.SetSiblingIndex(initial.GetSiblingIndex() + 1); // under the dead mark and special ring
+                    e.FindPropertyRelative("weapon").objectReferenceValue = weapon;
+                    slots++;
+                }
+            }
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            LoadoutHUD loadout = root.GetComponentInChildren<LoadoutHUD>(true);
+            var lso = new SerializedObject(loadout);
+            foreach ((string labelField, string iconField, string name, float size) in new[] { ("subLabel", "subIcon", "SubIcon", 66f), ("specialLabel", "specialIcon", "SpecialIcon", 104f) })
+            {
+                var label = (TMP_Text)lso.FindProperty(labelField).objectReferenceValue;
+                Transform gauge = label.transform.parent;
+                DestroyChild(gauge, name);
+                Image icon = GaugeIcon((RectTransform)gauge, name, size);
+                icon.transform.SetSiblingIndex(label.transform.GetSiblingIndex());
+                lso.FindProperty(iconField).objectReferenceValue = icon;
+            }
+            lso.ApplyModifiedPropertiesWithoutUndo();
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Weapon icons in {slots} player slots, and the sub's and special's icons on their gauges: {PrefabPath}");
+    }
+
+    // ── Killfeed ───────────────────────────────────────────────────────────
+
+    // Top left, rows cloned from a hidden template; the killer's markers on a full-screen layer.
+    static void BuildKillFeed(GameObject root)
+    {
+        Vector2 centre = new Vector2(0.5f, 0.5f), topLeft = new Vector2(0f, 1f);
+        RectTransform layer = Rect("KillFeed", root.transform, centre, centre, Vector2.zero, Vector2.zero);
+        Stretch(layer);
+        RectTransform markers = Rect("Markers", layer, centre, centre, Vector2.zero, Vector2.zero);
+        Stretch(markers);
+        TextMeshProUGUI marker = Text("MarkerTemplate", markers, "", 26, Color.white, TextAlignmentOptions.Center, true);
+        Place(marker.rectTransform, centre, centre, Vector2.zero, new Vector2(320, 40));
+        marker.textWrappingMode = TextWrappingModes.NoWrap;
+
+        RectTransform feed = Rect("Feed", layer, topLeft, topLeft, new Vector2(24, -24), new Vector2(600, 200));
+        RectTransform row = Rect("RowTemplate", feed, topLeft, topLeft, Vector2.zero, new Vector2(300, 34));
+        Img(row.gameObject, rounded, new Color(0.06f, 0.06f, 0.09f, 0.62f), sliced: true);
+        row.gameObject.AddComponent<CanvasGroup>();
+        TextMeshProUGUI text = Text("Text", row, "", 20, Color.white, TextAlignmentOptions.Center, false);
+        Stretch(text.rectTransform);
+        text.textWrappingMode = TextWrappingModes.NoWrap;
+
+        KillFeed kf = layer.gameObject.AddComponent<KillFeed>();
+        var so = new SerializedObject(kf);
+        so.FindProperty("feed").objectReferenceValue = feed;
+        so.FindProperty("rowTemplate").objectReferenceValue = row;
+        so.FindProperty("markers").objectReferenceValue = markers;
+        so.FindProperty("markerTemplate").objectReferenceValue = marker;
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    [MenuItem("Tools/UI/Add Kill Feed To Match HUD")]
+    public static void AddKillFeed()
+    {
+        rounded = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        outline = AssetDatabase.LoadAssetAtPath<Material>(OutlineMat);
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            DestroyChild(root.transform, "KillFeed");
+            BuildKillFeed(root);
+            Transform popup = root.transform.Find("DeathPopup"), feed = root.transform.Find("KillFeed");
+            if (popup != null) feed.SetSiblingIndex(popup.GetSiblingIndex() + 1);
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Added the killfeed to {PrefabPath}");
     }
 }

@@ -40,6 +40,15 @@ public partial class PlayerController
         pendingRespawn = StartCoroutine(RespawnAfterDeath());
     }
 
+    // Our burst of the splatter's ink where we were splatted. Every client shows it; only ours paints
+    // (the splats reach everyone else as usual). No damage.
+    public void DeathBurst(int team, Vector3 at, bool authoritative)
+    {
+        NetGameManager gm = NetGameManager.Instance;
+        if (!Teams.Valid(team) || gm == null) return;
+        InkExplosion.Detonate(at + Vector3.up * 0.5f, deathBurst, team, OwnerId, null, authoritative, gm.TeamColour(team));
+    }
+
     IEnumerator RespawnAfterDeath()
     {
         yield return new WaitForSeconds(SplattedTime);

@@ -5636,6 +5636,16 @@ MonoBehaviour:
   superJumpFlightTime: 2
   playerMode: 0
   uiController: {fileID: 0}
+  deathBurst:
+    radius: 1.3
+    coreRadius: 0.5
+    coreDamage: 0
+    edgeDamage: 0
+    inkReach: 1.6
+    splashSize: 9
+    fallingDrops: 0
+    fallSpread: 0.7
+    effect: {fileID: 7185872467873977352, guid: 11a8dd7a6c667b74b89b51781565ea33, type: 3}
   spawnPoint: {x: 0, y: 3, z: 0}
 --- !u!114 &989722492599188877
 MonoBehaviour:
@@ -5670,6 +5680,9 @@ MonoBehaviour:
   specialCost: 1000
   shieldDuration: 5
   shieldVisual: {fileID: 4643227859557890364}
+  specialIcons:
+  - {fileID: 21300000, guid: 28f772c7b6732c844bbfb0285d4bb41c, type: 3}
+  - {fileID: 21300000, guid: 378d24f14486bf24c80eab541775edcb, type: 3}
   pointsPerSquareMetre: 1
   pointsPerDamage: 1
   deathSpecialKept: 0.5

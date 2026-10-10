@@ -232,6 +232,7 @@ MonoBehaviour:
   displayName: Era Roller
   description: A light roller that rolls half as fast again and flicks quicker, for
     a quarter of the damage.
+  icon: {fileID: 21300000, guid: e81fc2daeb5c4e24897b31f37dd95f47, type: 3}
   feetShotInterval: 0.4
   feetShotMinSize: 12
   feetShotMaxSize: 18

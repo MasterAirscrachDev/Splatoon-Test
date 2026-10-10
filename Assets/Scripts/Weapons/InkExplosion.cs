@@ -53,6 +53,7 @@ public static class InkExplosion
             if (ink != null) ink.SplatAt(hit, blast.splashSize, team);
         }
         if (drop != null) Fall(centre, blast, team, ownerId, drop);
+        if (blast.coreDamage <= 0f && blast.edgeDamage <= 0f) return; // ink only (a splatted player's burst)
 
         var struck = new HashSet<Object>();
         if (exclude != null) struck.Add(exclude);

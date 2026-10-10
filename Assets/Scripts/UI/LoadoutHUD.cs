@@ -12,8 +12,10 @@ public class LoadoutHUD : MonoBehaviour
     [SerializeField] RectTransform subCostMark;   // line across the sub gauge at the cost
     [SerializeField] RectTransform specialFrame;  // pulses when the special is ready
     [SerializeField] GameObject specialReady;     // "READY" label
-    [SerializeField] TMP_Text subLabel;           // dimmed with the gauge without enough ink
-    [SerializeField] TMP_Text specialLabel;
+    [SerializeField] TMP_Text subLabel;           // dimmed with the gauge without enough ink; stands in for the icon
+    [SerializeField] Image subIcon;               // the sub's icon, likewise dimmed
+    [SerializeField] TMP_Text specialLabel;       // stands in for the icon
+    [SerializeField] Image specialIcon;
     [SerializeField] float fillSmoothing = 10f;
     [SerializeField] float lowInkDim = 0.45f;     // sub gauge brightness without enough ink
 
@@ -27,6 +29,23 @@ public class LoadoutHUD : MonoBehaviour
     public float SpecialFill => shownSpecial;
     public bool ReadyShown => specialReady.activeSelf;
     public string SubName => subLabel.text;
+    public Sprite SubIconShown => subIcon != null && subIcon.enabled ? subIcon.sprite : null;
+    public Sprite SpecialIconShown => specialIcon != null && specialIcon.enabled ? specialIcon.sprite : null;
+
+    // The icon on its gauge (dimmed when it can't be used), or its name while there's no icon.
+    static void ShowIcon(Image image, TMP_Text label, Sprite icon, string name, bool usable)
+    {
+        bool shown = icon != null && image != null;
+        if (image != null)
+        {
+            if (image.enabled != shown) image.enabled = shown;
+            if (shown && image.sprite != icon) image.sprite = icon;
+            image.color = usable ? Color.white : new Color(0.55f, 0.55f, 0.55f, 0.75f);
+        }
+        if (label == null) return;
+        if (label.gameObject.activeSelf == shown) label.gameObject.SetActive(!shown);
+        if (label.text != name) label.text = name;
+    }
     public string SpecialName => specialLabel != null ? specialLabel.text : "";
 
     void Awake()
@@ -62,8 +81,8 @@ public class LoadoutHUD : MonoBehaviour
         float h = ((RectTransform)subFill.transform).rect.height;
         subCostMark.anchoredPosition = new Vector2(0f, (loadout.SubInkCost - 0.5f) * h);
         subLabel.alpha = canSub ? 1f : 0.5f;
-        if (subLabel.text != loadout.SubName) subLabel.text = loadout.SubName; // stand in for the sub and special icons
-        if (specialLabel != null && specialLabel.text != loadout.SpecialName) specialLabel.text = loadout.SpecialName;
+        ShowIcon(subIcon, subLabel, loadout.SubIcon, loadout.SubName, canSub);
+        ShowIcon(specialIcon, specialLabel, loadout.SpecialIcon, loadout.SpecialName, true);
 
         // Special: charge, or the time left while it's running.
         float target = loadout.ShieldActive ? loadout.ShieldRemaining / loadout.ShieldDuration : loadout.SpecialCharge;

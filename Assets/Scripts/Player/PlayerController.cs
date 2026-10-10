@@ -56,6 +56,9 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
     public const float KillHeight = -10f;            // below this we've fallen out of the world
     public const string FellCause = "Fell out of bounds";
 
+    [Header("Splatted")] // where we were splatted we burst into the splatter's ink: harmless, a little turf
+    [SerializeField] InkBlast deathBurst = new InkBlast { radius = 1.3f, coreRadius = 0.5f, coreDamage = 0f, edgeDamage = 0f, inkReach = 1.6f, splashSize = 9, fallingDrops = 0 };
+
     [Header("Respawn")]
     [SerializeField] Vector3 spawnPoint = new Vector3(0, 3, 0); // fallback if no tagged spawn exists
 

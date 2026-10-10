@@ -176,7 +176,9 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.Bind((ushort)NetMsg.SubDamage,     OnSubDamageMsg);
         SteamGlobal.Bind((ushort)NetMsg.InkStrike,     OnInkStrikeMsg);
         SteamGlobal.Bind((ushort)NetMsg.LoadScene,     OnLoadSceneMsg);
+        SteamGlobal.Bind((ushort)NetMsg.Kill,          OnKillMsg);
         SurfaceInkManager.OnSplatApplied += OnLocalSplat;
+        PlayerController.Splatted += OnLocalSplatted;
     }
 
     void OnDisable()
@@ -198,7 +200,9 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.UnBind((ushort)NetMsg.SubDamage,     OnSubDamageMsg);
         SteamGlobal.UnBind((ushort)NetMsg.InkStrike,     OnInkStrikeMsg);
         SteamGlobal.UnBind((ushort)NetMsg.LoadScene,     OnLoadSceneMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.Kill,          OnKillMsg);
         SurfaceInkManager.OnSplatApplied -= OnLocalSplat;
+        PlayerController.Splatted -= OnLocalSplatted;
     }
 
     // ── Lobbies (host / join, see LobbyMenu) ───────────────────────────────
@@ -1022,6 +1026,36 @@ public class NetGameManager : MonoBehaviour
             });
     }
 
+    // ── Kills ──────────────────────────────────────────────────────────────
+    // The victim's client tells everyone (damage is dealt there, so it's the one that knows); each
+    // client then bursts the victim's ink where it happened and reports it (the killfeed).
+    public static event System.Action<KillData> KillReported;
+
+    void OnLocalSplatted(PlayerController who, ulong by, string with)
+    {
+        if (who == null || who != localPlayer) return; // test players aren't on the network
+        var d = new KillData { victimId = who.OwnerId, killerId = by, cause = with ?? "", position = who.DeathSpot };
+        Send(NetMsg.Kill, d);
+        ReportKill(d, true);
+    }
+
+    void OnKillMsg(object data, SteamId from)
+    {
+        if (data is KillData d)
+            mainThread.Enqueue(() =>
+            {
+                if (d.victimId == localId && localPlayer != null) return; // our own
+                ReportKill(d, false);
+            });
+    }
+
+    void ReportKill(KillData d, bool ours)
+    {
+        PlayerController victim = GetPlayer(d.victimId), killer = d.NoKiller ? null : GetPlayer(d.killerId);
+        if (victim != null && killer != null) victim.DeathBurst(killer.Team, d.position, ours);
+        KillReported?.Invoke(d);
+    }
+
     // ── Sending (and test hooks) ───────────────────────────────────────────
     // Tests: when set, outgoing messages go here instead of Steam (target 0 = everyone).
     public static System.Action<NetMsg, object, ulong> SendOverride;
@@ -1059,6 +1093,7 @@ public class NetGameManager : MonoBehaviour
             case NetMsg.SubDestroy:      OnSubDestroyMsg(data, sender); break;
             case NetMsg.SubDamage:       OnSubDamageMsg(data, sender); break;
             case NetMsg.InkStrike:       OnInkStrikeMsg(data, sender); break;
+            case NetMsg.Kill:            OnKillMsg(data, sender); break;
         }
     }
 }

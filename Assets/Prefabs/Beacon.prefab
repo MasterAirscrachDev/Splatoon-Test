@@ -259,6 +259,7 @@ MonoBehaviour:
   - {fileID: 7983882306036727968}
   - {fileID: 1510468246998963227}
   - {fileID: 1984706391897141502}
+  icon: {fileID: 21300000, guid: bba0e4df2dfc93741aba4ffa267e0563, type: 3}
   spinner: {fileID: 2711367238180248746}
 --- !u!1 &5633821398812891410
 GameObject:

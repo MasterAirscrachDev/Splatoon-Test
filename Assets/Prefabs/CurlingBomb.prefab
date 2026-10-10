@@ -50,6 +50,7 @@ MonoBehaviour:
   lifetime: 30
   teamTinted:
   - {fileID: 1716586626935019383}
+  icon: {fileID: 21300000, guid: 1fc223bcd205c574eac1aad6ed97b905, type: 3}
   slideSpeed: 12
   friction: 0
   minSpeed: 2.5

@@ -822,7 +822,8 @@ public partial class ClimbTestRunner
         menu.SetOpen(false);
         yield return Hold(Still, false, 0.1f, "menu");
         if (menu.IsOpen || InputGate.Blocked) Fail("didn't close");
-        if (gauges != null && gauges.SubName != "SPRINKLER") Fail("sub gauge doesn't show the sprinkler");
+        if (gauges != null && (gauges.SubName != "SPRINKLER" || gauges.SubIconShown != loadout.SprinklerPrefab.Icon)) Fail("sub gauge doesn't show the sprinkler");
+        if (gauges != null && (gauges.SpecialIconShown == null || gauges.SpecialIconShown != loadout.SpecialIcon)) Fail("special gauge doesn't show the Inkstrike's icon");
 
         // Not during a match; one in progress closes it.
         gm.SetMatchTimings(5f, 60f, 30f, 0.5f, 2f);

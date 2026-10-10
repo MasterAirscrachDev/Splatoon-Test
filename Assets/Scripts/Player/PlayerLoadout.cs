@@ -39,6 +39,7 @@ public class PlayerLoadout : MonoBehaviour
     [SerializeField] float specialCost = 1000f;    // points to charge
     [SerializeField] float shieldDuration = 5f;
     [SerializeField] Transform shieldVisual;
+    [SerializeField] Sprite[] specialIcons = new Sprite[2]; // by SpecialType, rendered in the icon studio
 
     [Header("Special charge")]
     [SerializeField] float pointsPerSquareMetre = 1f;  // turf newly turned to our colour
@@ -61,8 +62,13 @@ public class PlayerLoadout : MonoBehaviour
     public SpecialType Special => special;
     public string SpecialName => special == SpecialType.BubbleShield ? "BUBBLE" : "INKSTRIKE";
     public InkStrike InkStrikePrefab => inkStrikePrefab;
+    public Sprite SpecialIcon => specialIcons != null && (int)special < specialIcons.Length ? specialIcons[(int)special] : null;
     public bool Targeting { get; private set; } // picking an Inkstrike spot on the map
     public float SubInkCost => InkCost(sub);
+    public Sprite SubIcon => SubPrefab(sub) is SubDevice d && d != null ? d.Icon : null;
+    SubDevice SubPrefab(SubType type) => type == SubType.Beacon ? beaconPrefab : type == SubType.Sprinkler ? sprinklerPrefab : curlingBombPrefab;
+    // The icon of the weapon this player has equipped (or null without one).
+    public Sprite WeaponIcon => weapons != null && weapons.Length > 0 && weapons[Mathf.Clamp(player.WeaponIndex, 0, weapons.Length - 1)] is Weapon w && w != null ? w.Icon : null;
     public Light SubReadyLight => subReadyLight;
     public float InkCost(SubType type)
     {

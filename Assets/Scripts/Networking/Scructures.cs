@@ -48,7 +48,8 @@ public enum NetMsg : ushort
     SubDestroy,      // a sub broke, expired, or (beacon) was landed on
     SubDamage,       // a hit on someone's sub, sent to its owner
     InkStrike,       // a player called in an Inkstrike (special)
-    LoadScene        // the host moving everyone to another scene (SceneLoadData)
+    LoadScene,       // the host moving everyone to another scene (SceneLoadData)
+    Kill             // a player was splatted (or fell), from their own client: the killfeed and the burst (KillData)
 }
 
 // Where a player sits in the roster. Alpha/Beta match the team numbers used everywhere else.
@@ -189,6 +190,18 @@ public class InkStrikeData
     public ulong ownerId;
     public int team;
     public NVector3 position; // the target, on the ground
+}
+
+// ── A player splatted (or fell out of bounds), told by their own client ──
+[System.Serializable]
+public class KillData
+{
+    public ulong victimId;
+    public ulong killerId;    // unused for a fall (ids can be 0 offline, so the cause says it)
+    public string cause;      // the weapon, sub or special that did it, or PlayerController.FellCause
+    public bool Fell => cause == PlayerController.FellCause;
+    public bool NoKiller => Fell || killerId == victimId; // nobody to name (offline our id is 0, the same as "nobody")
+    public NVector3 position; // where it happened
 }
 
 // ── Roster from the host: roles[i] (a PlayerRole) for ids[i] ─────────────

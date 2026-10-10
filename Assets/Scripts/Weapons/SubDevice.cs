@@ -10,6 +10,7 @@ public abstract class SubDevice : MonoBehaviour
     [SerializeField] protected float maxHealth = 35f;
     [SerializeField] protected float lifetime = 30f;
     [SerializeField] protected Renderer[] teamTinted; // parts shown in the team colour
+    [SerializeField] Sprite icon;                      // rendered in the icon studio (Tools/Icons/Render Icons)
 
     static readonly List<SubDevice> all = new List<SubDevice>();
     public static IReadOnlyList<SubDevice> All => all;
@@ -21,6 +22,7 @@ public abstract class SubDevice : MonoBehaviour
     public float Health => health;
     public float MaxHealth => maxHealth;
     public float InkCost => inkCost;
+    public Sprite Icon => icon;
     public float Lifetime => lifetime;
     public float TimeLeft => Mathf.Max(0f, expiresAt - Time.time);
     public bool IsOwnedLocally => authoritative;

@@ -14,7 +14,8 @@ public class MatchHUD : MonoBehaviour
     public class PlayerSlot
     {
         public Image icon;
-        public TMP_Text initial;
+        public TMP_Text initial;       // stands in for the weapon icon when there isn't one
+        public Image weapon;           // their equipped weapon's icon
         public TMP_Text playerName;
         public GameObject deadMark;
         public Outline localMark;      // highlights the local player
@@ -154,6 +155,7 @@ public class MatchHUD : MonoBehaviour
             if (p == null)
             {
                 slot.icon.color = emptySlotColor;
+                ShowWeapon(slot, null, false);
                 SetText(slot.initial, "");
                 SetText(slot.playerName, "");
                 slot.deadMark.SetActive(false);
@@ -165,7 +167,9 @@ public class MatchHUD : MonoBehaviour
             Color c = p.IsDead ? new Color(colour.r * deadDim, colour.g * deadDim, colour.b * deadDim, 1f) : colour;
             slot.icon.color = c;
             string name = string.IsNullOrEmpty(p.DisplayName) ? "?" : p.DisplayName;
-            SetText(slot.initial, name.Substring(0, 1).ToUpperInvariant());
+            Sprite weapon = LoadoutOf(p) is PlayerLoadout l ? l.WeaponIcon : null;
+            ShowWeapon(slot, weapon, p.IsDead);
+            SetText(slot.initial, weapon != null ? "" : name.Substring(0, 1).ToUpperInvariant());
             SetText(slot.playerName, name);
             slot.deadMark.SetActive(p.IsDead);
             slot.localMark.enabled = p.IsLocalPlayer;
@@ -173,6 +177,23 @@ public class MatchHUD : MonoBehaviour
             if (slot.specialMark.gameObject.activeSelf != special) slot.specialMark.gameObject.SetActive(special);
             if (special) slot.specialMark.localScale = Vector3.one * (1f + 0.07f * Mathf.Sin(Time.time * 7f)); // same pulse as the gauge
         }
+    }
+
+    readonly Dictionary<PlayerController, PlayerLoadout> loadouts = new Dictionary<PlayerController, PlayerLoadout>();
+    PlayerLoadout LoadoutOf(PlayerController p)
+    {
+        if (!loadouts.TryGetValue(p, out PlayerLoadout l) || l == null) loadouts[p] = l = p.GetComponent<PlayerLoadout>();
+        return l;
+    }
+
+    void ShowWeapon(PlayerSlot slot, Sprite icon, bool dead)
+    {
+        if (slot.weapon == null) return;
+        bool on = icon != null;
+        if (slot.weapon.enabled != on) slot.weapon.enabled = on;
+        if (!on) return;
+        if (slot.weapon.sprite != icon) slot.weapon.sprite = icon;
+        slot.weapon.color = dead ? new Color(0.45f, 0.45f, 0.45f, 0.7f) : Color.white;
     }
 
     void UpdateCoverage(NetGameManager gm)

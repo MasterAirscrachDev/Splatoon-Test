@@ -165,6 +165,7 @@ MonoBehaviour:
   teamTinted:
   - {fileID: 492992757472015768}
   - {fileID: 6050210403170002349}
+  icon: {fileID: 21300000, guid: ae4f3283c176094489225b990f945551, type: 3}
   projectilePrefab: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   head: {fileID: 6568963693587734227}
   gravity: 20

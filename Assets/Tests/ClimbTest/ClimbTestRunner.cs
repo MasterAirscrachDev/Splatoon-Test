@@ -511,6 +511,7 @@ public partial class ClimbTestRunner : MonoBehaviour
         yield return S("Combat: replays are visual-only, hits route to the victim, damage kills and respawns", Station.Lobby, Combat, "Combat,Projectiles,Net");
         yield return S("Damage ink: enemy hits put their ink over our screen's edges, further the more we're hurt, gone once healed; a lethal hit floods it, then it drains", Station.Lobby, DamageInk, "Combat,UI");
         yield return S("Death: the camera circles the spot while a popup says who and with what; back at spawn 4s later, held in swim form for 1s; falling out of bounds too", Station.Lobby, Death, "Combat,Camera,UI");
+        yield return S("Kills: the victim's client tells everyone; the feed says who did what to whom (or that they fell), only the latest five; the killer gets a crossed-out marker; the victim bursts into the killer's ink", Station.Lobby, KillsAndFeed, "Kills,Combat,UI,Net");
         yield return S("HostMenu: percentages toggle, special fills, team editor moves players between teams and the bench", Station.Lobby, HostMenuTeams, "Match,UI");
         yield return S("Map: holding opens it, lists our team with lines to markers, picking a teammate requests a Super Jump", Station.Lobby, MapTeam, "Map,UI");
         yield return S("SuperJump: locked charge in swim form, high arc onto the teammate, unlocks on landing (swim kept only if held)", Station.Lobby, SuperJump, "Map,Swim");

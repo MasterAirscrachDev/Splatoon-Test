@@ -420,8 +420,16 @@ public partial class ClimbTestRunner
         Vector3 remotePos = station.TransformPoint(new Vector3(6f, 0.05f, 6f));
         gm.Receive(NetMsg.PlayerSpawn, new PlayerSpawnData { steamId = RemoteId, team = enemyTeam, position = remotePos, playerName = "Rival" }, RemoteId);
         yield return Hold(Still, false, 0.1f, "roster");
-        if (enemy[0].playerName.text != "Rival" || enemy[0].initial.text != "R" || enemy[0].localMark.enabled)
-            Fail($"joined enemy not shown correctly (\"{enemy[0].playerName.text}\"/\"{enemy[0].initial.text}\")");
+        // Their slot shows their weapon's icon (the initial only stands in without one), and follows a switch.
+        PlayerLoadout rivalLoadout = gm.Players.First(p => p != null && p.OwnerId == RemoteId).GetComponent<PlayerLoadout>();
+        Sprite firstIcon = rivalLoadout.Weapons[0].Icon, otherIcon = rivalLoadout.Weapons[rivalLoadout.Weapons.Count - 1].Icon;
+        bool iconShown = enemy[0].weapon != null && enemy[0].weapon.enabled && enemy[0].weapon.sprite == firstIcon && enemy[0].initial.text == "";
+        if (enemy[0].playerName.text != "Rival" || !iconShown || enemy[0].localMark.enabled)
+            Fail($"joined enemy not shown correctly (\"{enemy[0].playerName.text}\", weapon icon {(enemy[0].weapon != null && enemy[0].weapon.enabled ? enemy[0].weapon.sprite?.name : "none")}, initial \"{enemy[0].initial.text}\")");
+        gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = RemoteId, position = remotePos, moveDir = Vector2.zero, team = enemyTeam, weapon = rivalLoadout.Weapons.Count - 1 }, RemoteId);
+        yield return Hold(Still, false, 0.1f, "roster");
+        Note($"enemy slot: \"{enemy[0].playerName.text}\" with {firstIcon?.name}, then {enemy[0].weapon.sprite?.name} after switching");
+        if (enemy[0].weapon.sprite != otherIcon) Fail("the enemy's slot didn't follow their weapon switch");
         gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = RemoteId, position = remotePos, moveDir = Vector2.zero, team = enemyTeam, dead = true }, RemoteId);
         yield return Hold(Still, false, 0.1f, "roster");
         if (!enemy[0].deadMark.activeSelf) Fail("dead enemy isn't marked");

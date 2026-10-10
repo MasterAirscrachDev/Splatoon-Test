@@ -276,6 +276,7 @@ MonoBehaviour:
   displayName: Artemis Blaster
   description: Lighter, quicker shots that fly half as far again before exploding,
     for half the damage.
+  icon: {fileID: 21300000, guid: e59079957d6645040ba368e667790d3e, type: 3}
   feetShotInterval: 0.4
   feetShotMinSize: 12
   feetShotMaxSize: 18

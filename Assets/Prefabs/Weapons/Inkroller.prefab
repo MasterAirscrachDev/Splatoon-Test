@@ -232,6 +232,7 @@ MonoBehaviour:
   displayName: Inkroller
   description: Flick ink in a wide arc (or a long line from the air), then hold to
     roll a strip of ink and run enemies over.
+  icon: {fileID: 21300000, guid: b1a1a30c38d79164cb10f82c4180b71e, type: 3}
   feetShotInterval: 0.4
   feetShotMinSize: 12
   feetShotMaxSize: 18

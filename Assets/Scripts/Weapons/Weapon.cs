@@ -8,6 +8,7 @@ public abstract class Weapon : MonoBehaviour
 {
     [SerializeField] string displayName = "Weapon";
     [SerializeField, TextArea] string description;
+    [SerializeField] Sprite icon;          // rendered in the icon studio (Tools/Icons/Render Icons)
 
     [Header("Feet ink")] // keeps the shooter standing in their own ink
     [SerializeField] float feetShotInterval = 0.4f;
@@ -18,6 +19,7 @@ public abstract class Weapon : MonoBehaviour
 
     public string DisplayName => displayName;
     public string Description => description;
+    public Sprite Icon => icon;
     public PlayerController Owner { get; private set; }
     public int FeetShots { get; private set; } // tests
 
