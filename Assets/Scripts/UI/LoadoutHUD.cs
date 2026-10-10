@@ -51,7 +51,7 @@ public class LoadoutHUD : MonoBehaviour
         if (!show) return;
 
         PlayerController p = loadout.Player;
-        Color team = p.Team == 2 ? gm.BetaTeam : gm.AlphaTeam;
+        Color team = gm.TeamColour(p.Team);
         float k = 1f - Mathf.Exp(-fillSmoothing * Time.deltaTime);
 
         // Sub: ink level, dimmed below the cost.

@@ -19,7 +19,7 @@ public class NetGameManager : MonoBehaviour
 
     [Header("Spawning")]
     [SerializeField] GameObject playerEntityPrefab;
-    [SerializeField] int maxPlayers = 8;
+    [SerializeField] int maxPlayers = 16;     // the Steam lobby: the map's teams (8 or 9) and spectators
     [SerializeField] bool devMode; // local player only, no Steam
 
     [Header("Match (seconds)")]
@@ -29,36 +29,49 @@ public class NetGameManager : MonoBehaviour
     [SerializeField] float timesUpTime = 2.5f;
     [SerializeField] float resultsTime = 15f;
 
-    // Team colours come in pairs; the host picks one at random when it loads and again for each
-    // game, and everyone follows its pick (roster and match messages carry it).
+    // Team colours come in sets of four (Alpha, Beta, Gamma, Delta; a match uses as many as the map
+    // has teams); the host picks one at random when it loads and again for each game, and everyone
+    // follows its pick (roster and match messages carry it). Field names stay "pair" on the wire.
     [System.Serializable]
     public struct TeamColours
     {
         public string name;
-        public Color alpha, beta;
-        public TeamColours(string name, Color alpha, Color beta) { this.name = name; this.alpha = alpha; this.beta = beta; }
+        public Color alpha, beta, gamma, delta;
+        public TeamColours(string name, Color alpha, Color beta, Color gamma, Color delta)
+        { this.name = name; this.alpha = alpha; this.beta = beta; this.gamma = gamma; this.delta = delta; }
     }
 
     [Header("Team Colours")]
-    [SerializeField] TeamColours[] colourPairs =
+    [SerializeField] TeamColours[] colourPairs = DefaultColourSets();
+
+    public static TeamColours[] DefaultColourSets() => new[]
     {
-        new TeamColours("Cyan / Magenta",      new Color(0f, 1f, 1f),          new Color(1f, 0f, 1f)),
-        new TeamColours("Orange / Blue",       new Color(1f, 0.5f, 0.05f),     new Color(0.15f, 0.35f, 1f)),
-        new TeamColours("Lime / Purple",       new Color(0.7f, 1f, 0.1f),      new Color(0.55f, 0.15f, 0.95f)),
-        new TeamColours("Yellow / Indigo",     new Color(1f, 0.85f, 0.05f),    new Color(0.3f, 0.2f, 0.9f)),
-        new TeamColours("Pink / Green",        new Color(1f, 0.3f, 0.6f),      new Color(0.1f, 0.85f, 0.45f)),
-        new TeamColours("Turquoise / Red",     new Color(0.1f, 0.9f, 0.75f),   new Color(1f, 0.25f, 0.15f)),
-        new TeamColours("Sky / Gold",          new Color(0.35f, 0.75f, 1f),    new Color(1f, 0.65f, 0.1f)),
+        new TeamColours("Cyan / Magenta / Yellow / Green",    new Color(0f, 1f, 1f),        new Color(1f, 0f, 1f),          new Color(1f, 0.85f, 0.05f),   new Color(0.2f, 0.85f, 0.25f)),
+        new TeamColours("Orange / Blue / Green / Pink",       new Color(1f, 0.5f, 0.05f),   new Color(0.15f, 0.35f, 1f),    new Color(0.15f, 0.85f, 0.3f), new Color(1f, 0.35f, 0.7f)),
+        new TeamColours("Lime / Purple / Orange / Sky",       new Color(0.7f, 1f, 0.1f),    new Color(0.55f, 0.15f, 0.95f), new Color(1f, 0.5f, 0.05f),    new Color(0.35f, 0.75f, 1f)),
+        new TeamColours("Yellow / Indigo / Pink / Turquoise", new Color(1f, 0.85f, 0.05f),  new Color(0.3f, 0.2f, 0.9f),    new Color(1f, 0.3f, 0.6f),     new Color(0.1f, 0.9f, 0.75f)),
+        new TeamColours("Pink / Green / Blue / Yellow",       new Color(1f, 0.3f, 0.6f),    new Color(0.1f, 0.85f, 0.45f),  new Color(0.15f, 0.35f, 1f),   new Color(1f, 0.85f, 0.05f)),
+        new TeamColours("Turquoise / Red / Yellow / Purple",  new Color(0.1f, 0.9f, 0.75f), new Color(1f, 0.25f, 0.15f),    new Color(1f, 0.85f, 0.05f),   new Color(0.55f, 0.15f, 0.95f)),
+        new TeamColours("Sky / Gold / Magenta / Lime",        new Color(0.35f, 0.75f, 1f),  new Color(1f, 0.65f, 0.1f),     new Color(1f, 0f, 1f),         new Color(0.7f, 1f, 0.1f)),
     };
     int colourPair = -1;
 
-    public Color AlphaTeam => Colours.alpha;
-    public Color BetaTeam  => Colours.beta;
-    public Color TeamColour(int team) => team == 2 ? BetaTeam : AlphaTeam;
+    public Color AlphaTeam => TeamColour(1);
+    public Color BetaTeam  => TeamColour(2);
+    public Color TeamColour(int team)
+    {
+        TeamColours c = Colours;
+        Color col = team switch { 2 => c.beta, 3 => c.gamma, 4 => c.delta, _ => c.alpha };
+        if (col.a > 0f) return col;
+        // A set saved before there were four colours: the default set's at the same index.
+        TeamColours[] defaults = DefaultColourSets();
+        TeamColours d = defaults[Mathf.Clamp(colourPair, 0, defaults.Length - 1)];
+        return team switch { 2 => d.beta, 3 => d.gamma, 4 => d.delta, _ => d.alpha };
+    }
     public int ColourPair => colourPair;
     public int ColourPairCount => colourPairs.Length;
     public string ColourPairName => Colours.name;
-    TeamColours Colours => colourPairs.Length == 0 ? new TeamColours("Default", Color.cyan, Color.magenta)
+    TeamColours Colours => colourPairs.Length == 0 ? DefaultColourSets()[0]
                                                    : colourPairs[Mathf.Clamp(colourPair, 0, colourPairs.Length - 1)];
 
     // The team colours changed (a new pair): anything that applied them once should again.
@@ -96,7 +109,7 @@ public class NetGameManager : MonoBehaviour
         Phase == MatchPhase.TimesUp || Phase == MatchPhase.Results ? 0f : matchDuration;
     public bool InMatch => Phase != MatchPhase.FreeRoam;
     public bool InFinalStretch => Phase == MatchPhase.Playing && PhaseTimeRemaining <= finalStretchTime;
-    public Vector3Int MatchResult { get; private set; } // alpha, beta, neutral texels, from the host
+    public int[] MatchResult { get; private set; } = new int[Teams.Max + 1]; // texels, from the host: [0] neutral, [team] per team
     public static event System.Action<MatchPhase> PhaseChanged;
     public static event System.Action FinalStretchStarted; // "now or never" (music goes here)
     readonly ConcurrentQueue<System.Action> mainThread = new ConcurrentQueue<System.Action>();
@@ -349,24 +362,27 @@ public class NetGameManager : MonoBehaviour
     {
         RequestScores(topDownOnly, total =>
         {
-            float t = total.x + total.y + total.z;
+            float t = 0f;
+            foreach (int n in total) t += n;
             if (t <= 0) return;
-            string label = topDownOnly ? "[Top-down] " : "[Full] ";
-            Debug.Log($"{label}Alpha: {total.x / t * 100:f2}%  Beta: {total.y / t * 100:f2}%  Neutral: {total.z / t * 100:f2}%");
+            var line = new System.Text.StringBuilder(topDownOnly ? "[Top-down] " : "[Full] ");
+            for (int team = 1; team <= Teams.Count; team++) line.Append($"{Teams.Name(team)}: {total[team] / t * 100:f2}%  ");
+            line.Append($"Neutral: {total[0] / t * 100:f2}%");
+            Debug.Log(line.ToString());
         });
     }
 
-    // Texel counts (alpha, beta, neutral) summed over every surface; the callback fires once
+    // Texel counts summed over every surface ([0] neutral, [team] per team); the callback fires once
     // all surfaces' GPU readbacks complete.
-    public void RequestScores(bool topDownOnly, System.Action<Vector3Int> callback)
+    public void RequestScores(bool topDownOnly, System.Action<int[]> callback)
     {
         if (surfaceManagers == null || surfaceManagers.Length == 0) return;
 
         int pending = surfaceManagers.Length;
-        Vector3Int total = Vector3Int.zero;
-        System.Action<Vector3Int> onSurface = scores =>
+        int[] total = new int[Teams.Max + 1];
+        System.Action<int[]> onSurface = scores =>
         {
-            total += scores;
+            for (int i = 0; i < total.Length && i < scores.Length; i++) total[i] += scores[i];
             if (--pending == 0) callback(total);
         };
 
@@ -419,12 +435,12 @@ public class NetGameManager : MonoBehaviour
         countdownTime = countdown; matchDuration = match; finalStretchTime = finalStretch; timesUpTime = timesUp; resultsTime = results;
     }
 
-    void BroadcastPhase(MatchPhase phase, float duration, Vector3Int result = default)
+    void BroadcastPhase(MatchPhase phase, float duration, int[] result = null)
     {
         var data = new MatchEventData
         {
             phase = phase, serverTime = Time.time, duration = duration,
-            alphaScore = result.x, betaScore = result.y, neutralScore = result.z,
+            scores = result ?? new int[Teams.Max + 1],
             colourPair = colourPair
         };
         EnterPhase(data);
@@ -447,7 +463,12 @@ public class NetGameManager : MonoBehaviour
             PrepareLocalPlayer();
         }
         if (d.phase == MatchPhase.TimesUp && IsHost) RequestFinalScore();
-        if (d.phase == MatchPhase.Results) MatchResult = new Vector3Int(d.alphaScore, d.betaScore, d.neutralScore);
+        if (d.phase == MatchPhase.Results)
+        {
+            var r = new int[Teams.Max + 1];
+            if (d.scores != null) System.Array.Copy(d.scores, r, Mathf.Min(r.Length, d.scores.Length));
+            MatchResult = r;
+        }
         if (d.phase == MatchPhase.FreeRoam && IsHost) ReturnLateJoiners();
         PhaseChanged?.Invoke(d.phase);
     }
@@ -467,8 +488,7 @@ public class NetGameManager : MonoBehaviour
         SendTo(id, NetMsg.MatchEvent, new MatchEventData
         {
             phase = Phase, serverTime = Time.time, duration = PhaseTimeRemaining,
-            alphaScore = MatchResult.x, betaScore = MatchResult.y, neutralScore = MatchResult.z,
-            lateJoin = true, colourPair = colourPair
+            scores = MatchResult, lateJoin = true, colourPair = colourPair
         });
     }
 
@@ -496,7 +516,7 @@ public class NetGameManager : MonoBehaviour
     }
 
     bool finalStretchAnnounced, finalScoreReady;
-    Vector3Int finalScore;
+    int[] finalScore;
 
     void RequestFinalScore()
     {
@@ -577,11 +597,11 @@ public class NetGameManager : MonoBehaviour
         if (localPlayer != null) return;
         localId = SteamGlobal.steamID.Value;
 
-        int team = 1; // alternate by join order: even = alpha, odd = beta
+        int team = 1; // round-robin by join order over the map's teams
         var members = SteamGlobal.GetLobbyPlayerInfo();
         if (members != null)
             for (int i = 0; i < members.Length; i++)
-                if (members[i].Item2 == localId) { team = (i % 2 == 0) ? 1 : 2; break; }
+                if (members[i].Item2 == localId) { team = Teams.ForJoinOrder(i); break; }
 
         Vector3 pos = PickSpawnPoint(team);
         localPlayer = InstantiateEntity(pos, PlayerMode.Client, team, LocalPlayerName(), localId);
@@ -632,6 +652,7 @@ public class NetGameManager : MonoBehaviour
         pc.SetOwner(steamId);
         pc.SetDisplayName(playerName);
         if (mode == PlayerMode.Network) DisableLocalOnlyComponents(go);
+        if (team == 0) pc.SetRole(PlayerRole.Spectator); // the teams were full: watching
         return pc;
     }
 
@@ -715,8 +736,7 @@ public class NetGameManager : MonoBehaviour
 
     static Vector3 PickSpawnPoint(int team)
     {
-        string tag = team == 1 ? "AlphaSpawn" : "BetaSpawn";
-        GameObject[] pts = GameObject.FindGameObjectsWithTag(tag);
+        GameObject[] pts = GameObject.FindGameObjectsWithTag(Teams.SpawnTag(Teams.Valid(team) ? team : 1));
         if (pts.Length > 0) return pts[Random.Range(0, pts.Length)].transform.position;
         return new Vector3(0f, 3f, 0f);
     }

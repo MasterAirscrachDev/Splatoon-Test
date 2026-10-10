@@ -6,6 +6,8 @@ Shader "Ink/InkSurface"
         _MainTex     ("Ink Coverage (R alpha, G beta)", 2D) = "black" {}
         _AlphaColor  ("Alpha Team Colour",     Color)       = (0, 1, 1, 1)
         _BetaColor   ("Beta Team Colour",      Color)       = (1, 0, 1, 1)
+        _GammaColor  ("Gamma Team Colour",     Color)       = (1, 0.85, 0.05, 1)
+        _DeltaColor  ("Delta Team Colour",     Color)       = (0.2, 0.85, 0.25, 1)
         _BumpMap     ("Normal Map",            2D)          = "bump"  {}
         _Smoothness  ("Smoothness",            Range(0,1))  = 0.4
         _AlphaCutoff ("Alpha Cutoff",          Range(0,1))  = 0.1
@@ -33,7 +35,7 @@ Shader "Ink/InkSurface"
         sampler2D _BumpMap;
         sampler2D _UnderlayTex;
         sampler2D _UnderlayBump;
-        half4 _AlphaColor, _BetaColor;
+        half4 _AlphaColor, _BetaColor, _GammaColor, _DeltaColor;
         half _Smoothness;
         half _UnderlaySmooth;
         half _AlphaCutoff;
@@ -46,16 +48,23 @@ Shader "Ink/InkSurface"
 
         void surf(Input IN, inout SurfaceOutputStandard o)
         {
-            float4 ink     = tex2D(_MainTex,  IN.uv_MainTex); // r = alpha coverage, g = beta coverage
+            float4 ink     = tex2D(_MainTex,  IN.uv_MainTex); // coverage per team: r, g, b, a = teams 1..4
             // Runtime RGB-encoded normal map (not DXT5nm), so decode directly.
             half3 inkNorm  = tex2D(_BumpMap, IN.uv_MainTex).xyz * 2.0 - 1.0;
 
-            float coverage = saturate(ink.r + ink.g);
-            // Team colour switches where the two coverages cross, anti-aliased to about a screen
-            // pixel. The filtered coverage gives a smooth sub-texel boundary, not a texel staircase.
-            float diff = ink.r - ink.g;
+            float coverage = saturate(ink.r + ink.g + ink.b + ink.a);
+            // Team colour switches where the two strongest coverages cross, anti-aliased to about
+            // a screen pixel. The filtered coverage gives a smooth sub-texel boundary, not a texel
+            // staircase. (With two teams this is exactly the alpha/beta crossing.)
+            half3 cols[4] = { _AlphaColor.rgb, _BetaColor.rgb, _GammaColor.rgb, _DeltaColor.rgb };
+            float c[4] = { ink.r, ink.g, ink.b, ink.a };
+            int first = 0;
+            [unroll] for (int i = 1; i < 4; i++) if (c[i] > c[first]) first = i;
+            int second = first == 0 ? 1 : 0;
+            [unroll] for (int j = 0; j < 4; j++) if (j != first && c[j] > c[second]) second = j;
+            float diff = c[first] - c[second];
             float t = saturate(diff / max(fwidth(diff), 1e-4) * 0.5 + 0.5);
-            half3 inkColor = lerp(_BetaColor.rgb, _AlphaColor.rgb, t);
+            half3 inkColor = lerp(cols[second], cols[first], t);
 
             #ifdef _UNDERLAY_ON
                 half4 base      = tex2D(_UnderlayTex,  IN.uv_UnderlayTex);

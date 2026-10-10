@@ -46,6 +46,7 @@ public class LobbyMenu : MonoBehaviour
     void OnDestroy()
     {
         GameCursor.Close(this);
+        input?.Disable();   // Dispose only destroys the asset later (not at all on quitting): left enabled, its actions keep running
         input?.Dispose();
     }
 

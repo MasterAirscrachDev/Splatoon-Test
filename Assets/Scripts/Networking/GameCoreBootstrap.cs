@@ -1,16 +1,21 @@
 using UnityEngine;
 
-// GameCore (the game manager and the Steam session) lives for the whole game. Every scene carries
-// one, disabled: the first scene to load enables its own, which then outlives the scene; any
-// scene loaded after that destroys its copy, as the game already has one.
+// The GameCore prefab's root (Assets/Prefabs/GameCore.prefab): the core (NetGameManager +
+// SteamNetwork) is a disabled child, so nothing in it wakes before we've checked. The Lobby (the
+// first scene) has one and it lives for the whole game; drop the prefab into any other scene to
+// play it directly. If a GameCore is already running (carried from the Lobby), this copy goes.
 public class GameCoreBootstrap : MonoBehaviour
 {
-    [SerializeField] GameObject gameCore; // this scene's, disabled in the scene
+    [SerializeField] GameObject gameCore; // the core, disabled in the prefab
 
     void Awake()
     {
         if (gameCore == null) return;
-        if (NetGameManager.Instance != null) Destroy(gameCore); // already running from an earlier scene
+        if (NetGameManager.Instance != null)
+        {
+            Destroy(gameCore);
+            Destroy(gameObject);
+        }
         else gameCore.SetActive(true);
     }
 }

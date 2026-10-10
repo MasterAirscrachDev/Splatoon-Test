@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// A team's spawn point: a small pad its players appear on (its child markers, tagged AlphaSpawn /
-// BetaSpawn) and the barrier over it: a sphere raised so it curves out of the pad's rim. It keeps
+// A team's spawn point: a small pad its players appear on (its child markers, tagged with the team's
+// spawn tag: AlphaSpawn .. DeltaSpawn, see Teams) and the barrier over it: a sphere raised so it curves out of the pad's rim. It keeps
 // the other team out:
 //  - an enemy player can't get inside: each client pushes its own player back out of it;
 //  - enemy shots stop on it (ProjectileManager), so they can't ink or hit inside it;
@@ -14,7 +14,7 @@ using UnityEngine;
 // decided locally from positions, so every client agrees.
 public class SpawnPad : MonoBehaviour
 {
-    [SerializeField] int team = 1;                    // 1 alpha, 2 beta
+    [SerializeField] int team = 1;                    // 1..4: Alpha, Beta, Gamma, Delta (see Teams)
     [SerializeField] float radius = 3.2f;             // the barrier sphere's
     [SerializeField] float padRadius = 1.5f;          // where the sphere meets the pad's top
     [SerializeField] float fadeDistance = 4f;         // an enemy this far from the barrier starts it showing
@@ -74,7 +74,7 @@ public class SpawnPad : MonoBehaviour
         dome.transform.localPosition = Vector3.up * Lift / s;
     }
 
-    Color Colour => NetGameManager.Instance != null ? NetGameManager.Instance.TeamColour(team) : team == 2 ? Color.magenta : Color.cyan;
+    Color Colour => NetGameManager.Instance != null ? NetGameManager.Instance.TeamColour(team) : NetGameManager.DefaultColourSets()[0].alpha;
 
     void ApplyColours()
     {

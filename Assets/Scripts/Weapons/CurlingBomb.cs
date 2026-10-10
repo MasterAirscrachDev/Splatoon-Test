@@ -86,7 +86,7 @@ public class CurlingBomb : SubDevice
     void Tint(int team)
     {
         NetGameManager gm = NetGameManager.Instance;
-        colour = gm == null ? Color.white : team == 2 ? gm.BetaTeam : gm.AlphaTeam;
+        colour = gm == null ? Color.white : gm.TeamColour(team);
     }
 
     // Sets it sliding from where it is (dropping first if it's off the ground), exploding in fuseLeft.

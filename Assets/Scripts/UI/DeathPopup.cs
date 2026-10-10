@@ -42,7 +42,7 @@ public class DeathPopup : MonoBehaviour
         NetGameManager gm = NetGameManager.Instance;
         PlayerController by = killerId != 0 && gm != null ? gm.GetPlayer(killerId) : null;
         killerFound = by != null;
-        Color team = by == null || gm == null ? NoKiller : by.Team == 2 ? gm.BetaTeam : gm.AlphaTeam;
+        Color team = by == null || gm == null ? NoKiller : gm.TeamColour(by.Team);
         killer.text = killerId == 0 ? "" : by != null && !string.IsNullOrEmpty(by.DisplayName) ? by.DisplayName : "Someone";
         killer.color = team;
         accent.color = team;

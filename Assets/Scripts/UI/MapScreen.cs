@@ -344,7 +344,7 @@ public class MapScreen : MonoBehaviour
         NetGameManager gm = NetGameManager.Instance;
         PlayerController local = NetGameManager.LocalPlayer;
         if (gm == null || local == null) return;
-        Color colour = local.Team == 2 ? gm.BetaTeam : gm.AlphaTeam;
+        Color colour = gm.TeamColour(local.Team);
 
         team.Clear();
         foreach (PlayerController p in gm.Players)

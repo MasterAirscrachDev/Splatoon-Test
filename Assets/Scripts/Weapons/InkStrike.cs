@@ -95,7 +95,7 @@ public class InkStrike : MonoBehaviour
         startTime = Time.time;
         transform.SetPositionAndRotation(target, Quaternion.identity);
         NetGameManager gm = NetGameManager.Instance;
-        if (gm != null) colour = team == 2 ? gm.BetaTeam : gm.AlphaTeam;
+        if (gm != null) colour = gm.TeamColour(team);
         block = new MaterialPropertyBlock();
         bottom = FindBottom();
         top = target.y + height;

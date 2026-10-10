@@ -49,7 +49,7 @@ public class SurfaceInkManager : MonoBehaviour
     public static int TeamMapReadbacks { get; private set; }
 
     // The ink texture stores coverage per team (r = alpha, g = beta), not colours; the surface
-    // shader colours it. teamMap is a CPU copy of ownership per texel (0 none, 1 alpha, 2 beta),
+    // shader colours it. teamMap is a CPU copy of ownership per texel (0 none, else the team 1..4),
     // synced by reading back each splat's area. getSurfaceTeam reads this.
     byte[] teamMap;
     int teamMapGeneration; // bumped by ClearInk so older readbacks are discarded
@@ -79,8 +79,10 @@ public class SurfaceInkManager : MonoBehaviour
     {
         Renderer rend = GetComponent<Renderer>();
         if (rend == null || gameManager == null) return;
-        rend.material.SetColor("_AlphaColor", gameManager.AlphaTeam);
-        rend.material.SetColor("_BetaColor", gameManager.BetaTeam);
+        rend.material.SetColor("_AlphaColor", gameManager.TeamColour(1));
+        rend.material.SetColor("_BetaColor", gameManager.TeamColour(2));
+        rend.material.SetColor("_GammaColor", gameManager.TeamColour(3));
+        rend.material.SetColor("_DeltaColor", gameManager.TeamColour(4));
     }
 
     // ── Ink resolution ───────────────────────────────────────────────────────
@@ -324,8 +326,8 @@ public class SurfaceInkManager : MonoBehaviour
         normalMapRenderTexture.filterMode = FilterMode.Bilinear;
         normalMapRenderTexture.Create();
 
-        scoreBuffer = new ComputeBuffer(3, sizeof(int));
-        topScoreBuffer = new ComputeBuffer(3, sizeof(int));
+        scoreBuffer = new ComputeBuffer(Teams.Max + 1, sizeof(int));      // [neutral, team 1 .. team 4]
+        topScoreBuffer = new ComputeBuffer(Teams.Max + 1, sizeof(int));
         splatBuffer = new ComputeBuffer(MaxGroup, sizeof(int) * 4);
 
         splatCompute.SetTexture(kernelSplat,            "InkTexture",    splatMapRenderTexture);
@@ -461,7 +463,8 @@ public class SurfaceInkManager : MonoBehaviour
         int maxY = Mathf.Clamp(Mathf.CeilToInt(uvRect.yMax * size), 0, size);
         if (maxX <= minX || maxY <= minY) return;
 
-        Vector4 coverage = team == 1 ? new Vector4(1, 0, 0, 0) : team == 2 ? new Vector4(0, 1, 0, 0) : Vector4.zero;
+        Vector4 coverage = Vector4.zero;
+        if (Teams.Valid(team)) coverage[team - 1] = 1f; // the team's channel
         splatCompute.SetTexture(kernelFillRegion, "InkTexture", splatMapRenderTexture);
         splatCompute.SetVector("FillColor", coverage);
         splatCompute.SetInts("FillRect", minX, minY, maxX, maxY);
@@ -485,10 +488,11 @@ public class SurfaceInkManager : MonoBehaviour
         if (teamMap != null) System.Array.Clear(teamMap, 0, teamMap.Length);
     }
 
-    public void CheckScoresAsync(System.Action<Vector3Int> callback)
+    // Texels per team: [0] neutral (covered but unpainted), [team] per team.
+    public void CheckScoresAsync(System.Action<int[]> callback)
     {
         FlushSplats();
-        scoreBuffer.SetData(new int[] { 0, 0, 0 });
+        scoreBuffer.SetData(new int[Teams.Max + 1]);
         splatCompute.SetTexture(kernelGetScores, "InkTexture", splatMapRenderTexture);
         splatCompute.SetBuffer(kernelGetScores, "TeamScores", scoreBuffer);
         splatCompute.Dispatch(kernelGetScores, size / 8, size / 8, 1);
@@ -496,17 +500,15 @@ public class SurfaceInkManager : MonoBehaviour
         AsyncGPUReadback.Request(scoreBuffer, request =>
         {
             if (request.hasError) return;
-            var data = request.GetData<int>();
-            int neutral = Mathf.Max(0, coveredPixelCount - data[0] - data[1]); // unpainted texels that map to the mesh
-            callback(new Vector3Int(data[0], data[1], neutral));
+            callback(ScoresFrom(request.GetData<int>(), coveredPixelCount));
         });
     }
 
     // Floor/slope texels only (walls excluded via the top mask).
-    public void CheckTopScoresAsync(System.Action<Vector3Int> callback)
+    public void CheckTopScoresAsync(System.Action<int[]> callback)
     {
         FlushSplats();
-        topScoreBuffer.SetData(new int[] { 0, 0, 0 });
+        topScoreBuffer.SetData(new int[Teams.Max + 1]);
         splatCompute.SetTexture(kernelGetTopScores, "InkTexture", splatMapRenderTexture);
         splatCompute.SetTexture(kernelGetTopScores, "TopMask", topMaskTexture);
         splatCompute.SetBuffer(kernelGetTopScores, "TeamScores", topScoreBuffer);
@@ -515,13 +517,21 @@ public class SurfaceInkManager : MonoBehaviour
         AsyncGPUReadback.Request(topScoreBuffer, request =>
         {
             if (request.hasError) return;
-            var data = request.GetData<int>();
-            int neutral = Mathf.Max(0, topCoveredPixelCount - data[0] - data[1]);
-            callback(new Vector3Int(data[0], data[1], neutral));
+            callback(ScoresFrom(request.GetData<int>(), topCoveredPixelCount));
         });
     }
 
-    // Team owning the ink at a UV (0 none, 1 alpha, 2 beta). Lags the GPU by 1â€“3 frames.
+    // The teams' counts as read back; neutral is the rest of the texels that map to the mesh.
+    static int[] ScoresFrom(Unity.Collections.NativeArray<int> data, int covered)
+    {
+        var scores = new int[Teams.Max + 1];
+        int painted = 0;
+        for (int team = 1; team <= Teams.Max; team++) { scores[team] = data[team]; painted += data[team]; }
+        scores[0] = Mathf.Max(0, covered - painted);
+        return scores;
+    }
+
+    // Team owning the ink at a UV (0 none, else 1..4). Lags the GPU by 1-3 frames.
     public int getSurfaceTeam(Vector2 texCoords)
     {
         if (teamMap == null) return 0;
@@ -676,11 +686,13 @@ public class SurfaceInkManager : MonoBehaviour
         });
     }
 
-    // CPU twin of the compute shader's TeamOf: the higher coverage, if at least half covered.
+    // CPU twin of the compute shader's TeamOf: the highest coverage (the lower team on a tie), if at
+    // least half covered.
     static byte ClassifyTeam(Color32 c)
     {
-        if (Mathf.Max(c.r, c.g) < 128) return 0;
-        return c.r >= c.g ? (byte)1 : (byte)2;
+        byte m = (byte)Mathf.Max(Mathf.Max(c.r, c.g), Mathf.Max(c.b, c.a));
+        if (m < 128) return 0;
+        return c.r >= m ? (byte)1 : c.g >= m ? (byte)2 : c.b >= m ? (byte)3 : (byte)4;
     }
 
     void OnDestroy()

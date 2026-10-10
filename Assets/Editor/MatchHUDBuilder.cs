@@ -1188,4 +1188,213 @@ public static class MatchHUDBuilder
         Object.DestroyImmediate(tex);
         AssetDatabase.ImportAsset(path);
     }
+
+    // ── Migration: Gamma and Delta (3- and 4-team maps) ─────────────────────
+    // Clones Alpha's and Beta's HUD row, bar fills, percentage labels and team-editor column into
+    // Gamma's (outside Alpha's) and Delta's (outside Beta's), and wires them up. Re-runnable: what
+    // it added before is replaced.
+    [MenuItem("Tools/UI/Add Extra Teams To Match HUD")]
+    public static void AddExtraTeams()
+    {
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            MatchHUD hud = root.GetComponent<MatchHUD>();
+            MatchFlowHUD flow = root.GetComponent<MatchFlowHUD>();
+            var hudSo = new SerializedObject(hud);
+            var flowSo = new SerializedObject(flow);
+
+            // Player rows, either side of the timer: outside Alpha's on the left, Beta's on the right.
+            var top = root.transform.Find("Top");
+            var gammaRow = CloneOnce(top, "AlphaTeam", "GammaTeam", -300f, 0f);
+            var deltaRow = CloneOnce(top, "BetaTeam", "DeltaTeam", 300f, 0f);
+            SetSlots(hudSo.FindProperty("gammaSlots"), gammaRow);
+            SetSlots(hudSo.FindProperty("deltaSlots"), deltaRow);
+            hudSo.FindProperty("gammaRow").objectReferenceValue = gammaRow.gameObject;
+            hudSo.FindProperty("deltaRow").objectReferenceValue = deltaRow.gameObject;
+
+            // Bar segments: plain fills (no wave) drawn under Alpha's and Beta's, so their waves overlap them.
+            var track = top.Find("TurfBar/Track");
+            hudSo.FindProperty("gammaFill").objectReferenceValue = Segment(track, "AlphaFill", "GammaFill");
+            hudSo.FindProperty("deltaFill").objectReferenceValue = Segment(track, "BetaFill", "DeltaFill");
+            var pct = top.Find("TurfBar/Percentages");
+            hudSo.FindProperty("gammaPercent").objectReferenceValue = Label(pct, "AlphaPercent", "GammaPercent", 0.3f, 0.5f);
+            hudSo.FindProperty("deltaPercent").objectReferenceValue = Label(pct, "AlphaPercent", "DeltaPercent", 0.7f, 0.5f);
+            hudSo.ApplyModifiedPropertiesWithoutUndo();
+
+            var results = root.transform.Find("Results");
+            var resultTrack = results.Find("ResultsBar/Track");
+            flowSo.FindProperty("resultGammaFill").objectReferenceValue = Segment(resultTrack, "AlphaFill", "GammaFill");
+            flowSo.FindProperty("resultDeltaFill").objectReferenceValue = Segment(resultTrack, "BetaFill", "DeltaFill");
+            flowSo.FindProperty("resultGammaPercent").objectReferenceValue = Label(results, "AlphaPercent", "GammaPercent", 0.36f, 1f);
+            flowSo.FindProperty("resultDeltaPercent").objectReferenceValue = Label(results, "AlphaPercent", "DeltaPercent", 0.64f, 1f);
+            flowSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // Team editor: Gamma and Delta columns (HostMenu lays the shown ones out across the panel).
+            var menu = root.transform.Find("HostMenu").GetComponent<HostMenu>();
+            var panel = (RectTransform)root.transform.Find("HostMenu/TeamPanel");
+            panel.sizeDelta = new Vector2(1760f, panel.sizeDelta.y);
+            var menuSo = new SerializedObject(menu);
+            var headers = new RectTransform[6];
+            for (int i = 0; i < 4; i++) headers[i] = (RectTransform)panel.Find("Header" + i);
+            headers[4] = Column(panel, menuSo.FindProperty("gammaSlots"), "Header0", "ALPHA", "Header4", "GAMMA");
+            headers[5] = Column(panel, menuSo.FindProperty("deltaSlots"), "Header1", "BETA", "Header5", "DELTA");
+            var hp = menuSo.FindProperty("columnHeaders");
+            hp.arraySize = headers.Length;
+            for (int i = 0; i < headers.Length; i++) hp.GetArrayElementAtIndex(i).objectReferenceValue = headers[i];
+            menuSo.ApplyModifiedPropertiesWithoutUndo();
+
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Added Gamma and Delta to {PrefabPath}");
+    }
+
+    static void DestroyChild(Transform parent, string name)
+    {
+        Transform old = parent.Find(name);
+        if (old != null) Object.DestroyImmediate(old.gameObject);
+    }
+
+    static RectTransform CloneOnce(Transform parent, string source, string name, float dx, float dy)
+    {
+        DestroyChild(parent, name);
+        var src = (RectTransform)parent.Find(source);
+        var copy = (RectTransform)Object.Instantiate(src, parent);
+        copy.name = name;
+        copy.SetSiblingIndex(src.GetSiblingIndex() + 1);
+        copy.anchoredPosition = src.anchoredPosition + new Vector2(dx, dy);
+        return copy;
+    }
+
+    static void SetSlots(SerializedProperty arr, Transform row)
+    {
+        arr.arraySize = 4;
+        for (int i = 0; i < 4; i++)
+        {
+            Transform slot = row.Find("Slot" + i);
+            SerializedProperty e = arr.GetArrayElementAtIndex(i);
+            e.FindPropertyRelative("icon").objectReferenceValue = slot.GetComponent<Image>();
+            e.FindPropertyRelative("initial").objectReferenceValue = slot.Find("Initial").GetComponent<TMP_Text>();
+            e.FindPropertyRelative("playerName").objectReferenceValue = slot.Find("Name").GetComponent<TMP_Text>();
+            e.FindPropertyRelative("deadMark").objectReferenceValue = slot.Find("Dead").gameObject;
+            e.FindPropertyRelative("localMark").objectReferenceValue = slot.GetComponent<Outline>();
+            e.FindPropertyRelative("specialMark").objectReferenceValue = slot.Find("SpecialReady");
+        }
+    }
+
+    static RectTransform Segment(Transform track, string source, string name)
+    {
+        DestroyChild(track, name);
+        var src = (RectTransform)track.Find(source);
+        var seg = (RectTransform)Object.Instantiate(src, track);
+        seg.name = name;
+        Transform wave = seg.Find("Wave");
+        if (wave != null) Object.DestroyImmediate(wave.gameObject);
+        seg.SetSiblingIndex(0);                                     // under the other fills
+        seg.anchorMin = new Vector2(0f, 0f); seg.anchorMax = new Vector2(0f, 1f);
+        seg.offsetMin = seg.offsetMax = Vector2.zero;
+        seg.gameObject.SetActive(false);
+        return seg;
+    }
+
+    static TMP_Text Label(Transform parent, string source, string name, float ax, float ay)
+    {
+        DestroyChild(parent, name);
+        var src = (RectTransform)parent.Find(source);
+        var label = (RectTransform)Object.Instantiate(src, parent);
+        label.name = name;
+        label.anchorMin = label.anchorMax = new Vector2(ax, ay);
+        label.pivot = new Vector2(0.5f, src.pivot.y);
+        label.anchoredPosition = new Vector2(0f, src.anchoredPosition.y);
+        TMP_Text text = label.GetComponent<TMP_Text>();
+        text.alignment = TextAlignmentOptions.Center;
+        label.gameObject.SetActive(false);
+        return text;
+    }
+
+    // A copy of a team's column (header and slots), renamed: returns its header.
+    static RectTransform Column(RectTransform panel, SerializedProperty slots, string sourceHeader, string sourcePrefix, string header, string prefix)
+    {
+        DestroyChild(panel, header);
+        for (int i = 0; i < 4; i++) DestroyChild(panel, prefix + "_" + i);
+        var h = (RectTransform)Object.Instantiate(panel.Find(sourceHeader), panel);
+        h.name = header;
+        h.GetComponent<TMP_Text>().text = prefix;
+        slots.arraySize = 4;
+        for (int i = 0; i < 4; i++)
+        {
+            var b = (RectTransform)Object.Instantiate(panel.Find(sourcePrefix + "_" + i), panel);
+            b.name = prefix + "_" + i;
+            SerializedProperty e = slots.GetArrayElementAtIndex(i);
+            e.FindPropertyRelative("button").objectReferenceValue = b.GetComponent<Button>();
+            e.FindPropertyRelative("background").objectReferenceValue = b.GetComponent<Image>();
+            e.FindPropertyRelative("label").objectReferenceValue = b.GetComponentInChildren<TMP_Text>(true);
+        }
+        return h;
+    }
+
+    // ── Migration: the host menu as the pause menu's Host column; spectating ─
+    [MenuItem("Tools/UI/Merge Host Menu And Add Spectating")]
+    public static void MergeHostMenuAddSpectating()
+    {
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            // Over the pause menu's backdrop (it's a column beside the pause menu's own now).
+            Transform host = root.transform.Find("HostMenu");
+            host.GetComponent<Canvas>().sortingOrder = root.transform.Find("PauseMenu").GetComponent<Canvas>().sortingOrder + 1;
+            var main = (RectTransform)host.Find("MainPanel");
+            main.anchoredPosition = new Vector2(240f, 0f);
+            var title = main.Find("Title").GetComponent<TMP_Text>();
+            title.text = "HOST";
+            var pauseMain = (RectTransform)root.transform.Find("PauseMenu/Screen/MainPanel");
+            pauseMain.sizeDelta = new Vector2(pauseMain.sizeDelta.x, main.sizeDelta.y); // the two columns the same height
+            // Spectating: the HUD's player slots are clickable (watch that player), with a minimap.
+            if (root.GetComponent<UnityEngine.UI.GraphicRaycaster>() == null) root.AddComponent<UnityEngine.UI.GraphicRaycaster>();
+            if (root.GetComponent<SpectatorView>() == null) root.AddComponent<SpectatorView>();
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Host menu merged into the pause menu, spectating added: {PrefabPath}");
+    }
+
+    // ── Migration: wavy edges on Gamma's and Delta's bar segments ───────────
+    // Each middle segment gets Beta's wave on its left edge and Alpha's on its right, so it
+    // interlocks with whichever neighbour it meets (live bar and results bar). Re-runnable.
+    [MenuItem("Tools/UI/Add Middle Team Waves")]
+    public static void AddMiddleTeamWaves()
+    {
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            foreach (string track in new[] { "Top/TurfBar/Track", "Results/ResultsBar/Track" })
+            {
+                Transform t = root.transform.Find(track);
+                Transform alphaWave = t.Find("AlphaFill/Wave"), betaWave = t.Find("BetaFill/Wave");
+                foreach (string fillName in new[] { "GammaFill", "DeltaFill" })
+                {
+                    Transform fill = t.Find(fillName);
+                    if (fill == null) continue;
+                    foreach (string old in new[] { "WaveLeft", "WaveRight" }) DestroyChild(fill, old);
+                    var left = Object.Instantiate(betaWave, fill, false);
+                    left.name = "WaveLeft";
+                    var right = Object.Instantiate(alphaWave, fill, false);
+                    right.name = "WaveRight";
+                }
+            }
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Gamma and Delta got wavy edges: {PrefabPath}");
+    }
 }

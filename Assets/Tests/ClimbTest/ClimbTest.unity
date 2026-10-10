@@ -1864,27 +1864,41 @@ MonoBehaviour:
   timesUpTime: 2.5
   resultsTime: 15
   colourPairs:
-  - name: Cyan / Magenta
+  - name: Cyan / Magenta / Yellow / Green
     alpha: {r: 0, g: 1, b: 1, a: 1}
     beta: {r: 1, g: 0, b: 1, a: 1}
-  - name: Orange / Blue
+    gamma: {r: 1, g: 0.85, b: 0.05, a: 1}
+    delta: {r: 0.2, g: 0.85, b: 0.25, a: 1}
+  - name: Orange / Blue / Green / Pink
     alpha: {r: 1, g: 0.5, b: 0.05, a: 1}
     beta: {r: 0.15, g: 0.35, b: 1, a: 1}
-  - name: Lime / Purple
+    gamma: {r: 0.15, g: 0.85, b: 0.3, a: 1}
+    delta: {r: 1, g: 0.35, b: 0.7, a: 1}
+  - name: Lime / Purple / Orange / Sky
     alpha: {r: 0.7, g: 1, b: 0.1, a: 1}
     beta: {r: 0.55, g: 0.15, b: 0.95, a: 1}
-  - name: Yellow / Indigo
-    alpha: {r: 0.97558546, g: 1, b: 0, a: 1}
+    gamma: {r: 1, g: 0.5, b: 0.05, a: 1}
+    delta: {r: 0.35, g: 0.75, b: 1, a: 1}
+  - name: Yellow / Indigo / Pink / Turquoise
+    alpha: {r: 1, g: 0.85, b: 0.05, a: 1}
     beta: {r: 0.3, g: 0.2, b: 0.9, a: 1}
-  - name: Pink / Green
+    gamma: {r: 1, g: 0.3, b: 0.6, a: 1}
+    delta: {r: 0.1, g: 0.9, b: 0.75, a: 1}
+  - name: Pink / Green / Blue / Yellow
     alpha: {r: 1, g: 0.3, b: 0.6, a: 1}
     beta: {r: 0.1, g: 0.85, b: 0.45, a: 1}
-  - name: Turquoise / Red
+    gamma: {r: 0.15, g: 0.35, b: 1, a: 1}
+    delta: {r: 1, g: 0.85, b: 0.05, a: 1}
+  - name: Turquoise / Red / Yellow / Purple
     alpha: {r: 0.1, g: 0.9, b: 0.75, a: 1}
     beta: {r: 1, g: 0.25, b: 0.15, a: 1}
-  - name: Sky / Gold
+    gamma: {r: 1, g: 0.85, b: 0.05, a: 1}
+    delta: {r: 0.55, g: 0.15, b: 0.95, a: 1}
+  - name: Sky / Gold / Magenta / Lime
     alpha: {r: 0.35, g: 0.75, b: 1, a: 1}
     beta: {r: 1, g: 0.65, b: 0.1, a: 1}
+    gamma: {r: 1, g: 0, b: 1, a: 1}
+    delta: {r: 0.7, g: 1, b: 0.1, a: 1}
 --- !u!4 &957487480
 Transform:
   m_ObjectHideFlags: 0

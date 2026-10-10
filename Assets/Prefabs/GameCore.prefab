@@ -1,0 +1,154 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3821958481516214580
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 401854481086863451}
+  - component: {fileID: 1976781782820271054}
+  m_Layer: 0
+  m_Name: GameCore
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &401854481086863451
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3821958481516214580}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 8471970897536342170}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1976781782820271054
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3821958481516214580}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c584db3df657a6444878464a7c293e22, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GameCoreBootstrap
+  gameCore: {fileID: 4870743744469800329}
+--- !u!1 &4870743744469800329
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8471970897536342170}
+  - component: {fileID: 1611669141983079316}
+  - component: {fileID: 5317939233146126629}
+  m_Layer: 0
+  m_Name: Core
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!4 &8471970897536342170
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4870743744469800329}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0.40001175, y: 0.2924462, z: -0.1363699, w: 0.8578281}
+  m_LocalPosition: {x: -2.06, y: 7.27, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 401854481086863451}
+  m_LocalEulerAnglesHint: {x: 50, y: 37.65, z: 0}
+--- !u!114 &1611669141983079316
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4870743744469800329}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 54b8efcf2a2d7ef4a895c406efa8006e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NetGameManager
+  playerEntityPrefab: {fileID: 1505333176579611265, guid: 4af855f29d1092d44a771c72b0a91d49, type: 3}
+  maxPlayers: 16
+  devMode: 0
+  countdownTime: 3
+  matchDuration: 180
+  finalStretchTime: 60
+  timesUpTime: 2.5
+  resultsTime: 15
+  colourPairs:
+  - name: Cyan / Magenta / Yellow / Green
+    alpha: {r: 0, g: 1, b: 1, a: 1}
+    beta: {r: 1, g: 0, b: 1, a: 1}
+    gamma: {r: 1, g: 0.85, b: 0.05, a: 1}
+    delta: {r: 0.2, g: 0.85, b: 0.25, a: 1}
+  - name: Orange / Blue / Green / Pink
+    alpha: {r: 1, g: 0.5, b: 0.05, a: 1}
+    beta: {r: 0.15, g: 0.35, b: 1, a: 1}
+    gamma: {r: 0.15, g: 0.85, b: 0.3, a: 1}
+    delta: {r: 1, g: 0.35, b: 0.7, a: 1}
+  - name: Lime / Purple / Orange / Sky
+    alpha: {r: 0.7, g: 1, b: 0.1, a: 1}
+    beta: {r: 0.55, g: 0.15, b: 0.95, a: 1}
+    gamma: {r: 1, g: 0.5, b: 0.05, a: 1}
+    delta: {r: 0.35, g: 0.75, b: 1, a: 1}
+  - name: Yellow / Indigo / Pink / Turquoise
+    alpha: {r: 1, g: 0.85, b: 0.05, a: 1}
+    beta: {r: 0.3, g: 0.2, b: 0.9, a: 1}
+    gamma: {r: 1, g: 0.3, b: 0.6, a: 1}
+    delta: {r: 0.1, g: 0.9, b: 0.75, a: 1}
+  - name: Pink / Green / Blue / Yellow
+    alpha: {r: 1, g: 0.3, b: 0.6, a: 1}
+    beta: {r: 0.1, g: 0.85, b: 0.45, a: 1}
+    gamma: {r: 0.15, g: 0.35, b: 1, a: 1}
+    delta: {r: 1, g: 0.85, b: 0.05, a: 1}
+  - name: Turquoise / Red / Yellow / Purple
+    alpha: {r: 0.1, g: 0.9, b: 0.75, a: 1}
+    beta: {r: 1, g: 0.25, b: 0.15, a: 1}
+    gamma: {r: 1, g: 0.85, b: 0.05, a: 1}
+    delta: {r: 0.55, g: 0.15, b: 0.95, a: 1}
+  - name: Sky / Gold / Magenta / Lime
+    alpha: {r: 0.35, g: 0.75, b: 1, a: 1}
+    beta: {r: 1, g: 0.65, b: 0.1, a: 1}
+    gamma: {r: 1, g: 0, b: 1, a: 1}
+    delta: {r: 0.7, g: 1, b: 0.1, a: 1}
+--- !u!114 &5317939233146126629
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4870743744469800329}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0dd8a492b092a4f49aa8979d4994acfb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SteamNetwork
+  GAMEID: 480
+  tickRate: 60
+  logNonErrors: 0
+  logAsErrors: 0
+  fallbackGAMEID: 1

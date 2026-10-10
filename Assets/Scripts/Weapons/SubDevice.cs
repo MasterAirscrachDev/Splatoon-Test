@@ -45,7 +45,7 @@ public abstract class SubDevice : MonoBehaviour
     protected void TintParts(int team)
     {
         NetGameManager gm = NetGameManager.Instance;
-        Color colour = gm == null ? Color.white : team == 2 ? gm.BetaTeam : gm.AlphaTeam;
+        Color colour = gm == null ? Color.white : gm.TeamColour(team);
         var block = new MaterialPropertyBlock();
         block.SetColor("_Color", colour);
         block.SetColor("_EmissionColor", colour * 0.6f);

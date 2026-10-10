@@ -149,14 +149,14 @@ public static class SpawnPadBuilder
         var report = new System.Text.StringBuilder("[SpawnPad] " + scene.name + ":");
         Physics.SyncTransforms();
 
-        var teams = new[] { (1, "AlphaSpawn"), (2, "BetaSpawn") };
+        var teams = Enumerable.Range(1, Teams.Max).Select(t => (t, Teams.SpawnTag(t))).ToArray();
         var markers = teams.ToDictionary(t => t.Item1, t => GameObject.FindGameObjectsWithTag(t.Item2).OrderBy(g => g.name).ToArray());
         Vector3 Centroid(GameObject[] g) => g.Aggregate(Vector3.zero, (s, m) => s + m.transform.position) / Mathf.Max(1, g.Length);
         var centres = markers.ToDictionary(kv => kv.Key, kv => Centroid(kv.Value));
         foreach (var (team, tag) in teams)
         {
             GameObject[] ms = markers[team];
-            if (ms.Length == 0) { report.Append($" no {tag} markers;"); continue; }
+            if (ms.Length == 0) continue;
             if (ms.Any(m => m.GetComponentInParent<SpawnPad>() != null)) { report.Append($" team {team} already has a pad;"); continue; }
             Vector3 c = centres[team];
 
@@ -169,18 +169,19 @@ public static class SpawnPadBuilder
             float top = floor + 0.12f;
             float padRadius = MarkerSpread + PadRim;
 
-            // The barrier: up to maxBarrier, clear of the other team's.
+            // The barrier: up to maxBarrier, clear of every other team's.
             float barrier = maxBarrier;
-            if (markers[3 - team].Length > 0)
+            foreach (var other in teams)
             {
-                Vector3 o = centres[3 - team];
+                if (other.Item1 == team || markers[other.Item1].Length == 0) continue;
+                Vector3 o = centres[other.Item1];
                 barrier = Mathf.Min(barrier, new Vector2(o.x - c.x, o.z - c.z).magnitude * 0.5f - 0.3f);
             }
             barrier = Mathf.Max(barrier, padRadius + 0.5f);
 
             var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab, scene);
             Undo.RegisterCreatedObjectUndo(go, "Add Spawn Pad");
-            go.name = team == 1 ? "SpawnPadAlpha" : "SpawnPadBeta";
+            go.name = "SpawnPad" + Teams.Name(team);
             if (parent != null) go.transform.SetParent(parent, false);
             go.transform.position = new Vector3(c.x, top, c.z);
             SpawnPad pad = go.GetComponent<SpawnPad>();

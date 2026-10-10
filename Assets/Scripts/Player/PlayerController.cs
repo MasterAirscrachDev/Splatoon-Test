@@ -269,7 +269,7 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
     {
         get
         {
-            GameObject[] pts = GameObject.FindGameObjectsWithTag(team == 1 ? "AlphaSpawn" : "BetaSpawn");
+            GameObject[] pts = Teams.Valid(team) ? GameObject.FindGameObjectsWithTag(Teams.SpawnTag(team)) : new GameObject[0];
             if (pts.Length == 0) return spawnPoint;
             System.Array.Sort(pts, (a, b) => string.CompareOrdinal(a.name, b.name));
             return pts[0].transform.position;

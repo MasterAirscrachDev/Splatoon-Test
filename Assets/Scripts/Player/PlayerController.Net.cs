@@ -17,19 +17,32 @@ public partial class PlayerController
 
     // ── Networking API (driven by NetGameManager) ─────────────────────────
     public void SetPlayerMode(PlayerMode mode) => playerMode = mode;
-    public void SetTeam(int t) { team = t; Role = (PlayerRole)t; }
+    public void SetTeam(int t)
+    {
+        bool changed = t != team;
+        team = t; Role = Teams.Role(t);
+        if (changed) { ApplyTeamColor(); TeamChanged?.Invoke(); }
+    }
+
+    // Where this player is looking up/down (degrees, down positive): theirs as sent over the network
+    // for a remote player. Spectators watch from behind at this pitch.
+    public float ViewPitch => playerMode == PlayerMode.Network ? netCamPitch : cameraPitch;
+
+    // Our team changed (spawned onto one, or moved by the roster): team-tinted parts re-tint.
+    public event System.Action TeamChanged;
 
     // Applies a roster role. Spectators and benched players have no team and their entity is
     // hidden; a local player joining (or switching) a team respawns at that team's spawn.
     public void SetRole(PlayerRole role)
     {
-        bool playing = role == PlayerRole.Alpha || role == PlayerRole.Beta;
-        int newTeam = playing ? (int)role : 0;
+        int newTeam = Teams.Of(role);
+        bool playing = newTeam != 0;
         bool wasPlaying = transform.root.gameObject.activeSelf;
         bool teamChanged = newTeam != team;
         Role = role;
         team = newTeam;
         if (teamChanged && playing) ApplyTeamColor();
+        if (teamChanged) TeamChanged?.Invoke();
         transform.root.gameObject.SetActive(playing);
         if (playing && IsLocalPlayer && controller != null && (teamChanged || !wasPlaying)) Respawn();
     }

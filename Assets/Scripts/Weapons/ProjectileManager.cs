@@ -110,7 +110,7 @@ public class ProjectileManager : MonoBehaviour
         s.sinceDrip = 0f;
         s.hitGroup = hitGroup;
         NetGameManager gm = NetGameManager.Instance;
-        s.colour = gm == null ? Color.white : team == 1 ? gm.AlphaTeam : gm.BetaTeam;
+        s.colour = gm == null ? Color.white : gm.TeamColour(team);
         s.visual = visible && template != null ? m.pools[prefab].Get() : null;
         if (s.visual != null)
         {

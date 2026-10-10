@@ -2,8 +2,9 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Esc or Select: the pause menu. It's an online game, so play carries on behind it; our player just
-// stops taking input. Resume, Settings, Loadout (between matches), Leave lobby, Quit. The settings
+// Esc or Select (or G): the pause menu. It's an online game, so play carries on behind it; our
+// player just stops taking input. Resume, Settings, Loadout (between matches), Leave lobby, Quit,
+// with the Host column beside it (HostMenu: only the host can use it). The settings
 // panel sets the look sensitivities (mouse, controller stick, gyro turn and up/down) and gyro
 // aiming, saved when it closes. Cancel (B, Esc's other half, right-click) backs out of settings,
 // then closes; Pause closes it from anywhere. Opens only when no other menu was open, so the Esc
@@ -18,6 +19,9 @@ public class PauseMenu : MonoBehaviour
     [SerializeField] Toggle gyroToggle;
 
     ControlLayer input;
+    HostMenu host;          // the Host column, beside ours
+    Vector2 mainAt;         // our column's place when it's alone
+    const float ColumnGap = 240f;
     bool open, blockedLastFrame, settingsChanged;
     Vector2 quitAt, leaveAt; // Quit moves up into Leave's place when there's no lobby to leave
 
@@ -51,9 +55,23 @@ public class PauseMenu : MonoBehaviour
         SetUpSlider(gyroYSlider, gyroYValue, v => GameSettings.GyroSensitivityY = v);
         gyroToggle.onValueChanged.AddListener(on => { GameSettings.GyroEnabled = on; Changed(); });
         screen.SetActive(false);
+        host = transform.parent != null ? transform.parent.GetComponentInChildren<HostMenu>(true) : null;
+        mainAt = ((RectTransform)mainPanel.transform).anchoredPosition;
+        NetGameManager.HostMenuToggled += ToggleFromKey;
     }
 
-    void OnDestroy() { input?.Disable(); input?.Dispose(); }
+    void OnDestroy()
+    {
+        NetGameManager.HostMenuToggled -= ToggleFromKey;
+        input?.Disable(); input?.Dispose();
+    }
+
+    // G (the old host menu's key) opens this too.
+    void ToggleFromKey()
+    {
+        if (open) SetOpen(false);
+        else if (!InputGate.Blocked) SetOpen(true);
+    }
 
     void SetUpSlider(Slider slider, TMP_Text label, System.Action<float> set)
     {
@@ -86,7 +104,7 @@ public class PauseMenu : MonoBehaviour
         if (pause) { SetOpen(false); return; }
         if (input.GameControl.Cancel.WasPressedThisFrame())
         {
-            if (settingsPanel.activeSelf) ShowMain(); else SetOpen(false);
+            if (settingsPanel.activeSelf || host != null && host.SubPanelOpen) ShowMain(); else SetOpen(false);
             return;
         }
         NetGameManager gm = NetGameManager.Instance;
@@ -104,6 +122,7 @@ public class PauseMenu : MonoBehaviour
         if (!value)
         {
             SaveIfChanged();
+            if (host != null) host.ShowColumn(false);
             GameCursor.Close(this);
             return;
         }
@@ -119,13 +138,19 @@ public class PauseMenu : MonoBehaviour
         SaveIfChanged();
         mainPanel.SetActive(true);
         settingsPanel.SetActive(false);
+        ((RectTransform)mainPanel.transform).anchoredPosition = mainAt - (host != null ? new Vector2(ColumnGap, 0f) : Vector2.zero);
+        if (host != null) host.ShowColumn(true);
         GameCursor.Open(this, GameCursor.Use.Menu, resumeButton.gameObject);
         SelectForGamepad(resumeButton.gameObject);
     }
 
+    // HostMenu: its team editor or map list takes the whole menu.
+    public void HideColumns() => mainPanel.SetActive(false);
+
     public void ShowSettings()
     {
         mainPanel.SetActive(false);
+        if (host != null) host.ShowColumn(false);
         settingsPanel.SetActive(true);
         mouseSlider.SetValueWithoutNotify(GameSettings.MouseSensitivity);
         stickSlider.SetValueWithoutNotify(GameSettings.StickSensitivity);

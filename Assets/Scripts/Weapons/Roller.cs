@@ -145,6 +145,7 @@ public class Roller : Weapon
         if (Owner != null) { lastPos = Owner.transform.position; body = Owner.GetComponent<CharacterController>(); }
         Tint();
         NetGameManager.TeamColoursChanged += Tint;
+        if (Owner != null) Owner.TeamChanged += Tint; // reassigned to another team: its colour
     }
 
     void OnDestroy()
@@ -152,6 +153,7 @@ public class Roller : Weapon
         input?.Disable();
         input?.Dispose();
         NetGameManager.TeamColoursChanged -= Tint;
+        if (Owner != null) Owner.TeamChanged -= Tint;
         if (Owner != null && local) { Owner.WeaponSpeedMultiplier = 1f; Owner.WeaponDown = false; }
     }
 

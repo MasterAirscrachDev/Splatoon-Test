@@ -422,7 +422,7 @@ public class PlayerLoadout : MonoBehaviour
         if (gm == null) return;
         shieldTintPair = gm.ColourPair;
         var block = new MaterialPropertyBlock();
-        block.SetColor("_Color", player.Team == 2 ? gm.BetaTeam : gm.AlphaTeam);
+        block.SetColor("_Color", gm.TeamColour(player.Team));
         foreach (Renderer r in shieldVisual.GetComponentsInChildren<Renderer>(true)) r.SetPropertyBlock(block);
     }
 }

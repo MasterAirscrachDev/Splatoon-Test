@@ -35,7 +35,7 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.2f, "colours");
         NetGameManager.TeamColoursChanged -= counted;
         bool inkOk = ink.GetColor("_AlphaColor") == gm.AlphaTeam && ink.GetColor("_BetaColor") == gm.BetaTeam;
-        Color own = player.Team == 2 ? gm.BetaTeam : gm.AlphaTeam;
+        Color own = gm.TeamColour(player.Team);
         bool hudOk = hud == null || hud.AlphaBarColour == gm.AlphaTeam;
         Note($"after the host's roster: pair {gm.ColourPair} ({gm.ColourPairName}), {changes} change event(s); ink {(inkOk ? "recoloured" : "stale")}, HUD bar {(hudOk ? "recoloured" : "stale")}, our colour {own}");
         if (gm.ColourPair != other || changes != 1) Fail("the host's colour pick wasn't applied (once)");
@@ -84,7 +84,7 @@ public partial class ClimbTestRunner
 
         menu.TeamsButton.onClick.Invoke();
         yield return Hold(Still, false, 0.05f, "menu");
-        HostMenu.SlotButton[][] cols = menu.Columns; // Alpha, Beta, Spectate, Not playing
+        HostMenu.SlotButton[][] cols = menu.Columns; // Alpha, Beta, Spectate, (unused), Gamma, Delta
         if (!menu.TeamEditorOpen) { Fail("team editor didn't open"); NetGameManager.SendOverride = null; yield break; }
         if (!cols[0][0].label.text.StartsWith(player.DisplayName) || cols[1][0].label.text != "Benchwarmer")
             Fail($"editor layout wrong: alpha0 \"{cols[0][0].label.text}\", beta0 \"{cols[1][0].label.text}\"");
@@ -109,11 +109,13 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.2f, "menu");
         if (player.Team != 2 || hud.BetaSlots[0].playerName.text != player.DisplayName) Fail($"moving us to Beta failed (team {player.Team})");
 
-        // Us to Not playing, then back to Alpha.
-        Move(1, 0, 3, 0);
+        // Us to Spectate (beside the enemy there), then back to Alpha.
+        cols = menu.Columns; // Spectate grows to keep a free slot
+        Move(1, 0, 2, 1);
         yield return Hold(Still, false, 0.1f, "menu");
-        if (player.transform.root.gameObject.activeSelf || player.Role != PlayerRole.NotPlaying) Fail("benching ourselves didn't hide our player");
-        Move(3, 0, 0, 0);
+        if (player.transform.root.gameObject.activeSelf || player.Role != PlayerRole.Spectator) Fail("spectating ourselves didn't hide our player");
+        cols = menu.Columns;
+        Move(2, 1, 0, 0);
         yield return Hold(Still, false, 0.3f, "menu");
         if (!player.transform.root.gameObject.activeSelf || player.Team != 1) Fail("returning to Alpha didn't restore our player");
 
@@ -266,16 +268,16 @@ public partial class ClimbTestRunner
 
         // Results: the host's score for everyone, overhead view, suspense fill, then the real split.
         yield return HoldUntil(Still, false, 4f, "results", f => gm.Phase == MatchPhase.Results);
-        Vector3Int r = gm.MatchResult;
-        Note($"result alpha {r.x}, beta {r.y}, neutral {r.z}");
+        int[] r = gm.MatchResult;
+        Note($"result alpha {r[1]}, beta {r[2]}, neutral {r[0]}");
         var resultMsg = sent.LastOrDefault(m => m.id == NetMsg.MatchEvent && ((MatchEventData)m.data).phase == MatchPhase.Results);
-        if (resultMsg.data == null || ((MatchEventData)resultMsg.data).alphaScore != r.x) Fail("results weren't broadcast with the score");
-        int ours = player.Team == 1 ? r.x : r.y, theirs = player.Team == 1 ? r.y : r.x;
+        if (resultMsg.data == null || ((MatchEventData)resultMsg.data).scores == null || ((MatchEventData)resultMsg.data).scores[1] != r[1]) Fail("results weren't broadcast with the score");
+        int ours = r[player.Team], theirs = r[player.Team == 1 ? 2 : 1];
         if (ours <= theirs) Fail("our painted turf didn't win");
         yield return Hold(Still, false, 0.3f, "results");
         if (!flow.OverheadActive) Fail("no overhead view");
         yield return Hold(Still, false, 2.6f, "results"); // into the pause
-        float alphaShare = r.x / (float)(r.x + r.y);
+        float alphaShare = r[1] / (float)(r[1] + r[2]);
         float suspense = Mathf.Max(0.2f, 0.8f * Mathf.Min(alphaShare, 1f - alphaShare));
         Note($"suspense fill {flow.ResultAlphaShown:F2}/{flow.ResultBetaShown:F2} (expected {suspense:F2} each)");
         if (Mathf.Abs(flow.ResultAlphaShown - suspense) > 0.01f || Mathf.Abs(flow.ResultBetaShown - suspense) > 0.01f) Fail("bar didn't hold both sides at the suspense point");
@@ -358,6 +360,36 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.2f, "spectate");
         if (player.gameObject.activeInHierarchy) Fail("our player is still in the level");
         if (!flow.OverheadActive || !flow.SpectatingShown) Fail("no overhead view (or label) while spectating");
+
+        // Click a player at the top: watch them from behind, with the level small in the corner;
+        // click that to see everything again.
+        const ulong Watched = 3101;
+        int otherTeam = team == 1 ? 2 : 1;
+        SpawnRemote(Watched, otherTeam, station.TransformPoint(new Vector3(4f, 0.05f, 6f)), "Watched");
+        yield return Hold(Still, false, 0.3f, "spectate");
+        MatchHUD hud = FindFirstObjectByType<MatchHUD>();
+        global::SpectatorView view = FindFirstObjectByType<global::SpectatorView>();
+        PlayerController watched = gm.GetPlayer(Watched);
+        UnityEngine.UI.Button slot = hud != null && hud.SlotsOf(otherTeam)[0].icon.TryGetComponent(out UnityEngine.UI.Button b) ? b : null;
+        if (view == null || slot == null || watched == null) { Fail("no spectator view (or clickable player slots)"); }
+        else
+        {
+            slot.onClick.Invoke();
+            yield return Hold(Still, false, 0.4f, "watch");
+            Camera cam = GameObject.Find("SpectatorCamera")?.GetComponent<Camera>();
+            Vector3 behind = cam != null ? cam.transform.position - watched.transform.position : Vector3.zero;
+            float back = Vector3.Dot(behind, -watched.transform.forward);
+            bool watching = view.Following == watched && cam != null && cam.enabled && !flow.OverheadActive && view.MinimapShown;
+            var minimap = GameObject.Find("SpectatorMinimap")?.GetComponent<UnityEngine.UI.Button>();
+            if (minimap != null) minimap.onClick.Invoke();
+            yield return Hold(Still, false, 0.2f, "whole map");
+            bool backToMap = view.Following == null && flow.OverheadActive && !view.MinimapShown && (cam == null || !cam.enabled);
+            Note($"clicked their slot: watching {(view.Following == watched || watching ? watched.DisplayName : "nobody")}, camera {back:F1}m behind them, minimap {(watching ? "shown" : "MISSING")}; clicked the minimap: {(backToMap ? "whole level again" : "STILL WATCHING")}");
+            if (!watching || back < 2f) Fail("clicking a player didn't watch them from behind (with the minimap)");
+            if (!backToMap) Fail("clicking the minimap didn't go back to the whole level");
+        }
+        Despawn(Watched);
+        yield return Hold(Still, false, 0.1f, "spectate");
 
         gm.Receive(NetMsg.TeamAssign, new TeamAssignData { ids = new[] { player.OwnerId }, roles = new[] { team } }, 0);
         yield return Hold(Still, false, 0.2f, "back");
@@ -618,7 +650,7 @@ public partial class ClimbTestRunner
         bool spareGone = spare == null;
         Note($"spare GameCore {(spareGone ? "destroyed" : "STILL THERE")}, the game's manager {(NetGameManager.Instance == gm ? "unchanged" : "REPLACED")}");
         if (!spareGone || NetGameManager.Instance != gm) Fail("a scene's spare GameCore wasn't destroyed");
-        Destroy(bootGo);
+        if (bootGo != null) Destroy(bootGo); // a duplicate boot removes itself
 
         NetGameManager.SceneLoader = realLoader;
         NetGameManager.SendOverride = null;
@@ -643,7 +675,7 @@ public partial class ClimbTestRunner
             new SubDamageData { ownerId = 3UL, subId = 11, amount = 15f, fromTeam = 2, attackerSteamId = 8UL },
             new InkStrikeData { ownerId = 4UL, team = 2, position = V(10f, 0f, -4f) },
             new TeamAssignData { ids = new[] { 1UL, 2UL, 3UL }, roles = new[] { 1, 2, 3 }, colourPair = 4 },
-            new MatchEventData { phase = MatchPhase.Results, serverTime = 12.5f, duration = 3f, alphaScore = 100, betaScore = 90, neutralScore = 5, lateJoin = true, colourPair = 2 },
+            new MatchEventData { phase = MatchPhase.Results, serverTime = 12.5f, duration = 3f, scores = new[] { 5, 100, 90, 40, 0 }, lateJoin = true, colourPair = 2 },
             1.25f, (byte)7,
         };
 

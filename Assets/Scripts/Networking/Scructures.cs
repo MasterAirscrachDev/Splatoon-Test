@@ -52,7 +52,7 @@ public enum NetMsg : ushort
 }
 
 // Where a player sits in the roster. Alpha/Beta match the team numbers used everywhere else.
-public enum PlayerRole { Alpha = 1, Beta = 2, Spectator = 3, NotPlaying = 4 }
+public enum PlayerRole { Alpha = 1, Beta = 2, Spectator = 3, NotPlaying = 4, Gamma = 5, Delta = 6 } // wire values: append only; see Teams
 
 // ── Per-player state, broadcast by the owning client every tick ──────────
 [System.Serializable]
@@ -210,7 +210,7 @@ public class MatchEventData
     public MatchPhase phase;
     public float serverTime;
     public float duration;                             // how long this phase lasts, in seconds
-    public int alphaScore, betaScore, neutralScore;    // Results: the host's final turf (texels)
+    public int[] scores;                               // Results: the host's final turf (texels): [0] neutral, [team] per team
     public bool lateJoin;                              // sent to a mid-match joiner: they spectate this round
     public int colourPair;                             // the host's team colours (a new game picks new ones)
 }

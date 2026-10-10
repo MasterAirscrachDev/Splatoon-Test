@@ -65,8 +65,7 @@ public partial class PlayerController
             playerCamera.localPosition = cameraBaseLocalPos;
             playerCamera.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
         }
-        string tag = team == 1 ? "AlphaSpawn" : "BetaSpawn";
-        GameObject[] pts = GameObject.FindGameObjectsWithTag(tag);
+        GameObject[] pts = Teams.Valid(team) ? GameObject.FindGameObjectsWithTag(Teams.SpawnTag(team)) : new GameObject[0];
         Vector3 pos = pts.Length > 0
             ? pts[Random.Range(0, pts.Length)].transform.position
             : spawnPoint;

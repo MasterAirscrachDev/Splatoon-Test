@@ -8,6 +8,8 @@ TagManager:
   - Projectile
   - AlphaSpawn
   - BetaSpawn
+  - GammaSpawn
+  - DeltaSpawn
   layers:
   - Default
   - TransparentFX

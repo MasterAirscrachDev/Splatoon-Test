@@ -23,7 +23,7 @@ public partial class PlayerController
     void ApplyTeamColor()
     {
         NetGameManager gm = NetGameManager.Instance;
-        if (gm != null) teamColor = team == 2 ? gm.BetaTeam : gm.AlphaTeam;
+        if (gm != null) teamColor = gm.TeamColour(team);
         if (InkTankScaler != null)
         {
             Renderer r = InkTankScaler.GetComponentInChildren<Renderer>();
