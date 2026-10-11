@@ -4,6 +4,19 @@ using UnityEngine;
 // PlayerController: the view: mouse, stick and gyro look, recentring, the form-switch camera glide.
 public partial class PlayerController
 {
+    // Everything aims this many degrees above the view (shots, flicks, throws), so we can look down
+    // more without aiming into the floor.
+    public static float AimRaise = 5f;
+
+    public float RaisedAimPitch => CameraPitch - AimRaise;         // degrees, down positive
+    public Vector3 AimForward                                       // the view's forward, raised
+    {
+        get
+        {
+            Transform view = CameraRig != null ? CameraRig : transform;
+            return Quaternion.AngleAxis(-AimRaise, view.right) * view.forward;
+        }
+    }
 
     // Eases out the offset that cancels form-switch nudges, so the camera glides instead of snapping.
     void UpdateCameraFormOffset()

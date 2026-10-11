@@ -17,6 +17,8 @@ public class PauseMenu : MonoBehaviour
     [SerializeField] Slider mouseSlider, stickSlider, gyroXSlider, gyroYSlider;
     [SerializeField] TMP_Text mouseValue, stickValue, gyroXValue, gyroYValue;
     [SerializeField] Toggle gyroToggle;
+    [SerializeField] Slider musicSlider, sfxSlider;   // volumes, 0..100%
+    [SerializeField] TMP_Text musicValue, sfxValue;
 
     ControlLayer input;
     HostMenu host;          // the Host column, beside ours
@@ -32,6 +34,8 @@ public class PauseMenu : MonoBehaviour
     public Slider GyroXSlider => gyroXSlider;
     public Slider GyroYSlider => gyroYSlider;
     public Toggle GyroToggle => gyroToggle;
+    public Slider MusicSlider => musicSlider;
+    public Slider SfxSlider => sfxSlider;
     public Button ResumeButton => resumeButton;
     public Button SettingsButton => settingsButton;
     public Button BackButton => backButton;
@@ -54,6 +58,8 @@ public class PauseMenu : MonoBehaviour
         SetUpSlider(gyroXSlider, gyroXValue, v => GameSettings.GyroSensitivityX = v);
         SetUpSlider(gyroYSlider, gyroYValue, v => GameSettings.GyroSensitivityY = v);
         gyroToggle.onValueChanged.AddListener(on => { GameSettings.GyroEnabled = on; Changed(); });
+        SetUpVolume(musicSlider, musicValue, v => GameSettings.MusicVolume = v);
+        SetUpVolume(sfxSlider, sfxValue, v => GameSettings.SfxVolume = v);
         screen.SetActive(false);
         host = transform.parent != null ? transform.parent.GetComponentInChildren<HostMenu>(true) : null;
         mainAt = ((RectTransform)mainPanel.transform).anchoredPosition;
@@ -86,6 +92,23 @@ public class PauseMenu : MonoBehaviour
             Changed();
         });
     }
+
+    void SetUpVolume(Slider slider, TMP_Text label, System.Action<float> set)
+    {
+        if (slider == null) return;
+        slider.minValue = 0f;
+        slider.maxValue = 1f;
+        slider.wholeNumbers = false;
+        slider.onValueChanged.AddListener(v =>
+        {
+            v = Mathf.Round(v * 20f) / 20f; // steps of 5%
+            set(v);
+            if (label != null) label.text = Percent(v);
+            Changed();
+        });
+    }
+
+    static string Percent(float v) => $"{Mathf.RoundToInt(v * 100f)}%";
 
     void Changed()
     {
@@ -161,6 +184,8 @@ public class PauseMenu : MonoBehaviour
         stickValue.text = $"{GameSettings.StickSensitivity:0.00}×";
         gyroXValue.text = $"{GameSettings.GyroSensitivityX:0.00}×";
         gyroYValue.text = $"{GameSettings.GyroSensitivityY:0.00}×";
+        if (musicSlider != null) { musicSlider.SetValueWithoutNotify(GameSettings.MusicVolume); musicValue.text = Percent(GameSettings.MusicVolume); }
+        if (sfxSlider != null) { sfxSlider.SetValueWithoutNotify(GameSettings.SfxVolume); sfxValue.text = Percent(GameSettings.SfxVolume); }
         GameCursor.Open(this, GameCursor.Use.Menu, mouseSlider.gameObject);
         SelectForGamepad(mouseSlider.gameObject);
     }

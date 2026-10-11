@@ -583,6 +583,7 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.4f, "still");
         float still = Turn();
         PlayerStateData state = player.GetNetState(0, 0);
+
         Note($"body vs view: strafing {strafing:F0}°, the frame firing starts {firing:F0}°, firing {stillFacing:F0}° (shots aimed {aimOff:F0}° off the view), after {after:F0}°, standing {still:F0}°; sent facing {Mathf.DeltaAngle(player.transform.eulerAngles.y, state.modelYaw):F0}°");
         if (Mathf.Abs(strafing - 90f) > 10f) Fail("moving didn't turn the body to the way we move");
         if (Mathf.Abs(firing) > 1f || Mathf.Abs(stillFacing) > 1f) Fail("firing didn't turn the body to the view at once");
@@ -590,6 +591,32 @@ public partial class ClimbTestRunner
         if (Mathf.Abs(after - 90f) > 10f) Fail("after firing the body didn't go back to the way we move");
         if (Mathf.Abs(still - after) > 2f) Fail("standing still changed the body's heading");
         if (Mathf.Abs(Mathf.DeltaAngle(state.modelYaw, player.ModelYaw)) > 0.1f) Fail("our state doesn't carry the body's facing");
+
+        // Shots go PlayerController.AimRaise above the view: fired without the raise, then with it.
+        float raise = PlayerController.AimRaise;
+        var pitches = new float[2];
+        for (int k = 0; k < 2; k++)
+        {
+            PlayerController.AimRaise = k == 0 ? 0f : raise;
+            Vector3 dir = Vector3.zero;
+            Action<Vector3, Quaternion> onPitch = (v, rot) => dir = rot * Vector3.forward;
+            gun.MainShotFired += onPitch;
+            gun.ScriptedFire = true;
+            yield return Hold(Still, false, 0.3f, "fire");
+            gun.ScriptedFire = false;
+            gun.MainShotFired -= onPitch;
+            pitches[k] = Mathf.Asin(Mathf.Clamp(dir.normalized.y, -1f, 1f)) * Mathf.Rad2Deg;
+        }
+        // The camera's aim point sits the raise above the view; the gun, below the camera and nearer
+        // that point, tilts up a little more to meet it.
+        CameraAim camAim = player.GetComponentInChildren<CameraAim>();
+        Transform view = camAim.transform;
+        float aimAbove = Vector3.SignedAngle(view.forward, camAim.target - view.position, view.right) * -1f;
+        PlayerController.AimRaise = raise;
+        float raisedBy = pitches[1] - pitches[0];
+        Note($"shots {pitches[0]:F1}° up with no aim raise, {pitches[1]:F1}° with {raise:F0}° (raised {raisedBy:F1}°); the camera aims {aimAbove:F1}° above the view");
+        if (Mathf.Abs(aimAbove - raise) > 0.2f) Fail("the camera's aim point isn't the aim raise above the view");
+        if (raisedBy < raise - 0.5f || raisedBy > raise * 2.5f) Fail("shots didn't go up with the aim raise");
 
         // A sub turns it round to the view too.
         yield return Hold(new Vector2(1f, 0f), false, 0.6f, "strafe");
@@ -623,8 +650,8 @@ public partial class ClimbTestRunner
         gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = Them, position = spot, moveDir = Vector2.zero, team = player.Team == 1 ? 2 : 1, modelYaw = 120f, camPitch = -30f, aiming = false }, Them);
         yield return Hold(Still, false, 0.5f, "their aim");
         float restingTilt = Tilt();
-        Note($"their {theirGun?.DisplayName}: tilted {aimingTilt:F0}° aiming 30° up, {restingTilt:F0}° not aiming");
-        if (Mathf.Abs(aimingTilt + 30f) > 2f) Fail("their weapon didn't follow their aim up");
+        Note($"their {theirGun?.DisplayName}: tilted {aimingTilt:F0}° viewing 30° up (aim raised {PlayerController.AimRaise:F0}°), {restingTilt:F0}° not aiming");
+        if (Mathf.Abs(aimingTilt + 30f + PlayerController.AimRaise) > 2f) Fail("their weapon didn't follow their aim up");
         if (Mathf.Abs(restingTilt) > 2f) Fail("their weapon didn't rest level when not aiming");
         Despawn(Them);
 

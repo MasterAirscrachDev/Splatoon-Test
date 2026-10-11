@@ -217,6 +217,16 @@ public partial class ClimbTestRunner
         hud.ShowPercentages = true;
         yield return Hold(Still, false, 0.3f, "free");
 
+        // A boombox, to check it goes quiet for the match (and back after).
+        var boomboxGo = new GameObject("TestBoombox");
+        boomboxGo.SetActive(false);
+        boomboxGo.AddComponent<AudioSource>();
+        Boombox boombox = boomboxGo.AddComponent<Boombox>();
+        boomboxGo.SetActive(true);
+        AudioManager audio = AudioManager.Instance;
+
+        bool clockOffFree = !hud.TimerRect.gameObject.activeSelf;
+
         // Start: everyone to their spawn, locked, map and loadout reset, host features off; new colours.
         int pairBefore = gm.ColourPair;
         gm.StartGame();
@@ -228,6 +238,8 @@ public partial class ClimbTestRunner
         if (gm.ColourPair == pairBefore || !pairSent) Fail("a new game didn't pick (and send) new team colours");
         yield return Hold(Fwd, true, 0.5f, "countdown");
         Note($"countdown banner \"{flow.BannerText}\"");
+        bool quietCountdown = audio != null && audio.CurrentTrack == null;
+        bool clockInCountdown = hud.TimerRect.gameObject.activeSelf;
         if (flow.BannerText != "1") Fail("countdown number not shown");
         if (!InputGate.MatchLocked || Flat(player.transform.position - start) > 0.05f || player.IsSquid) Fail("could move or swim during the countdown");
         if (loadout.SpecialPoints != 0f || player.InkLevel < 0.999f) Fail("special/ink not reset for the match");
@@ -246,6 +258,7 @@ public partial class ClimbTestRunner
         Vector3 before = player.transform.position;
         yield return Hold(Fwd, false, 0.4f, "play");
         if (Flat(player.transform.position - before) < 0.3f) Fail("can't move once playing");
+        bool matchTrack = audio != null && audio.Library.match != null && audio.CurrentTrack == audio.Library.match && audio.LiveDeck.isPlaying;
         floor.FillRegion(new Rect(0, 0, 1, 0.6f), player.Team); // our win
 
         // Final stretch: no banner (music will announce it), and the coverage bar fades out.
@@ -256,8 +269,13 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.1f, "final");
         NetGameManager.FinalStretchStarted -= onStretch;
         if (!stretchEvent) Fail("FinalStretchStarted wasn't raised (the music hook)");
+        float boomboxInMatch = boombox.Volume;
+        bool nowOrNever = audio != null && audio.CurrentTrack == audio.Library.finalMinute && audio.LiveDeck.isPlaying;
+        float fadingIn = audio != null ? audio.LiveDeck.volume / Mathf.Max(1e-4f, GameSettings.MusicGain) : 0f;
         if (flow.BannerText != "") Fail($"final stretch shows a banner (\"{flow.BannerText}\")");
         yield return Hold(Still, false, 1.1f, "final");
+        float fadedIn = audio != null ? audio.LiveDeck.volume / Mathf.Max(1e-4f, GameSettings.MusicGain) : 0f;
+        nowOrNever &= fadingIn < 0.9f && fadedIn > 0.99f; // a quick crossfade: partway 0.1s in, full by 1.2s
         Note($"turf bar alpha {hud.TurfBarAlpha:F2} 1.2s into the final stretch");
         if (hud.TurfBarAlpha > 0.05f) Fail("coverage bar didn't fade out for the final stretch");
 
@@ -287,12 +305,23 @@ public partial class ClimbTestRunner
         Note($"revealed {flow.ResultAlphaShown:F3}/{flow.ResultBetaShown:F3}, banner \"{flow.BannerText}\"");
         if (Mathf.Abs(flow.ResultAlphaShown - alphaShare) > 0.001f || Mathf.Abs(flow.ResultBetaShown - (1f - alphaShare)) > 0.001f) Fail("bar didn't settle on the real split");
         if (flow.BannerText != winner) Fail("winner not announced");
+        bool musicOff = audio != null && audio.CurrentTrack == null && audio.LiveDeck.volume < 0.001f;
+        Note($"music: boombox at {boomboxInMatch:F2} in the match, {(matchTrack ? $"{audio.Library.match.name}" : "NOT the match track")} while playing, {(nowOrNever ? "Now or Never" : "NOT Now or Never")} in the last minute (at {fadingIn:F2} 0.1s in, {fadedIn:F2} by 1.2s), {(musicOff ? "off" : $"STILL ON ({(audio != null && audio.CurrentTrack != null ? audio.CurrentTrack.name : "no track")}, deck {(audio != null ? audio.LiveDeck.volume : -1f):F2}, phase {gm.Phase})")} by the results");
+        if (audio == null) Fail("no audio manager");
+        if (boomboxInMatch > 0.01f) Fail("the boombox didn't go quiet for the match");
+        if (!matchTrack || !nowOrNever || !musicOff) Fail("the match music didn't go: match track, Now or Never in the last minute, off after time's up");
 
         // Back to free roam: unlocked, player view, bar and the host's percentages back.
         yield return HoldUntil(Still, false, 3f, "free", f => gm.Phase == MatchPhase.FreeRoam);
         yield return Hold(Still, false, 0.8f, "free");
         if (InputGate.MatchLocked || flow.OverheadActive) Fail("still locked (or overhead) after the results");
         if (hud.TurfBarAlpha < 0.95f || !hud.PercentagesShown) Fail("coverage bar or percentages didn't come back");
+        if (boombox.Volume < 0.7f * GameSettings.MusicGain) Fail("the boombox didn't come back after the match");
+        bool clockOffAfter = !hud.TimerRect.gameObject.activeSelf;
+        Note($"clock {(clockOffFree ? "hidden" : "SHOWN")} before the match, {(clockInCountdown ? "shown" : "HIDDEN")} from the countdown, {(clockOffAfter ? "hidden" : "SHOWN")} after; music {(quietCountdown ? "waits for" : "PLAYED IN")} the countdown");
+        if (!clockOffFree || !clockInCountdown || !clockOffAfter) Fail("the clock didn't show only in the match");
+        if (!quietCountdown) Fail("the match music started before the countdown ended");
+        Destroy(boomboxGo);
 
         // The host can abandon a match.
         gm.StartGame();
@@ -662,11 +691,11 @@ public partial class ClimbTestRunner
             Destroy(lobbyMap.gameObject);
             yield return null;
             bool onAgain = host.StartButton.interactable && gm.CanStartMatch;
-            bool hudBack = hud == null || hud.BarRect.gameObject.activeSelf && hud.TimerRect.gameObject.activeSelf;
+            bool hudBack = hud == null || hud.BarRect.gameObject.activeSelf && !hud.TimerRect.gameObject.activeSelf; // the clock only shows in a match
             host.SetOpen(false);
-            Note($"lobby map: HUD {(hud == null ? "missing" : hudHidden ? "hid its clock and turf bar" : "SHOWED its clock or turf bar")}, {(hudBack ? "back" : "STILL HIDDEN")} on another map");
+            Note($"lobby map: HUD {(hud == null ? "missing" : hudHidden ? "hid its clock and turf bar" : "SHOWED its clock or turf bar")}, {(hudBack ? "bar back (clock still hidden out of a match)" : "WRONG")} on another map");
             if (hud == null) Fail("no match HUD to check");
-            if (!hudHidden || !hudBack) Fail("the HUD's clock and turf bar weren't hidden on the lobby map (only there)");
+            if (!hudHidden || !hudBack) Fail("the HUD's clock and turf bar weren't hidden on the lobby map (the bar only there, the clock out of matches)");
             Note($"lobby map: start button {(offInLobby ? "off" : "ON")} (\"{label}\"), StartGame {(started ? "STARTED a match" : "did nothing")}; on another map it's {(onAgain ? "on" : "STILL OFF")}");
             if (!offInLobby || couldStart || started) Fail("a match could be started on the lobby map");
             if (!onAgain) Fail("Start game stayed off after leaving the lobby map");

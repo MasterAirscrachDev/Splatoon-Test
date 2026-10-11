@@ -213,7 +213,7 @@ public class Brush : Weapon
         Vector3 flat = Flat(player);
         Vector3 look = Quaternion.AngleAxis(SwipePose(player), Vector3.Cross(Vector3.up, flat)) * flat;
         Vector3 origin = Pivot() + look * (reach * 0.6f);
-        float aimUp = -player.CameraPitch * aimInfluence;
+        float aimUp = -player.RaisedAimPitch * aimInfluence;
         Vector3 inherit = body != null ? body.velocity : Vector3.zero;
         inherit.y = 0f;
         float facing = player.transform.eulerAngles.y;

@@ -41,6 +41,7 @@ public class WeaponShooter : Weapon
     public bool ScriptedFire { get; set; } // tests: hold the trigger
     public int MainShots { get; private set; }
     public Vector3 LastInherited { get; private set; } // the shooter's velocity carried by the last volley
+    public override Transform ShotOrigin => muzzle;
     public event System.Action<Vector3, Quaternion> MainShotFired; // own velocity (no inherit), aim before spread (tests)
 
     void Start()

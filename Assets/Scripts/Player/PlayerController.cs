@@ -121,6 +121,7 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
     public float SuperJumpChargeTime => superJumpChargeTime;
     public Vector3 SuperJumpLanding => superJumpLanding;
     public bool IsSuperJumping => superJumpPhase != SuperJumpPhase.None;
+    public float SuperJumpFlightTime => superJumpFlightTime;
     public bool SuperJumpFlying => superJumpPhase == SuperJumpPhase.Flying || remoteSuperJumping; // ours, or a remote's (their state)
     bool remoteSuperJumping;
     public Vector3 TravelVelocity => travelVelocity;

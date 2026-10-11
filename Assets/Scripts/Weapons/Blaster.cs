@@ -36,6 +36,7 @@ public class Blaster : Weapon
     public float TrailSpacing => trailSpacing;
     public InkBlast Blast => blast;
     public Transform Muzzle => muzzle;
+    public override Transform ShotOrigin => muzzle;
     public bool ScriptedFire { get; set; } // tests: hold the trigger
     public int Shots { get; private set; }
     public Vector3 LastMuzzle { get; private set; }   // where and which way the last shot left (tests)

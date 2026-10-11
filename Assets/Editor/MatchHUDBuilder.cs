@@ -1625,4 +1625,113 @@ public static class MatchHUDBuilder
         }
         Debug.Log($"[MatchHUD] Weapon icons on {added} map screen entries and markers: {PrefabPath}");
     }
+
+    // Music and effects volume sliders, under the gyro toggle in the settings panel (in place:
+    // run again, they're rebuilt).
+    [MenuItem("Tools/UI/Add Volume Settings To Pause Menu")]
+    public static void AddVolumeSettings()
+    {
+        circle  = EnsureCircleSprite();
+        rounded = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            PauseMenu menu = root.GetComponentInChildren<PauseMenu>(true);
+            var so = new SerializedObject(menu);
+            var panel = (RectTransform)((GameObject)so.FindProperty("settingsPanel").objectReferenceValue).transform;
+            foreach (string label in new[] { MusicLabel, SfxLabel })
+                foreach (string part in new[] { label, label + " Slider", label + " Value" })
+                    DestroyChild(panel, part);
+            panel.sizeDelta = new Vector2(panel.sizeDelta.x, 700f);
+            Slider music = SettingRow(panel, MusicLabel, -450, out TextMeshProUGUI musicValue);
+            Slider sfx = SettingRow(panel, SfxLabel, -520, out TextMeshProUGUI sfxValue);
+            musicValue.name = MusicLabel + " Value";
+            sfxValue.name = SfxLabel + " Value";
+            musicValue.text = "85%";
+            sfxValue.text = "100%";
+            var back = (Button)so.FindProperty("backButton").objectReferenceValue;
+            ((RectTransform)back.transform).anchoredPosition = new Vector2(0, -600);
+            so.FindProperty("musicSlider").objectReferenceValue = music;
+            so.FindProperty("sfxSlider").objectReferenceValue = sfx;
+            so.FindProperty("musicValue").objectReferenceValue = musicValue;
+            so.FindProperty("sfxValue").objectReferenceValue = sfxValue;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Volume settings in the pause menu: {PrefabPath}");
+    }
+
+    const string MusicLabel = "Music volume", SfxLabel = "Effects volume";
+
+    // The aim marks (Reticle): the aligned grey ring and the true mark (a thicker white ring round a dot), under
+    // everything else on the HUD. In place: run again, it's rebuilt.
+    [MenuItem("Tools/UI/Add Reticles To Match HUD")]
+    public static void AddReticles()
+    {
+        circle = EnsureCircleSprite();
+        Sprite ring = EnsureRingSprite(), thick = EnsureThickRingSprite();
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            DestroyChild(root.transform, "Reticles");
+            Vector2 centre = new Vector2(0.5f, 0.5f);
+            RectTransform area = Rect("Reticles", root.transform, centre, centre, Vector2.zero, Vector2.zero);
+            Stretch(area);
+            area.SetSiblingIndex(0); // under the rest of the HUD and its menus
+            CanvasGroup group = area.gameObject.AddComponent<CanvasGroup>();
+            group.blocksRaycasts = false;
+            group.interactable = false;
+
+            RectTransform aligned = Rect("Aligned", area, centre, centre, Vector2.zero, new Vector2(46, 46));
+            Img(aligned.gameObject, ring, new Color(0.78f, 0.78f, 0.8f, 0.7f), sliced: false);
+
+            RectTransform mark = Rect("True", area, centre, centre, Vector2.zero, new Vector2(46, 46)); // the aligned ring's size: covers it when lined up
+            Color white = Color.white, shade = new Color(0f, 0f, 0f, 0.6f);
+            Shade(Img(mark.gameObject, thick, white, sliced: false), shade);
+            RectTransform dot = Rect("Dot", mark, centre, centre, Vector2.zero, new Vector2(5, 5));
+            Shade(Img(dot.gameObject, circle, white, sliced: false), shade);
+
+            Reticle reticle = area.gameObject.AddComponent<Reticle>();
+            var so = new SerializedObject(reticle);
+            so.FindProperty("aligned").objectReferenceValue = aligned;
+            so.FindProperty("trueMark").objectReferenceValue = mark;
+            so.FindProperty("group").objectReferenceValue = group;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Reticles on {PrefabPath}");
+    }
+
+    // A ring with a wider band than HudRing (22% of its radius, against 14%), for the true reticle.
+    static Sprite EnsureThickRingSprite()
+    {
+        const int size = 128;
+        const string path = "Assets/Art/UI/HudRingThick.png", signature = "ring 0.78";
+        if (Stale(path, signature))
+        {
+            WriteTexture(Supersample(size, size, (x, y) =>
+            {
+                float d = Vector2.Distance(new Vector2(x, y), new Vector2(size / 2f, size / 2f)) / (size / 2f - 1f);
+                return d <= 1f && d >= 0.78f;
+            }), path);
+            ImportSprite(path, Vector4.zero, signature);
+        }
+        return AssetDatabase.LoadAssetAtPath<Sprite>(path);
+    }
+
+    static void Shade(Image image, Color colour)
+    {
+        image.raycastTarget = false;
+        Outline o = image.gameObject.AddComponent<Outline>();
+        o.effectColor = colour;
+        o.effectDistance = new Vector2(1.5f, -1.5f);
+    }
 }

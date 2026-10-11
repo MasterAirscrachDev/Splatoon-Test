@@ -18,7 +18,7 @@ public class WeaponCameraAim : MonoBehaviour
     {
         if (owner != null && !owner.IsLocalPlayer)
         {
-            Quaternion target = owner.Aiming ? Quaternion.Euler(owner.AimPitch, 0f, 0f) : Quaternion.identity;
+            Quaternion target = owner.Aiming ? Quaternion.Euler(owner.AimPitch - PlayerController.AimRaise, 0f, 0f) : Quaternion.identity;
             transform.localRotation = Quaternion.Slerp(transform.localRotation, target, 1f - Mathf.Exp(-20f * Time.deltaTime));
             return;
         }

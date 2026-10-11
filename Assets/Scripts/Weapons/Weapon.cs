@@ -30,6 +30,7 @@ public abstract class Weapon : MonoBehaviour
     public float SpeedRating => speedRating;
     public PlayerController Owner { get; private set; }
     public int FeetShots { get; private set; } // tests
+    public virtual Transform ShotOrigin => null;  // where aimed shots leave from (the reticle checks the way from it); none: thrown or swung
 
     // Another player's shots with this weapon, shown here (they paint and damage on their side).
     public virtual void Replay(ProjectileSpawnData d) { }

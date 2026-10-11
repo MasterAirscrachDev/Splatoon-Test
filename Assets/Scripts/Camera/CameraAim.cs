@@ -16,8 +16,9 @@ public class CameraAim : MonoBehaviour
     void Update()
     {
         float camDistance = Mathf.Abs(transform.localPosition.z);
-        Physics.Raycast(transform.position, transform.forward, out hit, aimDistance + camDistance, aimLayerMask);
+        Vector3 forward = Quaternion.AngleAxis(-PlayerController.AimRaise, transform.right) * transform.forward; // aimed a little above the view
+        Physics.Raycast(transform.position, forward, out hit, aimDistance + camDistance, aimLayerMask);
         if (hit.transform != null) target = hit.point;
-        else target = transform.position + transform.forward * (aimDistance + camDistance);
+        else target = transform.position + forward * (aimDistance + camDistance);
     }
 }

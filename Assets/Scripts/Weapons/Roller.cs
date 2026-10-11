@@ -245,7 +245,7 @@ public class Roller : Weapon
         released = flickStart;
         Vector3 flat = Flat(player); // the view's heading (the body faces it while flicking)
         Vector3 origin = Pivot() + flat * (reach * 0.8f);
-        float aimUp = -player.CameraPitch * aimInfluence; // looking up raises it, down lowers it
+        float aimUp = -player.RaisedAimPitch * aimInfluence; // looking up raises it, down lowers it
         Vector3 inherit = body != null ? body.velocity : Vector3.zero;
         inherit.y = 0f; // running carries into the droplets; jumping doesn't
         float facing = player.transform.eulerAngles.y;

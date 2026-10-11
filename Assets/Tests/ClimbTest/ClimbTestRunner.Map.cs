@@ -144,10 +144,23 @@ public partial class ClimbTestRunner
             SuperJumpTrail trail = player.GetComponentInChildren<SuperJumpTrail>(true);
             int trailBefore = trail != null ? trail.Emitted : 0;
             bool toldFlying = false;
-            yield return HoldUntil(Still, holdSwim, 5f, fly, f => { toldFlying |= player.GetNetState(0, 0).superJumping; return !player.IsSuperJumping; });
+            float flightStarted = -1f;
+            int atLaunchEnd = -1;
+            yield return HoldUntil(Still, holdSwim, 5f, fly, f =>
+            {
+                toldFlying |= player.GetNetState(0, 0).superJumping;
+                if (player.SuperJumpState == SuperJumpPhase.Flying)
+                {
+                    if (flightStarted < 0f) flightStarted = Time.time;
+                    else if (atLaunchEnd < 0 && Time.time - flightStarted > player.SuperJumpFlightTime * 0.4f && trail != null) atLaunchEnd = trail.Emitted;
+                }
+                return !player.IsSuperJumping;
+            });
             int trailBlobs = trail != null ? trail.Emitted - trailBefore : 0;
-            Note($"run {run}: trail {(trail == null ? "MISSING" : trail.isActiveAndEnabled ? "on" : "OFF")} of {trailBlobs} ink blobs, {(toldFlying ? "flight sent in our state" : "flight NOT in our state")}");
+            int afterLaunch = trail != null && atLaunchEnd >= 0 ? trail.Emitted - atLaunchEnd : -1;
+            Note($"run {run}: trail {(trail == null ? "MISSING" : trail.isActiveAndEnabled ? "on" : "OFF")} of {trailBlobs} ink blobs ({afterLaunch} after the launch), {(toldFlying ? "flight sent in our state" : "flight NOT in our state")}");
             if (trail == null || trailBlobs < 20) Fail("the Super Jump left no trail");
+            else if (afterLaunch != 0) Fail("the Super Jump's trail carried on past the launch");
             if (!toldFlying || player.GetNetState(0, 0).superJumping) Fail("our state didn't say we were in flight (only while we were)");
             List<Frame> flying = frames.Where(f => f.phase == fly).ToList();
             float peak = flying.Max(f => f.pos.y) - charging.Last().pos.y;

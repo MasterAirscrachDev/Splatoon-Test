@@ -275,11 +275,10 @@ public class PlayerLoadout : MonoBehaviour
         CurlingBomb bomb = held;
         held = null;
         if (!CanStartSub || !player.ConsumeInk(InkCost(SubType.CurlingBomb))) { Destroy(bomb.gameObject); return false; }
-        Transform aim = player.CameraRig != null ? player.CameraRig : player.transform;
         bomb.transform.SetParent(null, true);
         bomb.transform.rotation = Quaternion.identity;
         bomb.Init(player.OwnerId, nextSubId++, player.Team, ownedLocally: true);
-        bomb.Launch(bomb.ThrowVelocity(aim.forward), Mathf.Max(bomb.MinFuse, bomb.FuseLeft));
+        bomb.Launch(bomb.ThrowVelocity(player.AimForward), Mathf.Max(bomb.MinFuse, bomb.FuseLeft));
         LastBomb = bomb;
         NetGameManager.Instance?.SendSubSpawn(bomb);
         return true;
@@ -328,9 +327,8 @@ public class PlayerLoadout : MonoBehaviour
     // From in front of us, along the camera's aim plus a lob.
     void SprinklerThrow(out Vector3 from, out Vector3 velocity)
     {
-        Transform aim = player.CameraRig != null ? player.CameraRig : player.transform;
-        from = player.BodyCenter + Vector3.up * 0.4f + Vector3.ProjectOnPlane(aim.forward, Vector3.up).normalized * 0.6f;
-        velocity = aim.forward * throwSpeed + Vector3.up * throwLift;
+        from = player.BodyCenter + Vector3.up * 0.4f + Vector3.ProjectOnPlane(player.AimForward, Vector3.up).normalized * 0.6f;
+        velocity = player.AimForward * throwSpeed + Vector3.up * throwLift;
     }
 
     // ── Preview: what the readied sub will do ───────────────────────────────
@@ -348,10 +346,9 @@ public class PlayerLoadout : MonoBehaviour
         if (preview == null) preview = SubPreview.Create();
         player.MarkAiming(0.5f); // facing the view while it's readied
         Color colour = player.TeamColour;
-        Transform aim = player.CameraRig != null ? player.CameraRig : player.transform;
         if (held != null)
         {
-            curlingBombPrefab.PredictPath(held.transform.position, held.ThrowVelocity(aim.forward), Mathf.Max(held.MinFuse, held.FuseLeft), previewPath);
+            curlingBombPrefab.PredictPath(held.transform.position, held.ThrowVelocity(player.AimForward), Mathf.Max(held.MinFuse, held.FuseLeft), previewPath);
             preview.ShowPath(previewPath, colour);
         }
         else if (sub == SubType.Sprinkler && sprinklerPrefab != null)

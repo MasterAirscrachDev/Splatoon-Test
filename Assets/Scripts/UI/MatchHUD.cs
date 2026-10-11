@@ -89,9 +89,10 @@ public class MatchHUD : MonoBehaviour
         UpdateRosters(gm);
         UpdateCoverage(gm);
         LayOutTop();
-        bool matches = MapSettings.MatchesAllowed; // the lobby: no clock or turf to show
+        bool matches = MapSettings.MatchesAllowed; // the lobby: no turf to show
         if (barRect.gameObject.activeSelf != matches) barRect.gameObject.SetActive(matches);
-        if (timerRect.gameObject.activeSelf != matches) timerRect.gameObject.SetActive(matches);
+        bool clock = gm.InMatch; // nothing to count down out of a match
+        if (timerRect.gameObject.activeSelf != clock) timerRect.gameObject.SetActive(clock);
 
         bool barHidden = gm.InFinalStretch || gm.Phase == MatchPhase.TimesUp || gm.Phase == MatchPhase.Results;
         turfBarGroup.alpha = Mathf.MoveTowards(turfBarGroup.alpha, barHidden ? 0f : 1f, barFadeSpeed * Time.deltaTime);

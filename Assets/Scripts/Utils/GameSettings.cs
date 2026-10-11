@@ -14,6 +14,16 @@ public static class GameSettings
     public static float GyroSensitivityX = 1f;   // turning
     public static float GyroSensitivityY = 1f;   // looking up and down
     public static bool GyroEnabled = true;       // ignored without a gyro
+    public static float MusicVolume = DefaultMusicVolume; // 0..1, the slider's place (played at MusicGain)
+    public static float SfxVolume = 1f;          // 0..1, likewise (SfxGain)
+    public const float DefaultMusicVolume = 0.85f; // about half as loud as full (-6 dB)
+
+    // A volume slider's place (0..1) to the loudness it plays at: even steps in decibels, as hearing
+    // works (100% is 0 dB, each 10% below is VolumeRangeDb / 10 quieter), and 0 is silent.
+    public const float VolumeRangeDb = 40f;
+    public static float Gain(float slider) => slider <= 0f ? 0f : Mathf.Pow(10f, (Mathf.Clamp01(slider) - 1f) * VolumeRangeDb / 20f);
+    public static float MusicGain => Gain(MusicVolume);
+    public static float SfxGain => Gain(SfxVolume);
 
     public static string FileName = "settings.cfg"; // tests use their own
     public static bool Loaded { get; private set; }
@@ -29,6 +39,8 @@ public static class GameSettings
     {
         MouseSensitivity = StickSensitivity = GyroSensitivityX = GyroSensitivityY = 1f;
         GyroEnabled = true;
+        MusicVolume = DefaultMusicVolume;
+        SfxVolume = 1f;
         Apply();
     }
 
@@ -51,6 +63,8 @@ public static class GameSettings
             GyroSensitivityX = Clamp(save.GetVar("gyroSensitivityX", GyroSensitivityX));
             GyroSensitivityY = Clamp(save.GetVar("gyroSensitivityY", GyroSensitivityY));
             GyroEnabled = save.GetVar("gyroEnabled", GyroEnabled);
+            MusicVolume = Mathf.Clamp01(save.GetVar("musicVolume", MusicVolume));
+            SfxVolume = Mathf.Clamp01(save.GetVar("sfxVolume", SfxVolume));
         }
         Loaded = true;
         Apply();
@@ -64,6 +78,8 @@ public static class GameSettings
         save.SetVar("gyroSensitivityX", GyroSensitivityX);
         save.SetVar("gyroSensitivityY", GyroSensitivityY);
         save.SetVar("gyroEnabled", GyroEnabled);
+        save.SetVar("musicVolume", MusicVolume);
+        save.SetVar("sfxVolume", SfxVolume);
         try { await Files.SaveFile(FileName, save); }
         catch (Exception e) { Debug.LogWarning($"[Settings] couldn't save {FileName}: {e.Message}"); }
     }

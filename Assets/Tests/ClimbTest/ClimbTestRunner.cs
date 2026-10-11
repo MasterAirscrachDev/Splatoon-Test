@@ -488,6 +488,8 @@ public partial class ClimbTestRunner : MonoBehaviour
         yield return S("Gyro (Steam Input): its calls resolve; it moves the view on a gamepad (the stick then only turns) and the cursor; Steam's pad types pick the icons", Station.Lobby, Gyro, "Input");
         yield return S("Map on a gamepad: the west button toggles it (B closes it too); the d-pad Super Jumps to teammates, down to base, shown on their entries", Station.Lobby, MapPadButtons, "Input,Map");
         yield return S("Pause menu: Esc/Select open it; settings scale mouse, stick, gyro X/Y, gyro off, saved; Y recentres under gyro; RT clicks", Station.Lobby, PauseAndSettings, "Input,UI");
+        yield return S("Reticles: a grey ring fixed where the aim points; the true mark on it, moving onto anything between the gun and that point; faint in swim form, hidden in menus", Station.Lobby, Reticles, "UI,Weapons");
+        yield return S("Music: the boombox plays the lobby track (partly spatial) at the music volume; volume sliders set music and effects; effects at their volume", Station.Lobby, MusicAndVolumes, "Audio,UI");
         yield return S("Frame rate: a jump peaks at the same height at 30, 75 and 144 fps; standing stays grounded every frame even at 1000 fps", Station.Lobby, FrameRateIndependence, "FrameRate,Swim");
         yield return S("Lobby: switching form glides the camera instead of snapping", Station.Lobby, CameraFormSwitch, "Camera,Swim");
         yield return S("Lobby: pooled projectiles splat where they land and are reused", Station.Lobby, ProjectilePooling, "Projectiles,Ink");
