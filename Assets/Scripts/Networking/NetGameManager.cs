@@ -218,7 +218,17 @@ public class NetGameManager : MonoBehaviour
         public int players, maxPlayers;
     }
 
-    void OnSteamSetup(bool success) => Steam = success ? SteamStatus.Ready : SteamStatus.Unavailable;
+    void OnSteamSetup(bool success)
+    {
+        Steam = success ? SteamStatus.Ready : SteamStatus.Unavailable;
+        if (success) mainThread.Enqueue(TakeSteamName);
+    }
+
+    // Our player spawns before Steam is up (as "LocalPlayer"): once it is, it takes our Steam name.
+    void TakeSteamName()
+    {
+        if (localPlayer != null && !devMode) localPlayer.SetDisplayName(LocalPlayerName());
+    }
 
     // Public and tagged with LobbyTag, so FindLobbies lists it. Joining spawns everyone via OnLobbyUpdate.
     public async Task<bool> HostLobby()
@@ -407,11 +417,14 @@ public class NetGameManager : MonoBehaviour
     }
 
     // Host, free roam only: clear the ink (and beacons) everywhere.
+    // Out of a match: the host's, in a lobby; anyone's on their own (there's no one else's ink to wipe).
+    public bool CanResetMap => !InMatch && (IsHost || !InLobby);
+
     public void ResetMap()
     {
-        if (!IsHost || InMatch) return;
+        if (!CanResetMap) return;
         ClearAllInk();
-        Send(NetMsg.InkReset, new MatchEventData { phase = MatchPhase.FreeRoam, serverTime = Time.time });
+        if (IsHost) Send(NetMsg.InkReset, new MatchEventData { phase = MatchPhase.FreeRoam, serverTime = Time.time });
     }
 
     // ── Match flow ─────────────────────────────────────────────────────────

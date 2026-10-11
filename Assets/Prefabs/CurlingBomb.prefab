@@ -61,7 +61,7 @@ MonoBehaviour:
   passDamage: 30
   fuse: 2.8
   minFuse: 0.6
-  cookRate: 2.5
+  cookRate: 1.5
   blastRadius: 2.2
   blastDamage: 180
   blastSplash: 22

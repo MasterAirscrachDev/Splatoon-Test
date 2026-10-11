@@ -10,6 +10,11 @@ public abstract class Weapon : MonoBehaviour
     [SerializeField, TextArea] string description;
     [SerializeField] Sprite icon;          // rendered in the icon studio (Tools/Icons/Render Icons)
 
+    [Header("Loadout card")] // rough 0-1 ratings, the bars in the loadout menu (hand-set: they don't follow the tuning)
+    [SerializeField, Range(0f, 1f)] float powerRating = 0.5f; // (not "range": the Blaster has its own)
+    [SerializeField, Range(0f, 1f)] float rangeRating = 0.5f;
+    [SerializeField, Range(0f, 1f)] float speedRating = 0.5f;
+
     [Header("Feet ink")] // keeps the shooter standing in their own ink
     [SerializeField] float feetShotInterval = 0.4f;
     [SerializeField] int feetShotMinSize = 12, feetShotMaxSize = 18;
@@ -20,6 +25,9 @@ public abstract class Weapon : MonoBehaviour
     public string DisplayName => displayName;
     public string Description => description;
     public Sprite Icon => icon;
+    public float PowerRating => powerRating;
+    public float RangeRating => rangeRating;
+    public float SpeedRating => speedRating;
     public PlayerController Owner { get; private set; }
     public int FeetShots { get; private set; } // tests
 

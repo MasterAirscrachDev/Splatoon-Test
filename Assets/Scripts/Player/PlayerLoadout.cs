@@ -62,10 +62,12 @@ public class PlayerLoadout : MonoBehaviour
     public SpecialType Special => special;
     public string SpecialName => special == SpecialType.BubbleShield ? "BUBBLE" : "INKSTRIKE";
     public InkStrike InkStrikePrefab => inkStrikePrefab;
-    public Sprite SpecialIcon => specialIcons != null && (int)special < specialIcons.Length ? specialIcons[(int)special] : null;
+    public Sprite SpecialIcon => SpecialIconOf(special);
     public bool Targeting { get; private set; } // picking an Inkstrike spot on the map
     public float SubInkCost => InkCost(sub);
-    public Sprite SubIcon => SubPrefab(sub) is SubDevice d && d != null ? d.Icon : null;
+    public Sprite SubIcon => SubIconOf(sub);
+    public Sprite SubIconOf(SubType type) => SubPrefab(type) is SubDevice d && d != null ? d.Icon : null;
+    public Sprite SpecialIconOf(SpecialType type) => specialIcons != null && (int)type < specialIcons.Length ? specialIcons[(int)type] : null;
     SubDevice SubPrefab(SubType type) => type == SubType.Beacon ? beaconPrefab : type == SubType.Sprinkler ? sprinklerPrefab : curlingBombPrefab;
     // The icon of the weapon this player has equipped (or null without one).
     public Sprite WeaponIcon => weapons != null && weapons.Length > 0 && weapons[Mathf.Clamp(player.WeaponIndex, 0, weapons.Length - 1)] is Weapon w && w != null ? w.Icon : null;
@@ -129,6 +131,7 @@ public class PlayerLoadout : MonoBehaviour
     void OnDestroy()
     {
         if (Local == this) Local = null;
+        if (preview != null) Destroy(preview.gameObject);
         input?.Disable();
         input?.Dispose();
         SurfaceInkManager.OnTurfInked -= OnTurfInked;
@@ -145,6 +148,7 @@ public class PlayerLoadout : MonoBehaviour
             player.SubReady = CanUseSub && !player.IsDead;
             UpdateQueuedSub();
             UpdateHeldBomb();
+            UpdateSubPreview();
         }
         else if (player.WeaponIndex != equippedIndex) Equip(player.WeaponIndex); // they switched
         UpdateShieldVisual();
@@ -191,6 +195,10 @@ public class PlayerLoadout : MonoBehaviour
     }
 
     // ── Sub ────────────────────────────────────────────────────────────────
+    // Holding the button readies it, its preview showing what it will do (SubPreview): a sprinkler's
+    // throw arc or a curling bomb's slide (cooking in hand), or a beacon's shape where it would
+    // stand. Letting go uses it; letting go in swim form calls it off (nothing spent). UseSub does
+    // both at once.
 
     bool CanStartSub => player.IsLocalPlayer && !player.IsDead && !player.IsRespawning && !player.IsSuperJumping && player.Team != 0 && !InputGate.MatchLocked && CanUseSub;
 
@@ -204,12 +212,16 @@ public class PlayerLoadout : MonoBehaviour
 
     void UpdateQueuedSub()
     {
-        if (player.IsSquid || player.IsDead) pressQueuedAt = releaseQueuedAt = -1f; // back under, or gone: dropped
+        if (player.IsSquid || player.IsDead)
+        {
+            if (releaseQueuedAt >= 0f) readying = false; // let go and gone back under: called off
+            pressQueuedAt = releaseQueuedAt = -1f;       // back under, or gone: dropped
+        }
         if (pressQueuedAt >= 0f && Time.time - pressQueuedAt > SubQueueTime) pressQueuedAt = -1f;
         if (releaseQueuedAt >= 0f && Time.time - releaseQueuedAt > SubQueueTime) releaseQueuedAt = -1f;
         if (player.KidFormReady)
         {
-            if (pressQueuedAt >= 0f) { pressQueuedAt = -1f; PressSub(); }
+            if (pressQueuedAt >= 0f) { pressQueuedAt = -1f; if (sub == SubType.CurlingBomb) PressSub(); else UseSub(); } // UseSub queued it: it goes now
             if (releaseQueuedAt >= 0f) { releaseQueuedAt = -1f; ReleaseSub(); }
         }
         player.ActionQueued = SubQueued;
@@ -225,10 +237,17 @@ public class PlayerLoadout : MonoBehaviour
         return sub == SubType.Beacon ? PlaceBeacon() : ThrowSprinkler();
     }
 
-    // The sub button went down: most subs go now; a curling bomb is taken in hand, its fuse running.
+    // The sub button went down: it's readied (a curling bomb taken in hand, its fuse running), its
+    // preview showing while it's held.
     public bool PressSub()
     {
-        if (sub != SubType.CurlingBomb) return UseSub();
+        if (sub != SubType.CurlingBomb)
+        {
+            if (!CanStartSub) return false;
+            readying = true;
+            player.MarkAiming(0.5f);
+            return true;
+        }
         if (!CanStartSub || held != null || curlingBombPrefab == null) return false;
         player.MarkAiming(0.5f);
         held = Instantiate(curlingBombPrefab, player.transform);
@@ -238,10 +257,20 @@ public class PlayerLoadout : MonoBehaviour
         return true;
     }
 
-    // The sub button came up: a held curling bomb is thrown with what's left of its fuse.
+    // The sub button came up: the readied sub is used (a held curling bomb thrown with what's left
+    // of its fuse), unless we're in swim form, which calls it off.
     public bool ReleaseSub()
     {
-        if (held == null) return false;
+        if (held == null)
+        {
+            if (!readying) return false;
+            if (player.IsSquid || !CanStartSub) { readying = false; return false; }                              // called off
+            if (InTransition) { releaseQueuedAt = Time.time; player.ActionQueued = true; return true; } // used once the kid form's up
+            readying = false;
+            player.MarkAiming(0.5f);
+            return sub == SubType.Beacon ? PlaceBeacon() : ThrowSprinkler();
+        }
+        if (player.IsSquid) { Destroy(held.gameObject); held = null; return false; } // called off
         if (InTransition) { releaseQueuedAt = Time.time; player.ActionQueued = true; return true; } // thrown once the kid form's up
         CurlingBomb bomb = held;
         held = null;
@@ -261,7 +290,9 @@ public class PlayerLoadout : MonoBehaviour
     {
         if (held == null) return;
         if (player.IsDead || player.IsRespawning || player.IsSuperJumping || InputGate.MatchLocked) { Destroy(held.gameObject); held = null; return; }
-        player.MarkAiming(0.5f); // facing the view while it's in hand
+        bool shown = !player.IsSquid; // tucked away in swim form (letting go then calls it off)
+        if (held.gameObject.activeSelf != shown) held.gameObject.SetActive(shown);
+        if (shown) player.MarkAiming(0.5f); // facing the view while it's in hand
         if (held.FuseLeft <= held.MinFuse) ReleaseSub();
     }
 
@@ -286,13 +317,52 @@ public class PlayerLoadout : MonoBehaviour
         if (sprinklerPrefab == null || !player.ConsumeInk(InkCost(SubType.Sprinkler))) return false;
         if (ownSprinkler != null) ownSprinkler.Break();
 
-        Transform aim = player.CameraRig != null ? player.CameraRig : player.transform;
-        Vector3 from = player.BodyCenter + Vector3.up * 0.4f + Vector3.ProjectOnPlane(aim.forward, Vector3.up).normalized * 0.6f;
+        SprinklerThrow(out Vector3 from, out Vector3 velocity);
         ownSprinkler = Instantiate(sprinklerPrefab, from, Quaternion.identity);
         ownSprinkler.Init(player.OwnerId, nextSubId++, player.Team, ownedLocally: true);
-        ownSprinkler.Throw(aim.forward * throwSpeed + Vector3.up * throwLift);
+        ownSprinkler.Throw(velocity);
         NetGameManager.Instance?.SendSubSpawn(ownSprinkler);
         return true;
+    }
+
+    // From in front of us, along the camera's aim plus a lob.
+    void SprinklerThrow(out Vector3 from, out Vector3 velocity)
+    {
+        Transform aim = player.CameraRig != null ? player.CameraRig : player.transform;
+        from = player.BodyCenter + Vector3.up * 0.4f + Vector3.ProjectOnPlane(aim.forward, Vector3.up).normalized * 0.6f;
+        velocity = aim.forward * throwSpeed + Vector3.up * throwLift;
+    }
+
+    // ── Preview: what the readied sub will do ───────────────────────────────
+    bool readying;                 // the button's down on a sprinkler or beacon
+    SubPreview preview;
+    readonly List<Vector3> previewPath = new List<Vector3>();
+    public bool ReadyingSub => readying || held != null;
+    public SubPreview Preview => preview; // tests
+
+    void UpdateSubPreview()
+    {
+        if (readying && (player.IsDead || player.IsRespawning || player.IsSuperJumping || InputGate.MatchLocked)) readying = false;
+        bool ready = (readying || held != null) && !player.IsSquid && !player.IsDead; // in swim form: off (letting go now calls it off)
+        if (!ready) { if (preview != null) preview.Hide(); return; }
+        if (preview == null) preview = SubPreview.Create();
+        player.MarkAiming(0.5f); // facing the view while it's readied
+        Color colour = player.TeamColour;
+        Transform aim = player.CameraRig != null ? player.CameraRig : player.transform;
+        if (held != null)
+        {
+            curlingBombPrefab.PredictPath(held.transform.position, held.ThrowVelocity(aim.forward), Mathf.Max(held.MinFuse, held.FuseLeft), previewPath);
+            preview.ShowPath(previewPath, colour);
+        }
+        else if (sub == SubType.Sprinkler && sprinklerPrefab != null)
+        {
+            SprinklerThrow(out Vector3 from, out Vector3 velocity);
+            sprinklerPrefab.PredictPath(from, velocity, 4f, previewPath);
+            preview.ShowPath(previewPath, colour);
+        }
+        else if (sub == SubType.Beacon && beaconPrefab != null && FindBeaconSpot(out Vector3 spot))
+            preview.ShowGhost(beaconPrefab, spot, Quaternion.Euler(0f, player.transform.eulerAngles.y, 0f), colour);
+        else preview.Hide();
     }
 
     // Ground under a point ahead, pulled back if a wall is in the way.

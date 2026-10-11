@@ -56,7 +56,7 @@ public static class WeaponModels
     }
 
     // Each embedded material out to Assets/Materials/Weapons (or onto the existing one of that name).
-    static string ExtractMaterials(string modelPath)
+    internal static string ExtractMaterials(string modelPath)
     {
         Directory.CreateDirectory(MaterialDir);
         var importer = (ModelImporter)AssetImporter.GetAtPath(modelPath);

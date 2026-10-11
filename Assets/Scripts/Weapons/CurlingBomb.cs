@@ -142,6 +142,20 @@ public class CurlingBomb : SubDevice
     // only steep faces (walls) bounce it.
     void Slide(float dt)
     {
+        Vector3 position = transform.position;
+        bool bounced = Step(ref position, ref velocity, ref grounded, ref groundNormal, dt);
+        transform.position = position;
+        if (bounced && authoritative) NetGameManager.Instance?.SendSubSpawn(this); // remotes follow the bounce
+
+        Vector3 surfaceUp = grounded ? groundNormal : Vector3.up;
+        Vector3 facing = Vector3.ProjectOnPlane(velocity.sqrMagnitude > 1e-4f ? velocity : transform.forward, surfaceUp);
+        if (facing.sqrMagnitude > 1e-6f) transform.rotation = Quaternion.LookRotation(facing, surfaceUp);
+    }
+
+    // One step of the slide (see Slide), on plain values so a throw's path can be foreseen. Returns
+    // whether it bounced off a wall.
+    bool Step(ref Vector3 position, ref Vector3 velocity, ref bool grounded, ref Vector3 groundNormal, float dt)
+    {
         if (grounded)
         {
             velocity = Vector3.ProjectOnPlane(velocity, groundNormal) + Vector3.ProjectOnPlane(Vector3.down * gravity, groundNormal) * dt;
@@ -151,23 +165,24 @@ public class CurlingBomb : SubDevice
         else velocity += Vector3.down * (gravity * dt);
 
         // Walls: sweep the body along its way, lifted off the surface it's riding; bounce off anything steep.
+        bool bounced = false;
         Vector3 up = grounded ? groundNormal : Vector3.up;
         Vector3 move = velocity * dt;
         if (move.sqrMagnitude > 1e-8f &&
-            Physics.SphereCast(transform.position + up * radius, radius * 0.9f, move.normalized, out RaycastHit wall, move.magnitude, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore) &&
+            Physics.SphereCast(position + up * radius, radius * 0.9f, move.normalized, out RaycastHit wall, move.magnitude, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore) &&
             wall.normal.y < WallLimit)
         {
             Vector3 n = Vector3.ProjectOnPlane(wall.normal, up);
             n = n.sqrMagnitude > 1e-4f ? n.normalized : wall.normal;
-            transform.position += move.normalized * Mathf.Max(0f, wall.distance - 0.01f);
+            position += move.normalized * Mathf.Max(0f, wall.distance - 0.01f);
             velocity = Vector3.Reflect(velocity, n);
             move = Vector3.zero;
-            if (authoritative) NetGameManager.Instance?.SendSubSpawn(this); // remotes follow the bounce
+            bounced = true;
         }
 
         // Ride the ground under where we're going: stay on it (over small drops and onto slopes) while
         // sliding, or land on it when falling; otherwise we're in the air.
-        Vector3 next = transform.position + move;
+        Vector3 next = position + move;
         bool wasGrounded = grounded;
         grounded = false;
         float above = radius + 0.3f;
@@ -182,11 +197,22 @@ public class CurlingBomb : SubDevice
             grounded = true;
             groundNormal = ground.normal;
         }
-        transform.position = next;
+        position = next;
+        return bounced;
+    }
 
-        Vector3 surfaceUp = grounded ? groundNormal : Vector3.up;
-        Vector3 facing = Vector3.ProjectOnPlane(velocity.sqrMagnitude > 1e-4f ? velocity : transform.forward, surfaceUp);
-        if (facing.sqrMagnitude > 1e-6f) transform.rotation = Quaternion.LookRotation(facing, surfaceUp);
+    // Where one thrown from `from` at `velocity` goes in `seconds` (its fuse), stepped as it would be.
+    public void PredictPath(Vector3 from, Vector3 velocity, float seconds, List<Vector3> path, float dt = 1f / 30f)
+    {
+        path.Clear();
+        Vector3 position = from, normal = Vector3.up;
+        bool onGround = false;
+        path.Add(position);
+        for (float t = 0f; t < seconds; t += dt)
+        {
+            Step(ref position, ref velocity, ref onGround, ref normal, dt);
+            path.Add(position);
+        }
     }
 
     // A stripe of ink behind it, one splat every trailSpacing along the ground.

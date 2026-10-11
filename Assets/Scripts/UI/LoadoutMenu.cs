@@ -3,8 +3,11 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
-// Placeholder (until the hub): pick a main weapon, sub and special between matches. L / Start toggles it;
-// it closes itself when a match starts. Choices apply at once and are remembered (PlayerLoadout).
+// Pick a main weapon, sub and special, any time out of a match: L / Start toggles it, as does walking
+// up to the lobby's loadout kiosk; it closes itself when a match starts. Choices apply at once and are
+// remembered (PlayerLoadout). Each choice is a tile with its icon and name ("Icon" and the text under
+// it); each weapon's tile also has its power / range / speed as small bars ("Power/Fill" etc.), and
+// the picked weapon's card shows them large, with its name and what it does.
 public class LoadoutMenu : MonoBehaviour
 {
     [SerializeField] GameObject screen;
@@ -12,6 +15,8 @@ public class LoadoutMenu : MonoBehaviour
     [SerializeField] Button[] subButtons;    // in SubType order
     [SerializeField] Button[] specialButtons; // in SpecialType order
     [SerializeField] TMP_Text weaponInfo, subInfo, specialInfo;
+    [SerializeField] TMP_Text weaponName;
+    [SerializeField] RectTransform powerBar, rangeBar, speedBar; // the bars' fills (their width is the rating)
     [SerializeField] Button closeButton;
     [SerializeField] Color normalColour = new Color(0.2f, 0.2f, 0.26f, 1f);
     [SerializeField] Color selectedColour = new Color(1f, 0.82f, 0.25f, 1f);
@@ -90,12 +95,30 @@ public class LoadoutMenu : MonoBehaviour
             weaponButtons[i].gameObject.SetActive(exists);
             if (!exists) continue;
             weaponButtons[i].GetComponentInChildren<TMP_Text>().text = loadout.Weapons[i].DisplayName;
+            SetIcon(weaponButtons[i], loadout.Weapons[i].Icon);
+            Weapon w = loadout.Weapons[i];
+            SetBar(weaponButtons[i].transform.Find("Power/Fill") as RectTransform, w.PowerRating);
+            SetBar(weaponButtons[i].transform.Find("Range/Fill") as RectTransform, w.RangeRating);
+            SetBar(weaponButtons[i].transform.Find("Speed/Fill") as RectTransform, w.SpeedRating);
             Select(weaponButtons[i], i == loadout.WeaponIndex);
         }
-        for (int i = 0; i < subButtons.Length; i++) Select(subButtons[i], (SubType)i == loadout.Sub);
-        for (int i = 0; i < specialButtons.Length; i++) Select(specialButtons[i], (SpecialType)i == loadout.Special);
+        for (int i = 0; i < subButtons.Length; i++)
+        {
+            SetIcon(subButtons[i], loadout.SubIconOf((SubType)i));
+            Select(subButtons[i], (SubType)i == loadout.Sub);
+        }
+        for (int i = 0; i < specialButtons.Length; i++)
+        {
+            SetIcon(specialButtons[i], loadout.SpecialIconOf((SpecialType)i));
+            Select(specialButtons[i], (SpecialType)i == loadout.Special);
+        }
 
-        weaponInfo.text = loadout.CurrentWeapon != null ? loadout.CurrentWeapon.Description : "";
+        Weapon current = loadout.CurrentWeapon;
+        weaponInfo.text = current != null ? current.Description : "";
+        if (weaponName != null) weaponName.text = current != null ? current.DisplayName : "";
+        SetBar(powerBar, current != null ? current.PowerRating : 0f);
+        SetBar(rangeBar, current != null ? current.RangeRating : 0f);
+        SetBar(speedBar, current != null ? current.SpeedRating : 0f);
         subInfo.text = $"{SubDescription(loadout)}\nCosts {loadout.SubInkCost * 100f:0}% ink.";
         specialInfo.text = SpecialDescription(loadout);
     }
@@ -129,6 +152,23 @@ public class LoadoutMenu : MonoBehaviour
             return $"Pick a spot on the map: {s.Delay:0.#}s later a column of ink {s.Radius * 2f:0}m wide covers it and splats everyone inside. Refills ink.";
         }
         return $"{loadout.ShieldDuration:0}s immune to damage. Refills ink.";
+    }
+
+    public float BarFill(int stat) => (stat == 0 ? powerBar : stat == 1 ? rangeBar : speedBar) is RectTransform r && r != null ? r.anchorMax.x : -1f; // tests
+    public string WeaponName => weaponName != null ? weaponName.text : "";
+
+    static void SetIcon(Button b, Sprite sprite)
+    {
+        Transform t = b.transform.Find("Icon");
+        if (t == null || !t.TryGetComponent(out Image icon)) return;
+        icon.sprite = sprite;
+        icon.enabled = sprite != null; // the name alone without one
+    }
+
+    static void SetBar(RectTransform fill, float rating)
+    {
+        if (fill == null) return;
+        fill.anchorMax = new Vector2(Mathf.Clamp01(rating), 1f);
     }
 
     void Select(Button b, bool selected)

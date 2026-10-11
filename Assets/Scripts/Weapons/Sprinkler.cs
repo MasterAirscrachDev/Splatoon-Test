@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 // Sub weapon: thrown in an arc, sticks to the first surface it hits and spins, spraying ink from
@@ -41,6 +42,28 @@ public class Sprinkler : SubDevice
     {
         this.velocity = velocity;
         landed = false;
+    }
+
+    // Where one thrown from `from` at `velocity` flies, as Fly moves it, up to where it would stick
+    // (or `seconds`). Returns whether it hits something (the path's last point is where).
+    public bool PredictPath(Vector3 from, Vector3 velocity, float seconds, List<Vector3> path, float dt = 1f / 30f)
+    {
+        path.Clear();
+        path.Add(from);
+        Vector3 position = from;
+        for (float t = 0f; t < seconds; t += dt)
+        {
+            Vector3 step = velocity * dt;
+            velocity += Vector3.down * gravity * dt;
+            if (Physics.SphereCast(position, 0.15f, step.normalized, out RaycastHit hit, step.magnitude, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore))
+            {
+                path.Add(hit.point);
+                return true;
+            }
+            position += step;
+            path.Add(position);
+        }
+        return false;
     }
 
     // Sticks flat against the surface, upright along its normal.

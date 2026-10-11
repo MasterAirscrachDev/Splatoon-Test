@@ -1,0 +1,290 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &5639794079792415844
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4188247687484691705}
+  - component: {fileID: 3555775979981969089}
+  m_Layer: 0
+  m_Name: HeavyRoller
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4188247687484691705
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5639794079792415844}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 4873359146979891184}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3555775979981969089
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5639794079792415844}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f3f778b33d699054f9f061e31a07c7c1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Roller
+  displayName: Heavy Roller
+  description: A heavy roller, slow to swing. Its ground flick throws a wide wall
+    of ink a long way and hits hard. Its roll starts slow and builds to walking pace
+    over a few seconds, inking a strip wider than the roller itself.
+  icon: {fileID: 21300000, guid: a861a842a16ba9945b3903e277f38193, type: 3}
+  powerRating: 0.95
+  rangeRating: 0.75
+  speedRating: 0.2
+  feetShotInterval: 0.4
+  feetShotMinSize: 12
+  feetShotMaxSize: 18
+  feetShotDropSpeed: 6
+  flickRate: 1
+  windup: 0.34
+  followThrough: 0.24
+  flickInkCost: 160
+  projectile: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
+  ballistics:
+    velocityOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    gravityOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  flickPace: 2
+  dropletScale: 2
+  aimInfluence: 1
+  flickPitchLimits: {x: -40, y: 60}
+  groundDroplets: 16
+  groundFan: 100
+  groundPitch: 25
+  groundSpeed: {x: 8, y: 12.5}
+  groundDamage:
+    damage: 230
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.1
+        value: 1
+        inSlope: 0
+        outSlope: -1.1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.6
+        value: 0.45
+        inSlope: -1.1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  groundSplat: 20
+  airDroplets: 16
+  airFan: 7
+  airPitch: 20
+  airSpeed: {x: 0, y: 13}
+  airDamage:
+    damage: 192
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: -1.25
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.5
+        value: 0.375
+        inSlope: -1.25
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  airSplat: 15
+  rollDamage: 150
+  rollStartSpeed: 0.35
+  rollSpeed: 1
+  rollRampTime: 3
+  rollInkPerMetre: 24
+  rollPaintSpacing: 0.5
+  rollSplatPoints: 5
+  rollInkWidth: 4.2
+  rollSplatSize: 11
+  minRollSpeed: 1
+  roller: {fileID: 4478241144024813504}
+  rollerRadius: 0.26625
+  rollerWidth: 3.075
+  rollShift: {x: -0.53, y: 0, z: 0}
+  carryPitch: 15
+  idlePitch: -70
+  idleOffset: {x: 0.1, y: 0, z: -0.35}
+  raisedPitch: -80
+  verticalTurn: 90
+  spinAxis: {x: -1, y: 0, z: 0}
+  turnAxis: {x: 0, y: 0, z: -1}
+  poseSpeed: 18
+  spinDirection: 1
+--- !u!1001 &4912054107652386843
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 4188247687484691705}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1.25
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 1.25
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 1.25
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.7071067
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0.7071068
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+      propertyPath: m_Name
+      value: Model
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+--- !u!4 &4478241144024813504 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8795239490005057499, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+  m_PrefabInstance: {fileID: 4912054107652386843}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &4873359146979891184 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 0ab18b9a14cb5604fb5034d7a1c47acd, type: 3}
+  m_PrefabInstance: {fileID: 4912054107652386843}
+  m_PrefabAsset: {fileID: 0}

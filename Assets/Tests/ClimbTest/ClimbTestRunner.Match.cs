@@ -594,6 +594,33 @@ public partial class ClimbTestRunner
         Note($"kiosk: {(closedAway ? "closed" : "OPEN")} from afar, {(openedAt ? "opened" : "NOT opened")} walking up, {(closedLeaving ? "closed" : "STILL OPEN")} walking away");
         if (!closedAway || !openedAt || !closedLeaving) Fail("the kiosk didn't open the online menu at it, and close it away from it");
 
+        // The loadout kiosk: walk up, the loadout opens (and holds us there); closed, step away and back
+        // to open it again.
+        LoadoutMenu loadoutMenu = FindFirstObjectByType<LoadoutMenu>();
+        var loadoutGo = new GameObject("TestLoadoutKiosk");
+        loadoutGo.transform.position = player.transform.position + forward * 5f;
+        loadoutGo.SetActive(false);
+        LobbyKiosk loadoutKiosk = loadoutGo.AddComponent<LobbyKiosk>();
+        typeof(LobbyKiosk).GetField("opens", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(loadoutKiosk, LobbyKiosk.Opens.Loadout);
+        loadoutGo.SetActive(true);
+        yield return Hold(Still, false, 0.2f, "loadout kiosk");
+        bool loadoutShutAway = loadoutMenu != null && !loadoutMenu.IsOpen;
+        yield return HoldUntil(Fwd, false, 2f, "walk up", f => loadoutKiosk.PlayerInside);
+        yield return Hold(Still, false, 0.1f, "loadout kiosk");
+        bool loadoutOpened = loadoutMenu != null && loadoutMenu.IsOpen;
+        loadoutMenu?.SetOpen(false); // Esc
+        yield return HoldUntil(Back, false, 2f, "walk away", f => !loadoutKiosk.PlayerInside);
+        bool stillShut = loadoutMenu != null && !loadoutMenu.IsOpen;
+        yield return HoldUntil(Fwd, false, 2f, "walk back", f => loadoutKiosk.PlayerInside);
+        yield return Hold(Still, false, 0.1f, "loadout kiosk");
+        bool reopened = loadoutMenu != null && loadoutMenu.IsOpen;
+        loadoutMenu?.SetOpen(false);
+        Vector3 kioskAt = loadoutGo.transform.position;
+        Destroy(loadoutGo);
+        yield return HoldUntil(Back, false, 2f, "walk away", f => (player.transform.position - kioskAt).magnitude > 3f);
+        Note($"loadout kiosk: {(loadoutShutAway ? "shut" : "OPEN")} from afar, {(loadoutOpened ? "opened" : "NOT opened")} walking up, {(stillShut ? "stayed shut" : "OPEN")} walking away after Esc, {(reopened ? "opened again" : "NOT opened")} coming back");
+        if (!loadoutShutAway || !loadoutOpened || !stillShut || !reopened) Fail("the loadout kiosk didn't open the loadout as we walked up (and again after stepping away)");
+
         // The host's map switch: everyone told, and loaded here.
         HostMenu host = FindFirstObjectByType<HostMenu>(FindObjectsInactive.Include);
         int scenes = NetGameManager.SceneCount;
@@ -611,6 +638,7 @@ public partial class ClimbTestRunner
             var told = sent.Where(m => m.id == NetMsg.LoadScene).Select(m => ((SceneLoadData)m.data).buildIndex).ToList();
             Note($"host menu maps: {mapList}; picking the last sent {string.Join(",", told)} and loaded {string.Join(",", loads)}; menu {(host.IsOpen ? "OPEN" : "closed")}");
             if (buttons != scenes) Fail("the host menu doesn't list every scene in the build");
+            if (!mapList.Contains("no matches") || !mapList.Contains(" teams")) Fail("the map list doesn't say each map's team count (or that it has no matches)");
             if (told.Count != 1 || told[0] != scenes - 1 || loads.Count != 1 || loads[0] != scenes - 1) Fail("switching map didn't tell everyone and load it");
             if (host.IsOpen) { host.SetOpen(false); Fail("the host menu stayed open after switching map"); }
         }
@@ -623,6 +651,8 @@ public partial class ClimbTestRunner
             lobbyMap.Set(false);
             host.SetOpen(true);
             yield return null;
+            MatchHUD hud = FindFirstObjectByType<MatchHUD>();
+            bool hudHidden = hud == null || !hud.BarRect.gameObject.activeSelf && !hud.TimerRect.gameObject.activeSelf;
             bool offInLobby = !host.StartButton.interactable, couldStart = gm.CanStartMatch;
             string label = host.StartButtonText;
             gm.StartGame();
@@ -632,7 +662,11 @@ public partial class ClimbTestRunner
             Destroy(lobbyMap.gameObject);
             yield return null;
             bool onAgain = host.StartButton.interactable && gm.CanStartMatch;
+            bool hudBack = hud == null || hud.BarRect.gameObject.activeSelf && hud.TimerRect.gameObject.activeSelf;
             host.SetOpen(false);
+            Note($"lobby map: HUD {(hud == null ? "missing" : hudHidden ? "hid its clock and turf bar" : "SHOWED its clock or turf bar")}, {(hudBack ? "back" : "STILL HIDDEN")} on another map");
+            if (hud == null) Fail("no match HUD to check");
+            if (!hudHidden || !hudBack) Fail("the HUD's clock and turf bar weren't hidden on the lobby map (only there)");
             Note($"lobby map: start button {(offInLobby ? "off" : "ON")} (\"{label}\"), StartGame {(started ? "STARTED a match" : "did nothing")}; on another map it's {(onAgain ? "on" : "STILL OFF")}");
             if (!offInLobby || couldStart || started) Fail("a match could be started on the lobby map");
             if (!onAgain) Fail("Start game stayed off after leaving the lobby map");

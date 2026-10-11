@@ -70,7 +70,8 @@ public partial class PlayerController
             weapon   = WeaponIndex,
             weaponDown = WeaponDown,
             modelYaw = modelYaw,
-            aiming   = Aiming
+            aiming   = Aiming,
+            superJumping = superJumpPhase == SuperJumpPhase.Flying
         };
     }
 
@@ -92,6 +93,7 @@ public partial class PlayerController
         WeaponDown   = s.weaponDown;
         netModelYaw  = s.modelYaw;
         netAiming    = s.aiming;
+        remoteSuperJumping = s.superJumping;
         isClimbing = s.climbing;
         effectivelyClimbing = s.climbing;
 

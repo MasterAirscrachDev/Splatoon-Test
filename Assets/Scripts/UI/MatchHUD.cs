@@ -19,7 +19,7 @@ public class MatchHUD : MonoBehaviour
         public TMP_Text playerName;
         public GameObject deadMark;
         public Outline localMark;      // highlights the local player
-        public RectTransform specialMark; // ring shown while their special is charged
+        public RectTransform specialMark; // bubbles rising out of the top while their special is charged
     }
 
     [SerializeField] TMP_Text timerText;
@@ -89,6 +89,9 @@ public class MatchHUD : MonoBehaviour
         UpdateRosters(gm);
         UpdateCoverage(gm);
         LayOutTop();
+        bool matches = MapSettings.MatchesAllowed; // the lobby: no clock or turf to show
+        if (barRect.gameObject.activeSelf != matches) barRect.gameObject.SetActive(matches);
+        if (timerRect.gameObject.activeSelf != matches) timerRect.gameObject.SetActive(matches);
 
         bool barHidden = gm.InFinalStretch || gm.Phase == MatchPhase.TimesUp || gm.Phase == MatchPhase.Results;
         turfBarGroup.alpha = Mathf.MoveTowards(turfBarGroup.alpha, barHidden ? 0f : 1f, barFadeSpeed * Time.deltaTime);
@@ -175,7 +178,7 @@ public class MatchHUD : MonoBehaviour
             slot.localMark.enabled = p.IsLocalPlayer;
             bool special = p.SpecialCharged && !p.IsDead;
             if (slot.specialMark.gameObject.activeSelf != special) slot.specialMark.gameObject.SetActive(special);
-            if (special) slot.specialMark.localScale = Vector3.one * (1f + 0.07f * Mathf.Sin(Time.time * 7f)); // same pulse as the gauge
+            if (special) Bubble(slot.specialMark, colour);
         }
     }
 
@@ -194,6 +197,26 @@ public class MatchHUD : MonoBehaviour
         if (!on) return;
         if (slot.weapon.sprite != icon) slot.weapon.sprite = icon;
         slot.weapon.color = dead ? new Color(0.45f, 0.45f, 0.45f, 0.7f) : Color.white;
+    }
+
+    // Special charged: the mark's bubbles (its children) rise out of the profile's top in turn, each
+    // swelling and fading as it goes, wobbling a little, in a light shade of the team's colour.
+    const float BubblePeriod = 1.2f, BubbleFrom = 20f, BubbleTo = 50f;
+    static void Bubble(RectTransform mark, Color team)
+    {
+        int n = mark.childCount;
+        Color tint = Color.Lerp(team, Color.white, 0.3f);
+        for (int i = 0; i < n; i++)
+        {
+            if (!(mark.GetChild(i) is RectTransform b) || !b.TryGetComponent(out Image image)) continue;
+            float t = Mathf.Repeat(Time.time / BubblePeriod + i / (float)n, 1f);
+            float across = (i - (n - 1) * 0.5f) * 6f + Mathf.Sin(t * 9f + i * 1.7f) * 3f;
+            b.anchoredPosition = new Vector2(across, Mathf.Lerp(BubbleFrom, BubbleTo, t));
+            float size = Mathf.Lerp(7f, 17f, t);
+            b.sizeDelta = new Vector2(size, size);
+            tint.a = t < 0.12f ? t / 0.12f : Mathf.Clamp01(1.25f * (1f - (t - 0.12f) / 0.88f)); // solid most of the way, fading out at the top
+            image.color = tint;
+        }
     }
 
     void UpdateCoverage(NetGameManager gm)
@@ -273,7 +296,7 @@ public class MatchHUD : MonoBehaviour
     }
 
     // ── Layout: players, then the bar, then the timer ─────────────────────
-    const float RowsTop = -6f, BarTop = -100f, TimerBelowBar = -146f, SlotStep = 76f, SlotSize = 64f, GroupGap = 48f;
+    const float RowsTop = -20f, BarTop = -114f, TimerBelowBar = -160f, SlotStep = 76f, SlotSize = 64f, GroupGap = 48f; // room above the rows for the special bubbles
     static readonly int[] BarOrder = { 1, 3, 4, 2 };
     RectTransform[] rows;
     RectTransform barRect, timerRect;

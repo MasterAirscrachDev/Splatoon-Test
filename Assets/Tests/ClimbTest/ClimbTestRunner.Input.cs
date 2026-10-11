@@ -277,23 +277,23 @@ public partial class ClimbTestRunner
         if (!mouseOk) Fail("the ring doesn't follow the mouse");
         if (!systemHidden || !lockedAfter) Fail("the system cursor isn't hidden while open (or locked again after)");
 
-        // Gamepad, no gyro: the menu picks buttons; the d-pad moves the choice and A presses it.
+        // Gamepad, no gyro: the menu picks buttons; the d-pad moves the choice (right along the grid) and A presses it.
         InputMode.Use(ControlScheme.Gamepad, PadFamily.Xbox);
         int weaponBefore = loadout.WeaponIndex;
         menu.SetOpen(true);
         yield return Settle();
         GameObject first = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
         bool selecting = GameCursor.CurrentMode == GameCursor.Mode.Select && !GameCursor.Ring.gameObject.activeSelf && GameCursor.Frame.gameObject.activeSelf;
-        yield return Tap(pad.dpad.down);
+        yield return Tap(pad.dpad.right);
         GameObject second = EventSystem.current.currentSelectedGameObject;
         yield return Tap(pad.buttonSouth);
         int weaponPicked = loadout.WeaponIndex;
         menu.SetOpen(false);
         loadout.SetMainWeapon(weaponBefore);
-        Note($"gamepad menu: starts on {(first != null ? first.name : "nothing")}, d-pad down to {(second != null ? second.name : "nothing")}, A picked weapon {weaponPicked}");
+        Note($"gamepad menu: starts on {(first != null ? first.name : "nothing")}, d-pad right to {(second != null ? second.name : "nothing")}, A picked weapon {weaponPicked}");
         if (!selecting) Fail("a gamepad in a menu should select buttons (frame, no ring)");
         if (first != menu.WeaponButtons[weaponBefore].gameObject) Fail("the menu didn't start on the current weapon");
-        if (second != menu.WeaponButtons[1].gameObject) Fail("the d-pad didn't move the selection down");
+        if (second != menu.WeaponButtons[1].gameObject) Fail("the d-pad didn't move the selection along");
         if (weaponPicked != 1) Fail("A didn't press the selected button");
 
         // The map: the stick moves the ring at a rate, and A clicks where it is.

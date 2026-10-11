@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -504,7 +505,7 @@ public static class MatchHUDBuilder
         dead.gameObject.SetActive(false);
 
         RectTransform special = Rect("SpecialReady", slotRect, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(SlotSize + 16, SlotSize + 16));
-        Img(special.gameObject, ring, new Color(1f, 0.93f, 0.5f), sliced: false);
+        SpecialBubbles(special);
         special.gameObject.SetActive(false);
 
         TextMeshProUGUI playerName = Text("Name", slotRect, "", 15, Color.white, TextAlignmentOptions.Center, false);
@@ -1025,7 +1026,13 @@ public static class MatchHUDBuilder
         t.alignment = align;
         t.fontStyle = bold ? FontStyles.Bold : FontStyles.Normal;
         t.raycastTarget = false;
-        if (useOutline && outline != null) t.fontSharedMaterial = outline; // readable over bright scenes
+        TMP_FontAsset font = bold ? UIFonts.Heading : UIFonts.Detail; // Super Waffles for headings, Kronika for detail
+        if (font != null)
+        {
+            t.font = font;
+            t.fontSharedMaterial = useOutline ? (bold ? UIFonts.HeadingOutline : UIFonts.DetailOutline) : font.material; // outlined: readable over bright scenes
+        }
+        else if (useOutline && outline != null) t.fontSharedMaterial = outline;
         return t;
     }
 
@@ -1533,5 +1540,89 @@ public static class MatchHUDBuilder
             PrefabUtility.UnloadPrefabContents(root);
         }
         Debug.Log($"[MatchHUD] Added the killfeed to {PrefabPath}");
+    }
+
+    // ── Special charged: bubbles out of the profile's top ───────────────────
+
+    const int Bubbles = 5;
+
+    // Small circles under the slot's special mark, animated by MatchHUD (rising, swelling, fading).
+    static void SpecialBubbles(RectTransform mark)
+    {
+        for (int i = 0; i < Bubbles; i++)
+        {
+            RectTransform b = Rect($"Bubble{i}", mark, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 20), new Vector2(8, 8));
+            Img(b.gameObject, circle, Color.white, sliced: false);
+        }
+    }
+
+    [MenuItem("Tools/UI/Special Bubbles On Player Slots")]
+    public static void AddSpecialBubbles()
+    {
+        LoadShared();
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        int slots = 0;
+        try
+        {
+            var so = new SerializedObject(root.GetComponentInChildren<MatchHUD>(true));
+            foreach (string team in new[] { "alphaSlots", "betaSlots", "gammaSlots", "deltaSlots" })
+            {
+                SerializedProperty arr = so.FindProperty(team);
+                for (int i = 0; i < arr.arraySize; i++)
+                {
+                    var mark = arr.GetArrayElementAtIndex(i).FindPropertyRelative("specialMark").objectReferenceValue as RectTransform;
+                    if (mark == null) continue;
+                    if (mark.TryGetComponent(out Image ringImage)) Object.DestroyImmediate(ringImage); // the old ring
+                    foreach (Transform old in mark.Cast<Transform>().ToList()) Object.DestroyImmediate(old.gameObject);
+                    mark.localScale = Vector3.one;
+                    SpecialBubbles(mark);
+                    slots++;
+                }
+            }
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Special bubbles on {slots} player slots: {PrefabPath}");
+    }
+
+    // ── Map screen: weapon icons on the players' entries and markers ───────
+
+    [MenuItem("Tools/UI/Weapon Icons On Map Screen")]
+    public static void AddMapWeaponIcons()
+    {
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        int added = 0;
+        try
+        {
+            MapScreen map = root.GetComponentInChildren<MapScreen>(true);
+            var so = new SerializedObject(map);
+            SerializedProperty entries = so.FindProperty("entries");
+            for (int i = 0; i < entries.arraySize; i++)
+            {
+                SerializedProperty e = entries.GetArrayElementAtIndex(i);
+                foreach ((string iconField, string weaponField, float inset) in new[] { ("icon", "weapon", 6f), ("markerIcon", "markerWeapon", 4f) })
+                {
+                    var icon = e.FindPropertyRelative(iconField).objectReferenceValue as Image;
+                    if (icon == null) continue;
+                    DestroyChild(icon.transform, "Weapon");
+                    Image weapon = WeaponIcon((RectTransform)icon.transform);
+                    StretchInset((RectTransform)weapon.transform, inset);
+                    Transform initial = icon.transform.Find("Initial");
+                    if (initial != null) weapon.transform.SetSiblingIndex(initial.GetSiblingIndex() + 1);
+                    e.FindPropertyRelative(weaponField).objectReferenceValue = weapon;
+                    added++;
+                }
+            }
+            so.ApplyModifiedPropertiesWithoutUndo();
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+        Debug.Log($"[MatchHUD] Weapon icons on {added} map screen entries and markers: {PrefabPath}");
     }
 }

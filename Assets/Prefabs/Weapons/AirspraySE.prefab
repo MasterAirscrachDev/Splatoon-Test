@@ -50,6 +50,9 @@ MonoBehaviour:
   displayName: Airspray SE
   description: Fast, wide spray that covers the ground quickly up close.
   icon: {fileID: 21300000, guid: a2bfec539c865a74e88e524db51360cb, type: 3}
+  powerRating: 0.3
+  rangeRating: 0.35
+  speedRating: 0.9
   feetShotInterval: 0.4
   feetShotMinSize: 12
   feetShotMaxSize: 18

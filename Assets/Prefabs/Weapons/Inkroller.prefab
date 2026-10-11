@@ -49,6 +49,9 @@ MonoBehaviour:
   description: Flick ink in a wide arc (or a long line from the air), then hold to
     roll a strip of ink and run enemies over.
   icon: {fileID: 21300000, guid: b1a1a30c38d79164cb10f82c4180b71e, type: 3}
+  powerRating: 0.75
+  rangeRating: 0.35
+  speedRating: 0.5
   feetShotInterval: 0.4
   feetShotMinSize: 12
   feetShotMaxSize: 18
@@ -180,6 +183,7 @@ MonoBehaviour:
   rollInkPerMetre: 18
   rollPaintSpacing: 0.5
   rollSplatPoints: 3
+  rollInkWidth: 0
   rollSplatSize: 8
   minRollSpeed: 1
   roller: {fileID: 264854158016689470}

@@ -3,7 +3,32 @@ guid: e96023511a746f84f995645f1a6f5d91
 ModelImporter:
   serializedVersion: 24200
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: BrushBody
+    second: {fileID: 2100000, guid: a09d0317bca97f9499b7d497d7bec305, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: BrushTrim
+    second: {fileID: 2100000, guid: e64fe0879f5262a42a4f013a8325da9b, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Grip
+    second: {fileID: 2100000, guid: da774c80e5d4fd541883f1f1a43da0d6, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Ink
+    second: {fileID: 2100000, guid: 028c80424bc6cca4e819d1637c3b3db4, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: Silver
+    second: {fileID: 2100000, guid: 753e7590e814b78418df332c7a64eb58, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0

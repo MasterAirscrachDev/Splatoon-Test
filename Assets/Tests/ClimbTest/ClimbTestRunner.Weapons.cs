@@ -819,6 +819,16 @@ public partial class ClimbTestRunner
         if (loadout.WeaponIndex != 1 || loadout.CurrentWeapon == null || loadout.CurrentWeapon.DisplayName != "Inkshot") Fail("picking Inkshot didn't equip it");
         if (loadout.Sub != SubType.Sprinkler || Mathf.Abs(loadout.SubInkCost - loadout.SprinklerPrefab.InkCost) > 0.001f) Fail("picking the sprinkler didn't select it");
         if (PlayerPrefs.GetInt("loadout.weapon", -1) != 1 || PlayerPrefs.GetInt("loadout.sub", -1) != (int)SubType.Sprinkler) Fail("choices weren't remembered");
+        // Tiles show icons; the picked weapon's card shows its name and its ratings as bars.
+        Sprite TileIcon(UnityEngine.UI.Button b) => b.transform.Find("Icon") is Transform t && t.TryGetComponent(out UnityEngine.UI.Image i) && i.enabled ? i.sprite : null;
+        int weaponIcons = menu.WeaponButtons.Where(b => b.gameObject.activeSelf).Count(b => TileIcon(b) != null);
+        int shownWeapons = menu.WeaponButtons.Count(b => b.gameObject.activeSelf);
+        bool smallIcons = menu.SubButtons.All(b => TileIcon(b) != null) && menu.SpecialButtons.All(b => TileIcon(b) != null);
+        Weapon picked = loadout.CurrentWeapon;
+        bool bars = Mathf.Abs(menu.BarFill(0) - picked.PowerRating) < 0.001f && Mathf.Abs(menu.BarFill(1) - picked.RangeRating) < 0.001f && Mathf.Abs(menu.BarFill(2) - picked.SpeedRating) < 0.001f;
+        Note($"menu: {weaponIcons}/{shownWeapons} weapon tiles with icons (for {loadout.Weapons.Count} weapons), sub and special icons {(smallIcons ? "all there" : "MISSING")}; card \"{menu.WeaponName}\" bars {menu.BarFill(0):0.##}/{menu.BarFill(1):0.##}/{menu.BarFill(2):0.##}");
+        if (shownWeapons != loadout.Weapons.Count || weaponIcons != shownWeapons || !smallIcons) Fail("the menu's tiles don't all show their icons (or don't match the loadout)");
+        if (menu.WeaponName != picked.DisplayName || !bars) Fail("the weapon card doesn't show the picked weapon's name and ratings");
         menu.SetOpen(false);
         yield return Hold(Still, false, 0.1f, "menu");
         if (menu.IsOpen || InputGate.Blocked) Fail("didn't close");

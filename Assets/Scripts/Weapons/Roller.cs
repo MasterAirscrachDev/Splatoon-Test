@@ -50,6 +50,7 @@ public class Roller : Weapon
     [SerializeField] float rollInkPerMetre = 8f;      // x0.001 of a full tank
     [SerializeField] float rollPaintSpacing = 0.5f;   // paints a row of splats across the roller this often (metres)
     [SerializeField] int rollSplatPoints = 3;         // splats across its width
+    [SerializeField] float rollInkWidth = 0f;         // the strip it inks (0: the drum's width; wider: ink thrown out past its ends)
     [SerializeField] int rollSplatSize = 10;
     [SerializeField] float minRollSpeed = 1f;         // metres per second: slower than this it neither paints nor hurts
 
@@ -103,6 +104,7 @@ public class Roller : Weapon
     public float RollInkPerMetre => rollInkPerMetre;
     public float FlickInkCost => flickInkCost;
     public float RollerWidth => rollerWidth;
+    public float RollInkWidth => rollInkWidth > 0f ? rollInkWidth : rollerWidth;
     public float FlickRate => flickRate;
     public Transform Drum => roller;
     public float FrameTurn => turn;          // tests: 0 unfolded, verticalTurn folded (vertical mode)
@@ -317,7 +319,7 @@ public class Roller : Weapon
     {
         Vector3 centre = roller != null ? roller.position : transform.position;
         Vector3 across = Vector3.Cross(Vector3.up, BodyForward(player));
-        float half = rollerWidth * 0.5f;
+        float half = RollInkWidth * 0.5f;
         for (int i = 0; i < rollSplatPoints; i++)
         {
             float k = rollSplatPoints > 1 ? i / (rollSplatPoints - 1f) : 0.5f;

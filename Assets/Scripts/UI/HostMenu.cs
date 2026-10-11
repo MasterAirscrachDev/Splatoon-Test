@@ -160,7 +160,8 @@ public class HostMenu : MonoBehaviour
         NetGameManager gm = NetGameManager.Instance;
         bool host = gm != null && gm.IsHost;
         bool inMatch = gm != null && gm.InMatch;
-        resetButton.interactable = teamsButton.interactable = percentButton.interactable = fillSpecialButton.interactable = host && !inMatch;
+        teamsButton.interactable = percentButton.interactable = fillSpecialButton.interactable = host && !inMatch;
+        resetButton.interactable = gm != null && gm.CanResetMap; // anyone's on their own, out of a lobby
         bool canStart = gm != null && gm.CanStartMatch;
         string start = !host ? "Start game (host)" : inMatch ? "End match" : canStart ? "Start game" : "Change map to play";
         if (startButtonLabel.text != start) startButtonLabel.text = start;
@@ -187,7 +188,8 @@ public class HostMenu : MonoBehaviour
             b.gameObject.SetActive(true);
             ((RectTransform)b.transform).anchoredPosition = template.anchoredPosition - new Vector2(0f, 66f * i);
             TMP_Text label = b.GetComponentInChildren<TMP_Text>(true);
-            if (label != null) label.text = NetGameManager.SceneName(i) + (i == current ? "  (here)" : "");
+            string about = MapCatalog.Describe(UnityEngine.SceneManagement.SceneUtility.GetScenePathByBuildIndex(i)); // "3 teams", "no matches"
+            if (label != null) label.text = NetGameManager.SceneName(i) + (about.Length > 0 ? $"  -  {about}" : "") + (i == current ? "  (here)" : "");
             b.interactable = i != current;
             int index = i;
             b.onClick.AddListener(() => { NetGameManager.Instance?.SwitchMap(index); SetOpen(false); });

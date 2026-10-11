@@ -94,6 +94,9 @@ MonoBehaviour:
   description: Slow, short-ranged shots that explode at the end of their flight or
     on whatever they hit.
   icon: {fileID: 21300000, guid: a412230963e09fa4e88642a538b83289, type: 3}
+  powerRating: 0.85
+  rangeRating: 0.45
+  speedRating: 0.3
   feetShotInterval: 0.4
   feetShotMinSize: 12
   feetShotMaxSize: 18

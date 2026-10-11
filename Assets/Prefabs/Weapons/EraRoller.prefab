@@ -49,6 +49,9 @@ MonoBehaviour:
   description: A light roller that rolls half as fast again and flicks quicker, for
     a quarter of the damage.
   icon: {fileID: 21300000, guid: e81fc2daeb5c4e24897b31f37dd95f47, type: 3}
+  powerRating: 0.3
+  rangeRating: 0.35
+  speedRating: 0.8
   feetShotInterval: 0.4
   feetShotMinSize: 12
   feetShotMaxSize: 18
@@ -180,6 +183,7 @@ MonoBehaviour:
   rollInkPerMetre: 20
   rollPaintSpacing: 0.5
   rollSplatPoints: 3
+  rollInkWidth: 0
   rollSplatSize: 8
   minRollSpeed: 1
   roller: {fileID: 2858401483006387393}

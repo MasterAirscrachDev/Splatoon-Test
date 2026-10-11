@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1934d6ce17222d84b9711ade316f6980, type: 3}
+  m_Name: GameFonts
+  m_EditorClassIdentifier: Assembly-CSharp::GameFonts
+  heading: {fileID: 11400000, guid: e2963be670835a149a8e49b9197b2ed0, type: 2}
+  detail: {fileID: 11400000, guid: 01378145ffb943d4b9067646165ba081, type: 2}
+  headingOutline: {fileID: 2100000, guid: af4cc1f2b6935f7419ef4c9539b9bc5f, type: 2}
+  detailOutline: {fileID: 2100000, guid: 4fa4721cf18f9b74aa48e29cf86bcd58, type: 2}

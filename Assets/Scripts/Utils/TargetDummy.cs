@@ -27,8 +27,6 @@ public class TargetDummy : MonoBehaviour
     Transform body, labels;
     Material bodyMat;
     TextMeshPro comboLabel, statsLabel;
-    TMP_FontAsset outlineFont;
-    Material outlineMat;
 
     readonly Queue<(float time, float amount)> recent = new Queue<(float, float)>();
     float combo, total, recentSum, lastHitTime = -999f, flash;
@@ -78,7 +76,6 @@ public class TargetDummy : MonoBehaviour
         hb.transform.localPosition = Vector3.up * (Height * 0.5f);
         hitbox = hb.AddComponent<PlayerHitbox>(); // no PlayerController: team 0, so everyone's shots land
 
-        outlineMat = Resources.Load<Material>("Fonts & Materials/LiberationSans SDF - Outline");
         labels = new GameObject("Labels").transform;
         labels.SetParent(transform, false);
         labels.localPosition = Vector3.up * (Height + 0.55f);
@@ -98,7 +95,7 @@ public class TargetDummy : MonoBehaviour
         t.textWrappingMode = TextWrappingModes.NoWrap;
         t.fontSize = size;
         t.fontStyle = FontStyles.Bold;
-        if (outlineMat != null) t.fontSharedMaterial = outlineMat;
+        GameFonts.Heading(t); // its font and outlined material together
         return t;
     }
 

@@ -77,6 +77,7 @@ public class PlayerStateData
     public bool weaponDown;   // its down pose (a roller rolling)
     public float modelYaw;    // which way the kid model faces (it turns to the way they move unless aiming)
     public bool aiming;       // firing or using a sub: their weapon follows camPitch
+    public bool superJumping; // in a Super Jump's flight: their trail shows
 }
 
 // ── Spawn / despawn ───────────────────────────────────────────────────────

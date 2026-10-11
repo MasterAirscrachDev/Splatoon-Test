@@ -271,6 +271,26 @@ MonoBehaviour:
     special: 1
     specialType: 1
     fileName: InkStrikeSpecial
+  - prefab: {fileID: 5639794079792415844, guid: 045c887907d4fbb40a3bdf7a342a1eaf, type: 3}
+    angle: {x: -65, y: 25, z: 15}
+    zoom: 1
+    offset: {x: 0, y: 0}
+    show: []
+    hide: []
+    inkParts: []
+    special: 0
+    specialType: 0
+    fileName: 
+  - prefab: {fileID: 2591995889775218420, guid: 19c78d1aef5f42a42abd3b4d0aa86510, type: 3}
+    angle: {x: -38, y: 105, z: 0}
+    zoom: 1.05
+    offset: {x: 0, y: 0}
+    show: []
+    hide: []
+    inkParts: []
+    special: 0
+    specialType: 0
+    fileName: 
 --- !u!4 &83564150
 Transform:
   m_ObjectHideFlags: 0

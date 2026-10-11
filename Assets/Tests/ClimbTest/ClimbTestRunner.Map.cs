@@ -68,6 +68,15 @@ public partial class ClimbTestRunner
                 Fail($"line {i} doesn't connect its entry to its marker");
         }
 
+        // Players show their weapon's icon (the initial only stands in without one).
+        Sprite ownIcon = player.GetComponent<PlayerLoadout>().WeaponIcon;
+        MapScreen.Entry own = entries[self];
+        bool iconShown = own.weapon != null && own.weapon.enabled && own.weapon.gameObject.activeInHierarchy && own.weapon.sprite == ownIcon
+                         && own.markerWeapon != null && own.markerWeapon.enabled && own.markerWeapon.sprite == ownIcon;
+        Note($"our entry and marker show {(iconShown ? $"our weapon's icon ({ownIcon.name})" : "NOT our weapon's icon")}, initials \"{own.initial.text}\"");
+        if (ownIcon == null) Fail("our weapon has no icon");
+        else if (!iconShown || own.initial.text.Length > 0) Fail("the map doesn't show our weapon's icon for us");
+
         // We can't jump to ourselves; picking the teammate's marker requests it and closes the map.
         if (entries[self].button.interactable || entries[self].marker.interactable) Fail("own entry is clickable");
         if (!entries[mate].button.interactable) Fail("teammate's entry isn't clickable");
@@ -130,8 +139,16 @@ public partial class ClimbTestRunner
             if (drift > 0.05f) Fail("moved while charging");
             if (player.SuperJumpState != SuperJumpPhase.Flying) { Fail("didn't launch after charging"); break; }
 
-            // Flight: a high arc, staying a squid with its nose along the path.
-            yield return HoldUntil(Still, holdSwim, 5f, fly, f => !player.IsSuperJumping);
+            // Flight: a high arc, staying a squid with its nose along the path, leaving an ink trail
+            // (others see it too: our state says we're in flight).
+            SuperJumpTrail trail = player.GetComponentInChildren<SuperJumpTrail>(true);
+            int trailBefore = trail != null ? trail.Emitted : 0;
+            bool toldFlying = false;
+            yield return HoldUntil(Still, holdSwim, 5f, fly, f => { toldFlying |= player.GetNetState(0, 0).superJumping; return !player.IsSuperJumping; });
+            int trailBlobs = trail != null ? trail.Emitted - trailBefore : 0;
+            Note($"run {run}: trail {(trail == null ? "MISSING" : trail.isActiveAndEnabled ? "on" : "OFF")} of {trailBlobs} ink blobs, {(toldFlying ? "flight sent in our state" : "flight NOT in our state")}");
+            if (trail == null || trailBlobs < 20) Fail("the Super Jump left no trail");
+            if (!toldFlying || player.GetNetState(0, 0).superJumping) Fail("our state didn't say we were in flight (only while we were)");
             List<Frame> flying = frames.Where(f => f.phase == fly).ToList();
             float peak = flying.Max(f => f.pos.y) - charging.Last().pos.y;
             float alignSum = 0f; int alignCount = 0;
@@ -163,6 +180,28 @@ public partial class ClimbTestRunner
             gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = MateId, position = next, moveDir = Vector2.zero, team = player.Team }, MateId);
             yield return Hold(Still, false, 0.6f, "settle");
         }
+
+        // A teammate's jump (their state says they're in flight) leaves the trail here too; not their walking.
+        SuperJumpTrail mateTrail = mate.GetComponentInChildren<SuperJumpTrail>(true);
+        int Blobs() => mateTrail != null ? mateTrail.Emitted : 0;
+        IEnumerator MateMoves(bool flying)
+        {
+            Vector3 from = matePos; // away from us (we landed on them at the other spot)
+            for (int i = 1; i <= 20; i++)
+            {
+                gm.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = MateId, position = from + new Vector3(0f, 0.4f, 0.4f) * i * (flying ? 1f : 0f) + Vector3.right * 0.2f * i,
+                                                                      moveDir = Vector2.zero, team = player.Team, superJumping = flying }, MateId);
+                yield return null;
+                Record("teammate moves");
+            }
+        }
+        int walkStart = Blobs();
+        yield return MateMoves(false);
+        int walked = Blobs() - walkStart;
+        yield return MateMoves(true);
+        int flew = Blobs() - walkStart - walked;
+        Note($"teammate's trail: {walked} blobs walking, {flew} jumping");
+        if (walked != 0 || flew < 10) Fail("a teammate's Super Jump didn't leave a trail here (or their walking did)");
 
         gm.Receive(NetMsg.PlayerDespawn, new PlayerSpawnData { steamId = MateId }, MateId);
         yield return Hold(Still, false, 0.1f, "settle");

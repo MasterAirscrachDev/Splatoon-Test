@@ -23,6 +23,7 @@ public class MapScreen : MonoBehaviour
         public Button marker;
         public Image markerIcon;
         public TMP_Text markerInitial;
+        public Image weapon, markerWeapon; // their weapon's icon on the entry and the marker (the initials stand in without one)
         public RectTransform facing;    // only shown for the local player
         public HoverFlag entryHover, markerHover;
     }
@@ -364,6 +365,7 @@ public class MapScreen : MonoBehaviour
             e.line.gameObject.SetActive(present);
             if (!present)
             {
+                ShowWeapon(e.weapon, null, false);
                 SetText(e.initial, "");
                 SetText(e.playerName, "—");
                 SetText(e.status, "");
@@ -375,7 +377,11 @@ public class MapScreen : MonoBehaviour
             bool jumpable = !p.IsLocalPlayer && !p.IsDead;
             Color c = p.IsDead ? new Color(colour.r * deadDim, colour.g * deadDim, colour.b * deadDim, 1f) : colour;
             string name = string.IsNullOrEmpty(p.DisplayName) ? "?" : p.DisplayName;
-            SetText(e.initial, name.Substring(0, 1).ToUpperInvariant());
+            Sprite weaponIcon = p.TryGetComponent(out PlayerLoadout loadout) ? loadout.WeaponIcon : null;
+            ShowWeapon(e.weapon, weaponIcon, p.IsDead);
+            ShowWeapon(e.markerWeapon, weaponIcon, p.IsDead);
+            string initial = weaponIcon != null ? "" : name.Substring(0, 1).ToUpperInvariant();
+            SetText(e.initial, initial);
             SetText(e.playerName, name);
             SetText(e.status, p.IsLocalPlayer ? "You" : p.IsDead ? "Splatted" : PadPrompt(QuickJumpSlot(p)) + "Super Jump");
             e.status.color = jumpable ? colour : new Color(1f, 1f, 1f, 0.5f);
@@ -386,7 +392,7 @@ public class MapScreen : MonoBehaviour
             RectTransform m = (RectTransform)e.marker.transform;
             m.anchoredPosition = MapPosition(p.transform.position);
             e.markerIcon.color = c;
-            SetText(e.markerInitial, name.Substring(0, 1).ToUpperInvariant());
+            SetText(e.markerInitial, initial);
             e.marker.interactable = jumpable;
             bool hovered = jumpable && (e.entryHover.Hovered || e.markerHover.Hovered); // either end lights up both
             m.localScale = Vector3.one * (hovered ? hoverMarkerScale : 1f);
@@ -400,6 +406,16 @@ public class MapScreen : MonoBehaviour
 
             UpdateLine(e, m, c, hovered, jumpable);
         }
+    }
+
+    static void ShowWeapon(Image image, Sprite icon, bool dead)
+    {
+        if (image == null) return;
+        bool on = icon != null;
+        if (image.enabled != on) image.enabled = on;
+        if (!on) return;
+        if (image.sprite != icon) image.sprite = icon;
+        image.color = dead ? new Color(0.45f, 0.45f, 0.45f, 0.7f) : Color.white;
     }
 
     void RefreshSpawn(PlayerController local, Color colour)
