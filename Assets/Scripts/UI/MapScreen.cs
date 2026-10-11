@@ -307,6 +307,7 @@ public class MapScreen : MonoBehaviour
         int mask = LayerMask.GetMask(mapLayers);
         Rect area = markerArea.rect;
         float aspect = area.width / area.height;
+        if (mapTexture != null) { mapTexture.Release(); Destroy(mapTexture); } // the last map's (the UI outlives scenes)
         mapTexture = new RenderTexture(mapResolution, Mathf.RoundToInt(mapResolution / aspect), 16, RenderTextureFormat.ARGB32) { name = "MapView" };
         mapImage.texture = mapTexture;
 

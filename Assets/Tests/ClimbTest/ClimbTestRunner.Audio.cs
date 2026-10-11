@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections;
 using UnityEngine;
 
@@ -128,5 +129,39 @@ public partial class ClimbTestRunner
         GameSettings.SfxVolume = savedSfx;
         GameSettings.Apply();
         yield return null;
+    }
+
+    IEnumerator OneCanvas()
+    {
+        GameUI ui = GameUI.Instance;
+        if (ui == null) { Fail("no GameUI (the core should make it)"); yield break; }
+        Canvas[] all = FindObjectsByType<Canvas>(FindObjectsSortMode.None);
+        int roots = all.Count(c => c.isRootCanvas), nested = all.Length - roots;
+        string order = string.Join(", ", ui.transform.Cast<Transform>().Select(t => t.name));
+        string live = string.Join(", ", ui.Live.Cast<Transform>().Select(t => t.name));
+        bool found = FindFirstObjectByType<MatchHUD>() != null && FindFirstObjectByType<PauseMenu>(FindObjectsInactive.Include) != null && FindFirstObjectByType<UIController>() != null;
+        Note($"{roots} root canvas(es), {nested} nested; panels {order}; live: {live}");
+        if (roots != 1 || all.Any(c => c.isRootCanvas && c.gameObject != ui.gameObject)) Fail("more than the one root canvas");
+        if (nested != 1) Fail("nested canvases other than Live");
+        if (order != "HUD, MapScreen, LoadoutMenu, LobbyMenu, PauseMenu, HostMenu, Live") Fail("the panels aren't in the old canvases' draw order");
+        if (!found) Fail("the HUD, menus or ink tank weren't found");
+
+        // A new scene closes open menus and clears the kill feed.
+        PauseMenu pause = FindFirstObjectByType<PauseMenu>(FindObjectsInactive.Include);
+        LoadoutMenu loadout = FindFirstObjectByType<LoadoutMenu>(FindObjectsInactive.Include);
+        KillFeed feed = FindFirstObjectByType<KillFeed>(FindObjectsInactive.Include);
+        pause.SetOpen(true);
+        loadout.SetOpen(true);
+        NetGameManager.SendOverride = (id, data, target) => { };
+        NetGameManager.Instance.Receive(NetMsg.Kill, new KillData { victimId = 4321, killerId = 4321, cause = "", position = new NVector3(player.transform.position) }, 4321);
+        NetGameManager.SendOverride = null;
+        yield return null;
+        int rowsBefore = feed.Rows.Count();
+        typeof(GameUI).GetMethod("OnSceneLoaded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            .Invoke(ui, new object[] { UnityEngine.SceneManagement.SceneManager.GetActiveScene(), UnityEngine.SceneManagement.LoadSceneMode.Single });
+        yield return null;
+        Note($"on a scene load: pause {(pause.IsOpen ? "STILL OPEN" : "closed")}, loadout {(loadout.IsOpen ? "STILL OPEN" : "closed")}, kill feed {rowsBefore} -> {feed.Rows.Count()} rows, input {(InputGate.Blocked ? "STILL BLOCKED" : "free")}");
+        if (pause.IsOpen || loadout.IsOpen || InputGate.Blocked) Fail("a scene load didn't close the menus");
+        if (rowsBefore == 0 || feed.Rows.Any()) Fail("a scene load didn't clear the kill feed");
     }
 }

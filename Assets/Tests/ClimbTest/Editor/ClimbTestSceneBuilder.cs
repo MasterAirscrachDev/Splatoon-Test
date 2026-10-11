@@ -16,9 +16,7 @@ public static class ClimbTestSceneBuilder
     const string InkMaterialPath = "Assets/Materials/InkMaterial 1.mat";
     const string PlayerPrefabPath = "Assets/Prefabs/PlayerEntity - VOID.prefab";
     const string ProjectilePrefabPath = "Assets/Prefabs/Projectile.prefab";
-    const string HudPrefabPath = "Assets/Prefabs/UI/MatchHUD.prefab";
-    const string LobbyMenuPrefabPath = "Assets/Prefabs/UI/LobbyMenu.prefab"; // hidden in dev mode; tests show it
-    const string LoadoutMenuPrefabPath = "Assets/Prefabs/UI/LoadoutMenu.prefab";
+    const string GameUIPrefabPath = "Assets/Prefabs/UI/GameUI.prefab"; // made by the core (the lobby menu's hidden in dev mode; tests show it)
     const int Own = 1, Enemy = 2;
 
     static Material inkMaterial;
@@ -52,19 +50,13 @@ public static class ClimbTestSceneBuilder
         so.FindProperty("playerEntityPrefab").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
         so.FindProperty("devMode").boolValue = true;   // spawns a local player at the origin, no Steam
         so.FindProperty("autoLobby").boolValue = false;
+        so.FindProperty("gameUI").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(GameUIPrefabPath);
         so.ApplyModifiedPropertiesWithoutUndo();
 
         ClimbTestRunner runner = new GameObject("ClimbTestRunner").AddComponent<ClimbTestRunner>();
         SerializedObject rso = new SerializedObject(runner);
         rso.FindProperty("projectilePrefab").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ProjectilePrefabPath);
         rso.ApplyModifiedPropertiesWithoutUndo();
-
-        GameObject hud = AssetDatabase.LoadAssetAtPath<GameObject>(HudPrefabPath);
-        if (hud != null) PrefabUtility.InstantiatePrefab(hud, scene);
-        GameObject lobbyMenu = AssetDatabase.LoadAssetAtPath<GameObject>(LobbyMenuPrefabPath);
-        if (lobbyMenu != null) PrefabUtility.InstantiatePrefab(lobbyMenu, scene);
-        GameObject loadoutMenu = AssetDatabase.LoadAssetAtPath<GameObject>(LoadoutMenuPrefabPath);
-        if (loadoutMenu != null) PrefabUtility.InstantiatePrefab(loadoutMenu, scene);
 
         foreach (Station s in System.Enum.GetValues(typeof(Station)))
             BuildStation(s);

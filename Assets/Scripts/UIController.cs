@@ -79,7 +79,7 @@ public class UIController : MonoBehaviour
         AnimateTank();
         if (SquidUI == null) return;
 
-        Vector3 target = swimMode ? Vector3.one : Vector3.zero;
+        Vector3 target = swimMode && !InputGate.Blocked ? Vector3.one : Vector3.zero; // under menus: it's drawn over them
         SquidUI.localScale = Vector3.Lerp(SquidUI.localScale, target, 1f - Mathf.Exp(-squidUISpeed * Time.deltaTime));
 
         if (swimMode && squidUIRect != null)

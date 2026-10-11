@@ -7,16 +7,17 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using static MatchHUDBuilder;
 
-// Generates Assets/Prefabs/UI/LobbyMenu.prefab (see LobbyMenu): the placeholder host/join screen,
+// The lobby menu (see LobbyMenu), a panel in Assets/Prefabs/UI/GameUI.prefab (its own prefab until the canvases were merged): the placeholder host/join screen,
 // on its own canvas, separate from the match HUD. Reuses MatchHUDBuilder's look.
 public static class LobbyMenuBuilder
 {
-    const string PrefabPath = "Assets/Prefabs/UI/LobbyMenu.prefab";
+    const string PrefabPath = "Assets/Prefabs/UI/GameUI.prefab"; // a panel there now (the canvases were merged)
     const float PanelWidth = 1040, PanelHeight = 660, ListWidth = 580, ListHeight = 400, RowHeight = 64;
 
     [MenuItem("Tools/UI/Build Lobby Menu Prefab")]
     public static void Build()
     {
+        if (File.Exists(PrefabPath)) { Debug.LogWarning($"[UI] The UI is {PrefabPath} now (the canvases were merged): not rebuilt"); return; }
         LoadShared();
         Scene preview = EditorSceneManager.NewPreviewScene();
         var root = new GameObject("LobbyMenu", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));

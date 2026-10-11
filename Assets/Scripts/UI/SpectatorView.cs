@@ -33,7 +33,9 @@ public class SpectatorView : MonoBehaviour
     {
         hud = GetComponent<MatchHUD>();
         flow = GetComponent<MatchFlowHUD>();
-        if (GetComponent<GraphicRaycaster>() == null) gameObject.AddComponent<GraphicRaycaster>(); // the HUD's slots are clickable
+        // The HUD's slots are clickable: its canvas needs a raycaster (on the game's canvas, GameUI has one).
+        Canvas canvas = GetComponentInParent<Canvas>();
+        if (canvas != null && canvas.rootCanvas.GetComponent<GraphicRaycaster>() == null) canvas.rootCanvas.gameObject.AddComponent<GraphicRaycaster>();
         BuildUI();
     }
 
@@ -157,6 +159,7 @@ public class SpectatorView : MonoBehaviour
         if (!on) return;
         if (minimapCamera == null)
         {
+            if (minimapTexture != null) { minimapTexture.Release(); Destroy(minimapTexture); } // the last map's (the UI outlives scenes)
             minimapTexture = new RenderTexture(Mathf.RoundToInt(minimapSize.x * 2f), Mathf.RoundToInt(minimapSize.y * 2f), 24);
             minimapCamera = new GameObject("SpectatorMinimapCamera").AddComponent<Camera>();
             minimapCamera.targetTexture = minimapTexture;

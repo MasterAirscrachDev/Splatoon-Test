@@ -21,6 +21,7 @@ public class NetGameManager : MonoBehaviour
     [SerializeField] GameObject playerEntityPrefab;
     [SerializeField] int maxPlayers = 16;     // the Steam lobby: the map's teams (8 or 9) and spectators
     [SerializeField] bool devMode; // local player only, no Steam
+    [SerializeField] GameObject gameUI; // the whole UI (GameUI prefab), made once with us and kept as long as we are
 
     [Header("Match (seconds)")]
     [SerializeField] float countdownTime = 3f;
@@ -127,6 +128,8 @@ public class NetGameManager : MonoBehaviour
         if (!devMode) DontDestroyOnLoad(transform.root.gameObject); // GameCore, for the whole game
         colourPair = RandomColourPair(); // this game's colours (joiners take the host's from its roster)
         ScanSurfaces();
+
+        if (gameUI != null && GameUI.Instance == null) Instantiate(gameUI, transform.root);
 
         if (devMode) Steam = SteamStatus.Unavailable;
         else

@@ -50,8 +50,14 @@ public class GameCursor : MonoBehaviour
         get
         {
             if (instance != null) return instance;
-            var go = new GameObject("GameCursor", typeof(RectTransform), typeof(Canvas));
-            DontDestroyOnLoad(go);
+            var go = new GameObject("GameCursor", typeof(RectTransform));
+            RectTransform live = GameUI.Instance != null ? GameUI.Instance.Live : null;
+            if (live != null) go.transform.SetParent(live, false); // last on the game's canvas: over every menu
+            else
+            {
+                go.AddComponent<Canvas>();
+                DontDestroyOnLoad(go);
+            }
             return instance = go.AddComponent<GameCursor>();
         }
     }
@@ -100,9 +106,11 @@ public class GameCursor : MonoBehaviour
 
     void Awake()
     {
-        var canvas = GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 1000; // over every menu
+        if (TryGetComponent(out Canvas canvas)) // on its own (no game UI here)
+        {
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 1000; // over every menu
+        }
         frame = MakeImage("Frame", LoadSprite("UI/CursorFrame") ?? OutlineSprite(), true);
         ring = MakeImage("Ring", LoadSprite("UI/CursorRing") ?? RingSprite(), false);
         input = new ControlLayer();
@@ -193,7 +201,7 @@ public class GameCursor : MonoBehaviour
         click = mode != Mode.Select && InputMode.Scheme == ControlScheme.Gamepad && clickAction.IsPressed() && clickAction.activeControl?.device is Gamepad;
 
         // Show it: the ring where it is, or the frame around the selection.
-        float scale = Screen.height / 1080f;
+        float scale = Screen.height / 1080f / Mathf.Max(1e-4f, transform.lossyScale.x); // pixels at 1080p, in our canvas's units
         ring.gameObject.SetActive(mode != Mode.Select);
         ring.position = position;
         ring.sizeDelta = Vector2.one * RingSize * scale * (click || mode == Mode.Pointer && LastMouse != null && LastMouse.leftButton.isPressed ? PressedScale : 1f);

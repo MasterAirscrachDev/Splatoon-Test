@@ -96,6 +96,14 @@ public class KillFeed : MonoBehaviour
         while (rows.Count > maxRows) Drop(0);
     }
 
+    // Everything off (a new scene).
+    public void Clear()
+    {
+        while (rows.Count > 0) Drop(0);
+        foreach (Marker m in live) if (m.text != null) Destroy(m.text.gameObject);
+        live.Clear();
+    }
+
     float SlotY(int index) => -index * (rowTemplate.sizeDelta.y + rowGap);
 
     void Drop(int index)

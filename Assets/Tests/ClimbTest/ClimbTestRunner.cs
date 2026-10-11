@@ -490,6 +490,7 @@ public partial class ClimbTestRunner : MonoBehaviour
         yield return S("Pause menu: Esc/Select open it; settings scale mouse, stick, gyro X/Y, gyro off, saved; Y recentres under gyro; RT clicks", Station.Lobby, PauseAndSettings, "Input,UI");
         yield return S("Reticles: a grey ring fixed where the aim points; the true mark on it, moving onto anything between the gun and that point; faint in swim form, hidden in menus", Station.Lobby, Reticles, "UI,Weapons");
         yield return S("Music: the boombox plays the lobby track (partly spatial) at the music volume; volume sliders set music and effects; effects at their volume", Station.Lobby, MusicAndVolumes, "Audio,UI");
+        yield return S("Game UI: one root canvas (panels in the old draw order, a nested one for per-frame marks), made by the core; a scene load closes menus and clears the kill feed", Station.Lobby, OneCanvas, "UI");
         yield return S("Frame rate: a jump peaks at the same height at 30, 75 and 144 fps; standing stays grounded every frame even at 1000 fps", Station.Lobby, FrameRateIndependence, "FrameRate,Swim");
         yield return S("Lobby: switching form glides the camera instead of snapping", Station.Lobby, CameraFormSwitch, "Camera,Swim");
         yield return S("Lobby: pooled projectiles splat where they land and are reused", Station.Lobby, ProjectilePooling, "Projectiles,Ink");

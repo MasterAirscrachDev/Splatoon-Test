@@ -7,14 +7,14 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using static MatchHUDBuilder;
 
-// Generates Assets/Prefabs/UI/LoadoutMenu.prefab (see LoadoutMenu): the placeholder between-match
+// The loadout menu (see LoadoutMenu), a panel in Assets/Prefabs/UI/GameUI.prefab (its own prefab until the canvases were merged): the placeholder between-match
 // loadout picker, on its own canvas (any time out of a match; also the lobby's loadout kiosk). Reuses MatchHUDBuilder's look. The main weapons are a grid of
 // icon tiles with the picked one's card beside it (name, power / range / speed bars, description); the
 // subs and specials are rows of tiles under the card. Tools/UI/Rework Loadout Menu rebuilds just the
 // panel on the existing prefab.
 public static class LoadoutMenuBuilder
 {
-    const string PrefabPath = "Assets/Prefabs/UI/LoadoutMenu.prefab";
+    const string PrefabPath = "Assets/Prefabs/UI/GameUI.prefab"; // a panel there now (the canvases were merged)
     const int WeaponSlots = 12, GridColumns = 4;          // tiles past the loadout's weapons are hidden
     const float PanelWidth = 1480, PanelHeight = 900;
     const float WeaponTile = 140, WeaponStep = 156, WeaponRowStep = 182, SmallTile = 112, SmallStep = 124, LabelHeight = 26;
@@ -24,6 +24,7 @@ public static class LoadoutMenuBuilder
     [MenuItem("Tools/UI/Build Loadout Menu Prefab")]
     public static void Build()
     {
+        if (File.Exists(PrefabPath)) { Debug.LogWarning($"[UI] The UI is {PrefabPath} now (the canvases were merged): not rebuilt"); return; }
         LoadShared();
         Scene preview = EditorSceneManager.NewPreviewScene();
         var root = new GameObject("LoadoutMenu", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
@@ -64,7 +65,7 @@ public static class LoadoutMenuBuilder
         GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
         try
         {
-            LoadoutMenu menu = root.GetComponent<LoadoutMenu>();
+            LoadoutMenu menu = root.GetComponentInChildren<LoadoutMenu>(true);
             var screen = (RectTransform)((GameObject)new SerializedObject(menu).FindProperty("screen").objectReferenceValue).transform;
             Transform old = screen.Find("Panel");
             if (old != null) Object.DestroyImmediate(old.gameObject);

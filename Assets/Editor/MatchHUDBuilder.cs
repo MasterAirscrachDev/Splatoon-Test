@@ -7,12 +7,13 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
-// Generates Assets/Prefabs/UI/MatchHUD.prefab: the top-of-screen match HUD (see MatchHUD) plus
-// the host menu (see HostMenu) and the map (see MapScreen). Re-run after layout changes, or edit
-// the prefab directly.
+// The match HUD (see MatchHUD), the host menu (see HostMenu), the map (see MapScreen) and the pause
+// menu: built as their own prefab at first, now panels in Assets/Prefabs/UI/GameUI.prefab (the
+// canvases merged, 2026-10-11). The migrations below edit it in place; those from before the merge
+// expected the HUD as the prefab's root.
 public static class MatchHUDBuilder
 {
-    const string PrefabPath = "Assets/Prefabs/UI/MatchHUD.prefab";
+    const string PrefabPath = "Assets/Prefabs/UI/GameUI.prefab";
     const string DamageInkShader = "UI/DamageInk";
     const string DamageInkMatPath = "Assets/Materials/DamageInk.mat";
     const string CirclePath = "Assets/Art/UI/HudCircle.png";
@@ -58,6 +59,7 @@ public static class MatchHUDBuilder
     [MenuItem("Tools/UI/Build Match HUD Prefab")]
     public static void Build()
     {
+        if (File.Exists(PrefabPath)) { Debug.LogWarning($"[UI] The UI is {PrefabPath} now (the canvases were merged): not rebuilt"); return; }
         circle  = EnsureCircleSprite();
         cap     = EnsureCapSprite();
         arrow   = EnsureArrowSprite();
@@ -1677,11 +1679,12 @@ public static class MatchHUDBuilder
         GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
         try
         {
-            DestroyChild(root.transform, "Reticles");
+            Transform live = root.GetComponent<GameUI>() != null ? root.transform.Find("Live") : root.transform; // GameUI's nested canvas for things that move each frame
+            DestroyChild(live, "Reticles");
             Vector2 centre = new Vector2(0.5f, 0.5f);
-            RectTransform area = Rect("Reticles", root.transform, centre, centre, Vector2.zero, Vector2.zero);
+            RectTransform area = Rect("Reticles", live, centre, centre, Vector2.zero, Vector2.zero);
             Stretch(area);
-            area.SetSiblingIndex(0); // under the rest of the HUD and its menus
+            area.SetSiblingIndex(0); // under the ink tank (and the cursor)
             CanvasGroup group = area.gameObject.AddComponent<CanvasGroup>();
             group.blocksRaycasts = false;
             group.interactable = false;

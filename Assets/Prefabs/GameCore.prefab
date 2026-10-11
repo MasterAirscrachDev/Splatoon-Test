@@ -94,6 +94,7 @@ MonoBehaviour:
   playerEntityPrefab: {fileID: 1505333176579611265, guid: 4af855f29d1092d44a771c72b0a91d49, type: 3}
   maxPlayers: 16
   devMode: 0
+  gameUI: {fileID: 4921477746055732012, guid: 57a911bb8fe604647b102db0ac85d3a8, type: 3}
   countdownTime: 3
   matchDuration: 180
   finalStretchTime: 60
