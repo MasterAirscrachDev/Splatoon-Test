@@ -7,57 +7,21 @@ using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using static MatchHUDBuilder;
 
-// The loadout menu (see LoadoutMenu), a panel in Assets/Prefabs/UI/GameUI.prefab (its own prefab until the canvases were merged): the placeholder between-match
-// loadout picker, on its own canvas (any time out of a match; also the lobby's loadout kiosk). Reuses MatchHUDBuilder's look. The main weapons are a grid of
-// icon tiles with the picked one's card beside it (name, power / range / speed bars, description); the
-// subs and specials are rows of tiles under the card. Tools/UI/Rework Loadout Menu rebuilds just the
-// panel on the existing prefab.
+// The loadout menu (see LoadoutMenu), a panel in Assets/Prefabs/UI/GameUI.prefab: the loadout picker
+// (any time out of a match; also the lobby's loadout kiosk), in MatchHUDBuilder's look. The main
+// weapons are a grid of icon tiles with the picked one's card beside it (name, power / range / speed
+// bars, description); the subs and specials are rows of tiles under the card. Tools/UI/Rework
+// Loadout Menu rebuilds just the panel in place.
 public static class LoadoutMenuBuilder
 {
-    const string PrefabPath = "Assets/Prefabs/UI/GameUI.prefab"; // a panel there now (the canvases were merged)
+    const string PrefabPath = "Assets/Prefabs/UI/GameUI.prefab";
     const int WeaponSlots = 12, GridColumns = 4;          // tiles past the loadout's weapons are hidden
     const float PanelWidth = 1480, PanelHeight = 900;
     const float WeaponTile = 140, WeaponStep = 156, WeaponRowStep = 182, SmallTile = 112, SmallStep = 124, LabelHeight = 26;
     const float LeftX = -370, RightX = 370;               // the columns' centres
     static readonly Color PowerColour = new Color(1f, 0.3f, 0.72f), RangeColour = new Color(0.35f, 0.9f, 0.4f), SpeedColour = new Color(0.25f, 0.85f, 1f);
 
-    [MenuItem("Tools/UI/Build Loadout Menu Prefab")]
-    public static void Build()
-    {
-        if (File.Exists(PrefabPath)) { Debug.LogWarning($"[UI] The UI is {PrefabPath} now (the canvases were merged): not rebuilt"); return; }
-        LoadShared();
-        Scene preview = EditorSceneManager.NewPreviewScene();
-        var root = new GameObject("LoadoutMenu", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-        SceneManager.MoveGameObjectToScene(root, preview);
-        Canvas canvas = root.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 25; // over the HUD, under the lobby menu
-        CanvasScaler scaler = root.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920, 1080);
-        scaler.matchWidthOrHeight = 1f;
-
-        Vector2 centre = new Vector2(0.5f, 0.5f);
-        RectTransform screen = Rect("Screen", root.transform, Vector2.zero, centre, Vector2.zero, Vector2.zero);
-        Stretch(screen);
-        RectTransform backdrop = Rect("Backdrop", screen, Vector2.zero, centre, Vector2.zero, Vector2.zero);
-        Stretch(backdrop);
-        Img(backdrop.gameObject, null, new Color(0.02f, 0.02f, 0.05f, 0.6f), sliced: false).raycastTarget = true;
-
-        LoadoutMenu menu = root.AddComponent<LoadoutMenu>();
-        var so = new SerializedObject(menu);
-        so.FindProperty("screen").objectReferenceValue = screen.gameObject;
-        so.ApplyModifiedPropertiesWithoutUndo();
-        BuildPanel(screen, menu);
-        screen.gameObject.SetActive(false);
-
-        Directory.CreateDirectory(Path.GetDirectoryName(PrefabPath));
-        PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
-        EditorSceneManager.ClosePreviewScene(preview);
-        Debug.Log($"[LoadoutMenu] Built {PrefabPath}");
-    }
-
-    // Replaces just the panel on the existing prefab (its canvas, screen and the scenes' instances stay).
+    // Replaces just the panel (its screen and the menu's wiring stay).
     [MenuItem("Tools/UI/Rework Loadout Menu (Icons And Stats)")]
     public static void Rework()
     {

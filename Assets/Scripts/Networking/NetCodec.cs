@@ -48,8 +48,6 @@ public static class NetCodec
     // SteamGlobal's own payloads are private to it.
     static Type InternalType(string name) => typeof(SteamGlobal).GetNestedType(name, BindingFlags.NonPublic | BindingFlags.Public);
 
-    public static bool CanSend(Type t) => t != null && tagOf.ContainsKey(t);
-
     public static byte[] Encode(object obj)
     {
         if (obj == null) return Array.Empty<byte>();

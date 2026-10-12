@@ -34,7 +34,7 @@ public partial class PlayerController
             Renderer r = ViewmodelSquid.transform.GetChild(0).GetComponent<Renderer>();
             if (r != null) r.material.color = teamColor;
         }
-        if (uiController != null) uiController.SetTeamColor(teamColor);
+        if (inkTank != null) inkTank.SetTeamColor(teamColor);
     }
 
     void UpdateViewmodels()

@@ -182,7 +182,6 @@ public class MatchFlowHUD : MonoBehaviour
         if (show) label.text = $"{share * 100f:0.0}%";
     }
 
-    public float ResultShown(int team) => shownShare[team]; // tests
 
     // The team with the most turf among the map's teams; 0 when the top teams tie.
     public static int Winner(int[] scores)

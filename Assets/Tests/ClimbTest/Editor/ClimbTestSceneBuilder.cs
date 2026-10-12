@@ -16,7 +16,7 @@ public static class ClimbTestSceneBuilder
     const string InkMaterialPath = "Assets/Materials/InkMaterial 1.mat";
     const string PlayerPrefabPath = "Assets/Prefabs/PlayerEntity - VOID.prefab";
     const string ProjectilePrefabPath = "Assets/Prefabs/Projectile.prefab";
-    const string GameUIPrefabPath = "Assets/Prefabs/UI/GameUI.prefab"; // made by the core (the lobby menu's hidden in dev mode; tests show it)
+    const string GameUIPrefabPath = "Assets/Prefabs/UI/GameUI.prefab"; // the UI, made by the core
     const int Own = 1, Enemy = 2;
 
     static Material inkMaterial;
@@ -167,24 +167,6 @@ public static class ClimbTestSceneBuilder
         so.FindProperty("pixelsPerUnit").floatValue = InkTextureSize * 0.8f / span;
         so.FindProperty("splatScale").floatValue = SurfaceInkManager.ReferenceTexelsPerMetre * span / InkTextureSize;
         so.ApplyModifiedPropertiesWithoutUndo();
-    }
-
-    // Migration: the scene's surfaces to the UV-based texture size and world-space splat sizes.
-    [MenuItem("Tools/Climb Test/Migrate Ink Sizing")]
-    public static void MigrateInkSizing()
-    {
-        Scene scene = EditorSceneManager.OpenScene(ScenePath);
-        int n = 0;
-        foreach (SurfaceInkManager ink in Object.FindObjectsByType<SurfaceInkManager>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-        {
-            MeshCollider mc = ink.GetComponent<MeshCollider>();
-            if (mc == null || mc.sharedMesh == null) continue;
-            SetInkSizing(ink, mc.sharedMesh);
-            n++;
-        }
-        EditorSceneManager.MarkSceneDirty(scene);
-        EditorSceneManager.SaveScene(scene);
-        Debug.Log($"[ClimbTest] Migrated ink sizing on {n} surfaces.");
     }
 
     static void Marker(string name, Transform parent, Vector3 localPos, float yaw)

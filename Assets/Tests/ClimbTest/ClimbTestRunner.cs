@@ -434,19 +434,6 @@ public partial class ClimbTestRunner : MonoBehaviour
     Frame Last => frames.Count > 0 ? frames[frames.Count - 1] : default;
     List<Frame> Phase(string p) => frames.Where(f => f.phase == p).ToList();
 
-    // Toggles of `pred` that happen less than `window` seconds after the previous toggle.
-    static int RapidToggles(List<Frame> fs, Func<Frame, bool> pred, float window)
-    {
-        int n = 0; float lastToggle = -999f;
-        for (int i = 1; i < fs.Count; i++)
-        {
-            if (pred(fs[i]) == pred(fs[i - 1])) continue;
-            if (fs[i].t - lastToggle < window) n++;
-            lastToggle = fs[i].t;
-        }
-        return n;
-    }
-
     // Checked on every frame of every scenario.
     void CheckInvariants()
     {

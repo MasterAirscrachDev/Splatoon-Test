@@ -419,7 +419,6 @@ public class MatchHUD : MonoBehaviour
     public PlayerSlot[] DeltaSlots => deltaSlots;
     public float Share(int team) => share[team];
     public bool RowShown(int team) => team <= 2 || (team == 3 ? gammaRow : deltaRow) != null && (team == 3 ? gammaRow : deltaRow).activeSelf;
-    public RectTransform FillFor(int team) => team switch { 1 => alphaFill, 2 => betaFill, 3 => gammaFill, _ => deltaFill };
     public RectTransform RowOf(int team) { if (rows == null) CacheLayout(); return rows[team]; }
     public RectTransform TimerRect { get { if (rows == null) CacheLayout(); return timerRect; } }
     public RectTransform BarRect { get { if (rows == null) CacheLayout(); return barRect; } }

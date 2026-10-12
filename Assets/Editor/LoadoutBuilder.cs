@@ -171,7 +171,7 @@ public static class LoadoutBuilder
         return saved.GetComponent<Weapon>();
     }
 
-    // Inkshot: Airspray SE's set-up with a longer, slimmer placeholder model and its own stats.
+    // Inkshot: Airspray SE's set-up with a longer, slimmer stand-in model (the real one's swapped in on the prefab) and its own stats.
     static Weapon CreateInkshot()
     {
         GameObject c = PrefabUtility.LoadPrefabContents(AirsprayPath);
@@ -224,8 +224,8 @@ public static class LoadoutBuilder
         head.localPosition = new Vector3(0f, 0.3f, 0f);
         Renderer hub = Part(PrimitiveType.Cylinder, "Hub", head, Vector3.zero, new Vector3(0.22f, 0.05f, 0.22f), light);
         Renderer arm = Part(PrimitiveType.Cube, "Arms", head, Vector3.zero, new Vector3(0.07f, 0.07f, 0.5f), light);
-        Renderer tipA = Part(PrimitiveType.Sphere, "NozzleA", head, new Vector3(0f, 0f, 0.25f), Vector3.one * 0.11f, body);
-        Renderer tipB = Part(PrimitiveType.Sphere, "NozzleB", head, new Vector3(0f, 0f, -0.25f), Vector3.one * 0.11f, body);
+        Part(PrimitiveType.Sphere, "NozzleA", head, new Vector3(0f, 0f, 0.25f), Vector3.one * 0.11f, body);
+        Part(PrimitiveType.Sphere, "NozzleB", head, new Vector3(0f, 0f, -0.25f), Vector3.one * 0.11f, body);
 
         Sprinkler sprinkler = root.AddComponent<Sprinkler>();
         var so = new SerializedObject(sprinkler);

@@ -8,12 +8,10 @@ using UnityEngine;
 // and emblem, and the barrier sphere), its sphere mesh and material. Create-only.
 // Tools > Map > Add Spawn Pads To Scene: puts a pad under each team's spawn markers in the open
 // scene (the markers gathered onto it, a placeholder "Plate" replaced).
-// Tools > Map > Upgrade Spawn Pads: migration from the first, large-pad / dome version (prefab and
-// the open scene's pads).
 public static class SpawnPadBuilder
 {
     const string PrefabPath = "Assets/Prefabs/SpawnPad.prefab";
-    const string SphereMeshPath = "Assets/Models/SpawnSphere.asset", OldDomeMeshPath = "Assets/Models/SpawnDome.asset";
+    const string SphereMeshPath = "Assets/Models/SpawnSphere.asset";
     const string BarrierMatPath = "Assets/Materials/SpawnBarrier.mat";
     const string MetalPath = "Assets/Materials/Metal.mat", GlowPath = "Assets/Materials/BeaconLight.mat", DarkPath = "Assets/Materials/BeaconBody.mat";
     const float PadRadius = 1.5f, PedestalDepth = 0.3f;  // the prefab's; scenes resize them
@@ -234,48 +232,4 @@ public static class SpawnPadBuilder
     }
 
     // ── Migration: the first version (2.2m pad, 4.5m hemisphere dome) ───────
-
-    [MenuItem("Tools/Map/Upgrade Spawn Pads")]
-    public static void Upgrade() => Debug.Log(UpgradePrefab() + "\n" + UpgradeOpenScene());
-
-    // The prefab in place: smaller pad and emblem, the sphere barrier.
-    public static string UpgradePrefab()
-    {
-        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
-        SpawnPad pad = root.GetComponent<SpawnPad>();
-        var so = new SerializedObject(pad);
-        if (Mathf.Approximately(so.FindProperty("padRadius").floatValue, PadRadius) && root.transform.Find("Dome").GetComponent<MeshFilter>().sharedMesh == AssetDatabase.LoadAssetAtPath<Mesh>(SphereMeshPath))
-        {
-            PrefabUtility.UnloadPrefabContents(root);
-            return "[SpawnPad] prefab already upgraded";
-        }
-        const float OldPad = 2.2f;
-        var sizes = new Dictionary<string, float> { { "Pedestal", PadRadius }, { "Rim", PadRadius + 0.05f }, { "Face", PadRadius - 0.15f }, { "Emblem", 0.5f }, { "EmblemCore", 0.32f } };
-        foreach (Transform part in root.transform)
-            if (sizes.TryGetValue(part.name, out float r)) part.localScale = new Vector3(r * 2f, part.localScale.y, r * 2f);
-        root.transform.Find("Dome").GetComponent<MeshFilter>().sharedMesh = SphereMesh();
-        so.FindProperty("radius").floatValue = BarrierRadius;
-        so.FindProperty("padRadius").floatValue = PadRadius;
-        so.ApplyModifiedPropertiesWithoutUndo();
-        PlaceDome(pad, BarrierRadius, PadRadius);
-        PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
-        PrefabUtility.UnloadPrefabContents(root);
-        if (AssetDatabase.LoadAssetAtPath<Mesh>(OldDomeMeshPath) != null) AssetDatabase.DeleteAsset(OldDomeMeshPath);
-        return $"[SpawnPad] prefab: pad {OldPad} -> {PadRadius}, sphere barrier r {BarrierRadius}";
-    }
-
-    // The open scene's pads: markers back out, pads removed, then placed afresh.
-    public static string UpgradeOpenScene()
-    {
-        var pads = Object.FindObjectsByType<SpawnPad>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-        foreach (SpawnPad pad in pads)
-        {
-            Transform parent = pad.transform.parent;
-            foreach (Transform child in pad.transform.Cast<Transform>().ToArray())
-                if (child.CompareTag("AlphaSpawn") || child.CompareTag("BetaSpawn"))
-                    Undo.SetTransformParent(child, parent, "Upgrade Spawn Pads");
-            Undo.DestroyObjectImmediate(pad.gameObject);
-        }
-        return $"removed {pads.Length} old pads; " + AddToOpenScene();
-    }
 }

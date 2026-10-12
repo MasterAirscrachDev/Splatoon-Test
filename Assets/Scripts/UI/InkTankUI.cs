@@ -5,7 +5,7 @@ using UnityEngine.UI;
 // drawn by the shader: the ink level, a mark at the sub's cost, sloshing when the level jumps, the
 // surface tipping as the camera turns. Without one, the fill image is
 // scaled instead.
-public class UIController : MonoBehaviour
+public class InkTankUI : MonoBehaviour
 {
     [SerializeField] Transform SquidUI, InkTankScaler;
     [SerializeField] float squidUISpeed = 8f;

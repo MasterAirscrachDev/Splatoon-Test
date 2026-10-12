@@ -43,7 +43,7 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
 
     [Header("Network")]
     [SerializeField] PlayerMode playerMode = PlayerMode.Client;
-    [SerializeField] UIController uiController;
+    InkTankUI inkTank; // the HUD's swim-form ink tank (found)
 
     // Splatted: the camera circles over where it happened (or the last ground before a fall out of
     // the world) while the popup says who did it, then we're back at spawn, held in swim form for a
@@ -211,7 +211,7 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
             else
             {
                 if (lockCursor) { Cursor.lockState = CursorLockMode.Locked; Cursor.visible = false; }
-                if (uiController == null) uiController = FindFirstObjectByType<UIController>();
+                if (inkTank == null) inkTank = FindFirstObjectByType<InkTankUI>();
                 localSteamId = SteamGlobal.steamID.Value;
                 SteamGlobal.OnNetTick += NetTickBroadcast;
             }
@@ -299,10 +299,10 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
         float rate = team != 0 && IsInInk ? inkRechargeRateSquid : inkRechargeRate;
         inkLevel = Mathf.Clamp01(inkLevel + rate * Time.deltaTime);
         ShowInkLevel();
-        if (uiController != null)
+        if (inkTank != null)
         {
-            uiController.SetSwimMode(swimMode);
-            uiController.SetInkLevel(inkLevel);
+            inkTank.SetSwimMode(swimMode);
+            inkTank.SetInkLevel(inkLevel);
         }
     }
 

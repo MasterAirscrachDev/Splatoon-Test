@@ -139,7 +139,7 @@ public partial class ClimbTestRunner
         int roots = all.Count(c => c.isRootCanvas), nested = all.Length - roots;
         string order = string.Join(", ", ui.transform.Cast<Transform>().Select(t => t.name));
         string live = string.Join(", ", ui.Live.Cast<Transform>().Select(t => t.name));
-        bool found = FindFirstObjectByType<MatchHUD>() != null && FindFirstObjectByType<PauseMenu>(FindObjectsInactive.Include) != null && FindFirstObjectByType<UIController>() != null;
+        bool found = FindFirstObjectByType<MatchHUD>() != null && FindFirstObjectByType<PauseMenu>(FindObjectsInactive.Include) != null && FindFirstObjectByType<InkTankUI>() != null;
         Note($"{roots} root canvas(es), {nested} nested; panels {order}; live: {live}");
         if (roots != 1 || all.Any(c => c.isRootCanvas && c.gameObject != ui.gameObject)) Fail("more than the one root canvas");
         if (nested != 1) Fail("nested canvases other than Live");

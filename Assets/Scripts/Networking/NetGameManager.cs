@@ -693,7 +693,6 @@ public class NetGameManager : MonoBehaviour
         foreach (var ws  in go.GetComponentsInChildren<WeaponShooter>(true))   ws.enabled  = false;
         foreach (var ca  in go.GetComponentsInChildren<CameraAim>(true))       ca.enabled  = false;
         foreach (var wca in go.GetComponentsInChildren<WeaponCameraAim>(true)) wca.enabled = false;
-        foreach (var ui  in go.GetComponentsInChildren<UIController>(true))    ui.enabled  = false;
         // Off: a remote copy lags the real player and would splat the wrong place. Their ink arrives over the network.
         foreach (var ie  in go.GetComponentsInChildren<InkEmitter>(true))      ie.enabled  = false;
     }

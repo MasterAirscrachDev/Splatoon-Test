@@ -329,7 +329,7 @@ public class FileSuper
                 return bf.Deserialize(memStream);
             }
         }
-        catch(Exception e){
+        catch(Exception){
             //this log is commented because we are intentionally trying to parse the data as a string if it fails
             //Log($"Error converting byte array to object: {e.Message}");
             return null;
