@@ -16,7 +16,6 @@ public class WeaponShooter : Weapon
     [SerializeField] int splashSize = 11;
     [SerializeField] DamageFalloff damage = new DamageFalloff(30f, DamageFalloff.HoldThenFall(0.25f, 0.5f, 0.5f)); // per shot, by how long it's flown
     [SerializeField] float inkCostPerShot = 16f; // x0.001 of a full tank
-    [SerializeField] GameObject projectile;
     [SerializeField] Transform muzzle;
 
     [Header("Spread (degrees)")]
@@ -34,7 +33,6 @@ public class WeaponShooter : Weapon
     readonly List<int> volleySizes = new List<int>();
     readonly List<bool> volleyVisible = new List<bool>();
 
-    public GameObject ProjectilePrefab => projectile;
     public float FireRate => fireRate;
     public float ShotSpeed => shotSpeed;
     public Ballistics Ballistics => ballistics;
@@ -70,7 +68,7 @@ public class WeaponShooter : Weapon
         }
         // Still shooting (not out of ink or in swim form): a shot went out within the last cycle.
         bool shooting = firing && lastShotTime >= 0f && Time.time - lastShotTime <= fireRate + 0.05f;
-        UpdateFeetInk(player, shooting, projectile);
+        UpdateFeetInk(player, shooting);
         if (firing && Time.time - lastShotTime >= fireRate && player.ConsumeInk(inkCostPerShot * 0.001f))
         {
             lastShotTime = Time.time;
@@ -101,7 +99,7 @@ public class WeaponShooter : Weapon
                     Random.Range(-fillerSpread, fillerSpread),
                     Random.Range(-fillerSpread, fillerSpread),
                     0f);
-                SpawnShot(player, noisyRot, r + Random.Range(-0.1f, 0.1f), inherit, Mathf.RoundToInt(splashSize * 0.7f), Random.value < 0.1f, false);
+                SpawnShot(player, noisyRot, r + Random.Range(-0.1f, 0.1f), inherit, Mathf.RoundToInt(splashSize * 0.7f), Random.value < InkFluidSettings.Instance.fillersSeen, false);
             }
 
             NetGameManager.Instance?.BroadcastShots(player, muzzle.position, inherit,
@@ -112,13 +110,13 @@ public class WeaponShooter : Weapon
     // Their volley, visual-only, flown with this weapon's ballistics.
     public override void Replay(ProjectileSpawnData d)
     {
-        if (projectile == null || d.velocities == null || d.splashSizes == null || d.visible == null) return;
+        if (d.velocities == null || d.splashSizes == null || d.visible == null) return;
         Vector3 inherit = d.inherit != null ? (Vector3)d.inherit : Vector3.zero;
         int count = Mathf.Min(d.splashSizes.Length, d.visible.Length, d.velocities.Length / 3);
         for (int i = 0; i < count; i++)
         {
             Vector3 v = new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]);
-            ProjectileManager.Fire(projectile, d.origin, v, d.splashSizes[i], d.team, d.visible[i],
+            ProjectileManager.Fire(d.origin, v, d.splashSizes[i], d.team, d.visible[i],
                                    authoritative: false, ownerId: d.shooterSteamId, ballistics: ballistics, inherit: inherit);
         }
     }
@@ -127,7 +125,7 @@ public class WeaponShooter : Weapon
     Vector3 SpawnShot(PlayerController player, Quaternion rotation, float speed, Vector3 inherit, int size, bool visible, bool dealDamage = true)
     {
         Vector3 launch = rotation * Vector3.forward * speed;
-        ProjectileManager.Fire(projectile, muzzle.position, launch, size, player.Team, visible,
+        ProjectileManager.Fire(muzzle.position, launch, size, player.Team, visible,
                                ownerId: player.OwnerId, falloff: dealDamage ? damage : null, damage: 0f, ballistics: ballistics, inherit: inherit, source: DisplayName);
 
         volleyVelocities.Add(launch.x); volleyVelocities.Add(launch.y); volleyVelocities.Add(launch.z);

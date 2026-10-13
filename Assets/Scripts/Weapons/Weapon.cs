@@ -37,14 +37,14 @@ public abstract class Weapon : MonoBehaviour
 
     // While shooting, every feetShotInterval: an unseen shot released just above the feet, heading
     // straight down. Not replayed on remotes: its splat reaches them like any other.
-    protected void UpdateFeetInk(PlayerController player, bool shooting, GameObject projectile)
+    protected void UpdateFeetInk(PlayerController player, bool shooting)
     {
-        if (!shooting || projectile == null || Time.time < nextFeetShot) return;
+        if (!shooting || Time.time < nextFeetShot) return;
         nextFeetShot = Time.time + feetShotInterval;
         FeetShots++;
         Vector3 feet = player.transform.position + Vector3.up * 0.5f;
-        ProjectileManager.Fire(projectile, feet, Vector3.down * feetShotDropSpeed, Random.Range(feetShotMinSize, feetShotMaxSize + 1), player.Team,
-                               visible: false, ownerId: player.OwnerId, damage: 0, impactParticles: false, source: DisplayName);
+        ProjectileManager.Fire(feet, Vector3.down * feetShotDropSpeed, Random.Range(feetShotMinSize, feetShotMaxSize + 1), player.Team,
+                               visible: false, ownerId: player.OwnerId, damage: 0, splashes: false, source: DisplayName);
     }
 
     // Called right after it's created under its owner (on every copy: ours and other players').

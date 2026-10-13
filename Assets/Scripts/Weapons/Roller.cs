@@ -19,10 +19,9 @@ public class Roller : Weapon
     [SerializeField] float windup = 0.2f;             // swing back before the droplets leave
     [SerializeField] float followThrough = 0.15f;     // swing on after they do
     [SerializeField] float flickInkCost = 90f;        // x0.001 of a full tank
-    [SerializeField] GameObject projectile;
     [SerializeField] Ballistics ballistics = new Ballistics();
     [SerializeField] float flickPace = 2f;            // droplets fly their path this many times as fast (speeds below are before it)
-    [SerializeField] float dropletScale = 2f;         // how big the droplets look, x a shot's size for their splat
+    [SerializeField] float groundBlobScale = 0.5f;    // the ground flick's droplets drawn this x the usual size for their splat (there are many)
     [SerializeField] float aimInfluence = 1f;         // how much looking up/down tilts a flick (1: as much as the view)
     [SerializeField] Vector2 flickPitchLimits = new Vector2(-40f, 60f); // degrees (down, up) a flick can be aimed
 
@@ -111,7 +110,7 @@ public class Roller : Weapon
     public float Pitch => pitch;             // tests: the pose's tilt (degrees down)
     public float IdlePitch => idlePitch;
     public float FlickPace => flickPace;
-    public float DropletScale => dropletScale;
+    public float GroundBlobScale => groundBlobScale;
     public float VerticalTurn => verticalTurn;
     public bool Flicking => state == State.Flick;
     public float Windup => windup;
@@ -276,24 +275,25 @@ public class Roller : Weapon
             velocities[i * 3] = launch.x; velocities[i * 3 + 1] = launch.y; velocities[i * 3 + 2] = launch.z;
             sizes[i] = flickInAir ? airSplat : groundSplat;
             visible[i] = true;
-            Fire(origin, launch, inherit, sizes[i], player.Team, player.OwnerId, true, flickInAir ? airDamage : groundDamage, flickHits);
+            Fire(origin, launch, inherit, sizes[i], player.Team, player.OwnerId, true, flickInAir ? airDamage : groundDamage, flickHits, flickInAir);
         }
         LastFlick = launches;
         LastFlickInAir = flickInAir;
         NetGameManager.Instance?.BroadcastShots(player, origin, inherit, velocities, sizes, visible);
     }
 
-    void Fire(Vector3 from, Vector3 launch, Vector3 inherit, int size, int team, ulong ownerId, bool authoritative, DamageFalloff damage, HashSet<Object> hits)
+    void Fire(Vector3 from, Vector3 launch, Vector3 inherit, int size, int team, ulong ownerId, bool authoritative, DamageFalloff damage, HashSet<Object> hits, bool inAir)
     {
-        ProjectileManager.Fire(projectile, from, launch, size, team, true, authoritative, ownerId, 0f,
-                               ballistics: paced ?? ballistics, falloff: damage, inherit: inherit, source: Source, hitGroup: hits, visualScale: dropletScale);
+        ProjectileManager.Fire(from, launch, size, team, true, authoritative, ownerId, 0f,
+                               ballistics: paced ?? ballistics, falloff: damage, inherit: inherit, source: Source, hitGroup: hits,
+                               look: inAir ? 1f : groundBlobScale, kind: FluidKind.Roller);
     }
 
     // Their flick, visual-only here, with the swing played from the top (the droplets leave at the
     // top of it). A narrow spread is an air flick: the frame turns on its side for it.
     public override void Replay(ProjectileSpawnData d)
     {
-        if (projectile == null || d.velocities == null || d.splashSizes == null) return;
+        if (d.velocities == null || d.splashSizes == null) return;
         Vector3 inherit = d.inherit != null ? (Vector3)d.inherit : Vector3.zero;
         int n = Mathf.Min(d.splashSizes.Length, d.velocities.Length / 3);
         if (!local && n > 0)
@@ -311,7 +311,7 @@ public class Roller : Weapon
             Flicks++;
         }
         for (int i = 0; i < n; i++)
-            Fire(d.origin, new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]), inherit, d.splashSizes[i], d.team, d.shooterSteamId, false, null, null);
+            Fire(d.origin, new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]), inherit, d.splashSizes[i], d.team, d.shooterSteamId, false, null, null, flickInAir);
     }
 
     // A row of splats across the drum, onto whatever's under it.

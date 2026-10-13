@@ -11,61 +11,65 @@ using UnityEngine.Rendering;
 //      normals, overlapping drops blend like metaballs, and edges curve away properly (depth alone
 //      flattens them once smoothed). Lit by the sun and sky, with a highlight and a bright rim sheen.
 // Runs after the opaque scene (before transparents), for the camera it's on and, if showInSceneView,
-// the editor's Scene view too. Built-in render pipeline. Drops are submitted fresh every frame
+// the editor's Scene view too. Its look is InkFluidSettings' (one for every camera). InkFluid puts one
+// on each main camera. Built-in render pipeline. Drops are submitted fresh every frame
 // (immediate mode): Drop()/Streak() during the frame; every camera that renders it draws them.
 [RequireComponent(typeof(Camera))]
 public class FluidRenderer : MonoBehaviour
 {
     public struct Particle { public Vector4 posRadius; public Vector4 colour; } // 32 bytes, as in the shaders
 
-    [Header("Shaders")]
-    [SerializeField] Shader particleShader;   // Fluid/Particles
-    [SerializeField] Shader smoothShader;     // Fluid/Smooth
-    [SerializeField] Shader compositeShader;  // Fluid/Composite
+    // How ink is drawn: shared by every FluidRenderer (the game's cameras and the lab's), from
+    // InkFluidSettings.renderer.
+    [System.Serializable]
+    public class Look
+    {
+        [Header("Merging")]
+        [Tooltip("World-space blur radius (metres): how far apart drops can be and still melt together")]
+        public float smoothRadius = 0.16f;
+        [Tooltip("How sharply the blur stops at depth jumps (per metre²): higher keeps separate blobs apart")]
+        public float depthFalloff = 6f;
+        [Tooltip("Ink only melts together within this depth of each other (metres): drops further behind stay separate shapes, with their own colour")]
+        public float blendDepth = 0.35f;
+        [Range(1, 4)] public int smoothIterations = 2;
+        [Tooltip("Gaps narrower than this share of the blur radius are filled (first pass only), so near drops join")]
+        [Range(0f, 1f)] public float bridging = 0.5f;
+        [Range(4, 40)] public int maxBlurPixels = 24;
+        [Range(0.5f, 1f)] public float resolutionScale = 1f;
+        [Tooltip("Drops are drawn at least this many pixels across their radius (tinier ones break up into crosses)")]
+        [Range(0f, 6f)] public float minPixels = 2.5f;
 
-    [Header("Merging")]
-    [Tooltip("World-space blur radius (metres): how far apart drops can be and still melt together")]
-    [SerializeField] float smoothRadius = 0.16f;
-    [Tooltip("How sharply the blur stops at depth jumps (per metre²): higher keeps separate blobs apart")]
-    [SerializeField] float depthFalloff = 6f;
-    [Tooltip("Ink only melts together within this depth of each other (metres): drops further behind stay separate shapes, with their own colour")]
-    [SerializeField] float blendDepth = 0.35f;
-    [SerializeField, Range(1, 4)] int smoothIterations = 2;
-    [Tooltip("Gaps narrower than this share of the blur radius are filled (first pass only), so near drops join")]
-    [SerializeField, Range(0f, 1f)] float bridging = 0.5f;
-    [SerializeField, Range(4, 40)] int maxBlurPixels = 24;
-    [SerializeField, Range(0.5f, 1f)] float resolutionScale = 1f;
-    [Tooltip("Drops are drawn at least this many pixels across their radius (tinier ones break up into crosses)")]
-    [SerializeField, Range(0f, 6f)] float minPixels = 2.5f;
+        [Header("Shape")]
+        [Tooltip("Share of the normal taken from the smoothed depth (the rest from the thickness): 0 is the roundest")]
+        [Range(0f, 1f)] public float depthNormals = 0.1f;
+        [Tooltip("How round the edges are: the thickness height field's steepness")]
+        [Range(0.25f, 3f)] public float roundness = 1f;
+        [Tooltip("How crisp the outline is (per metre of thickness)")]
+        public float edgeSharpness = 400f;
 
-    [Header("Shape")]
-    [Tooltip("Share of the normal taken from the smoothed depth (the rest from the thickness): 0 is the roundest")]
-    [SerializeField, Range(0f, 1f)] float depthNormals = 0.1f;
-    [Tooltip("How round the edges are: the thickness height field's steepness")]
-    [SerializeField, Range(0.25f, 3f)] float roundness = 1f;
-    [Tooltip("How crisp the outline is (per metre of thickness)")]
-    [SerializeField] float edgeSharpness = 400f;
+        [Header("Look")]
+        [Range(0f, 1f)] public float gloss = 0.8f;
+        [Range(0f, 3f)] public float specular = 1.4f;
+        [Range(0f, 1f)] public float reflection = 0.3f;
+        [Tooltip("The body's smoothness: keep it the ink surface material's (InkSurface _Smoothness), so flying ink matches painted ink")]
+        [Range(0f, 1f)] public float bodySmoothness = 0.4f;
+        [Range(0f, 2f)] public float ambient = 1f;          // x the scene's ambient probe
+        [Range(0.5f, 2f)] public float brightness = 1f;     // x the ink colour
+        [Tooltip("The bright sheen round each blob's edge")]
+        [Range(0f, 2f)] public float rimStrength = 0.9f;
+        [Range(0.5f, 8f)] public float rimPower = 1.5f;
+        [Tooltip("How far in from the outline the sheen reaches (metres of ink thickness)")]
+        public float rimThickness = 0.05f;
+        [Tooltip("How far the rim's colour goes towards white")]
+        [Range(0f, 1f)] public float rimWhiten = 0.55f;
 
-    [Header("Look")]
-    [SerializeField, Range(0f, 1f)] float gloss = 0.8f;
-    [SerializeField, Range(0f, 3f)] float specular = 1.4f;
-    [SerializeField, Range(0f, 1f)] float reflection = 0.3f;
-    [Tooltip("The body's smoothness: keep it the ink surface material's (InkSurface _Smoothness), so flying ink matches painted ink")]
-    [SerializeField, Range(0f, 1f)] float bodySmoothness = 0.4f;
-    [SerializeField, Range(0f, 2f)] float ambient = 1f;          // x the scene's ambient probe
-    [SerializeField, Range(0.5f, 2f)] float brightness = 1f;     // x the ink colour
-    [Tooltip("The bright sheen round each blob's edge")]
-    [SerializeField, Range(0f, 2f)] float rimStrength = 0.9f;
-    [SerializeField, Range(0.5f, 8f)] float rimPower = 1.5f;
-    [Tooltip("How far in from the outline the sheen reaches (metres of ink thickness)")]
-    [SerializeField] float rimThickness = 0.05f;
-    [Tooltip("How far the rim's colour goes towards white")]
-    [SerializeField, Range(0f, 1f)] float rimWhiten = 0.55f;
+        [Header("Ripples")]
+        public float rippleFrequency = 5f;   // per metre
+        [Range(0f, 1f)] public float rippleStrength = 0f;
+        public float rippleFlow = 1.2f;
+    }
 
-    [Header("Ripples")]
-    [SerializeField] float rippleFrequency = 5f;   // per metre
-    [SerializeField, Range(0f, 1f)] float rippleStrength = 0f;
-    [SerializeField] float rippleFlow = 1.2f;
+    static Look L => InkFluidSettings.Instance.renderer;
 
     [Tooltip("Debug: light the ink as if it faced straight up (compare with painted floor)")]
     public bool debugFlatUp;
@@ -123,12 +127,10 @@ public class FluidRenderer : MonoBehaviour
     void OnEnable()
     {
         cam = GetComponent<Camera>();
-        if (particleShader == null) particleShader = Shader.Find("Fluid/Particles");
-        if (smoothShader == null) smoothShader = Shader.Find("Fluid/Smooth");
-        if (compositeShader == null) compositeShader = Shader.Find("Fluid/Composite");
-        particles = new Material(particleShader) { hideFlags = HideFlags.HideAndDontSave };
-        smooth = new Material(smoothShader) { hideFlags = HideFlags.HideAndDontSave };
-        composite = new Material(compositeShader) { hideFlags = HideFlags.HideAndDontSave };
+        InkFluidSettings settings = InkFluidSettings.Instance; // (its shaders: referenced, so they're in builds)
+        particles = new Material(settings.particleShader != null ? settings.particleShader : Shader.Find("Fluid/Particles")) { hideFlags = HideFlags.HideAndDontSave };
+        smooth = new Material(settings.smoothShader != null ? settings.smoothShader : Shader.Find("Fluid/Smooth")) { hideFlags = HideFlags.HideAndDontSave };
+        composite = new Material(settings.compositeShader != null ? settings.compositeShader : Shader.Find("Fluid/Composite")) { hideFlags = HideFlags.HideAndDontSave };
         quad = MakeQuad();
         screenQuad = new Mesh
         {
@@ -199,8 +201,8 @@ public class FluidRenderer : MonoBehaviour
     {
         cmd.Clear();
         if (count == 0 || buffer == null) return;
-        int w = Mathf.Max(1, Mathf.RoundToInt(c.pixelWidth * resolutionScale));
-        int h = Mathf.Max(1, Mathf.RoundToInt(c.pixelHeight * resolutionScale));
+        int w = Mathf.Max(1, Mathf.RoundToInt(c.pixelWidth * L.resolutionScale));
+        int h = Mathf.Max(1, Mathf.RoundToInt(c.pixelHeight * L.resolutionScale));
         Matrix4x4 proj = c.projectionMatrix;
 
         // Shared by every pass.
@@ -208,8 +210,8 @@ public class FluidRenderer : MonoBehaviour
         cmd.SetGlobalVector("_FluidProj", new Vector4(proj[0, 0], proj[1, 1], proj[0, 2], proj[1, 2]));
         cmd.SetGlobalVector("_FluidSize", new Vector4(w, h, 1f / w, 1f / h));
         cmd.SetGlobalMatrix("_FluidCamToWorld", c.cameraToWorldMatrix);
-        cmd.SetGlobalFloat("_FluidMinPixels", minPixels * resolutionScale);
-        cmd.SetGlobalVector("_FluidLayer", new Vector4(Mathf.Max(0.01f, blendDepth), 0f, 0f, 0f));
+        cmd.SetGlobalFloat("_FluidMinPixels", L.minPixels * L.resolutionScale);
+        cmd.SetGlobalVector("_FluidLayer", new Vector4(Mathf.Max(0.01f, L.blendDepth), 0f, 0f, 0f));
 
         // 1. Depth (eye depth, the nearest drop's surface), with a depth buffer for the nearest.
         cmd.GetTemporaryRT(DepthId, w, h, 0, FilterMode.Point, RenderTextureFormat.RFloat);
@@ -230,17 +232,17 @@ public class FluidRenderer : MonoBehaviour
         cmd.GetTemporaryRT(RawDepthId, w, h, 0, FilterMode.Point, RenderTextureFormat.RFloat);
         cmd.CopyTexture(DepthId, RawDepthId);
         float pixelsPerMetre = proj[1, 1] * h * 0.5f; // at an eye depth of 1m
-        for (int i = 0; i < smoothIterations; i++)
+        for (int i = 0; i < L.smoothIterations; i++)
         {
-            cmd.SetGlobalVector("_FluidBlur", new Vector4(smoothRadius * pixelsPerMetre, depthFalloff, maxBlurPixels, i == 0 ? bridging : 0f));
+            cmd.SetGlobalVector("_FluidBlur", new Vector4(L.smoothRadius * pixelsPerMetre, L.depthFalloff, L.maxBlurPixels, i == 0 ? L.bridging : 0f));
             bool even = i % 2 == 0;
             cmd.Blit(even ? DepthId : DepthTmpId, even ? DepthTmpId : DepthId, smooth, 0);
         }
-        bool inTmp = smoothIterations % 2 == 1;
+        bool inTmp = L.smoothIterations % 2 == 1;
         cmd.Blit(inTmp ? DepthTmpId : DepthId, inTmp ? DepthId : DepthTmpId, smooth, 2);
         if (!inTmp) cmd.Blit(DepthTmpId, DepthId);
         // ...and thickness and colour, at the same world size (filling the bridged gaps, rounding the edges).
-        cmd.SetGlobalVector("_FluidBlur", new Vector4(smoothRadius * pixelsPerMetre, depthFalloff, maxBlurPixels, 0f));
+        cmd.SetGlobalVector("_FluidBlur", new Vector4(L.smoothRadius * pixelsPerMetre, L.depthFalloff, L.maxBlurPixels, 0f));
         cmd.GetTemporaryRT(ThickTmpId, w, h, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBHalf);
         cmd.SetGlobalVector("_FluidStep", new Vector4(1f / w, 0f, 0f, 0f));
         cmd.Blit(ThickId, ThickTmpId, smooth, 1);
@@ -276,7 +278,7 @@ public class FluidRenderer : MonoBehaviour
                 if (l.type == LightType.Directional && l.isActiveAndEnabled) { sun = l; break; }
         Vector3 toSun = sun != null ? -sun.transform.forward : Vector3.up;
         Color sunColour = sun != null ? sun.color * sun.intensity : Color.white;
-        // The ambient probe as Unity's shader constants (unity_SHAr..SHC), for ShadeSH9 by hand.
+        // The L.ambient probe as Unity's shader constants (unity_SHAr..SHC), for ShadeSH9 by hand.
         SphericalHarmonicsL2 sh = RenderSettings.ambientProbe;
         string[] names = { "_SHAr", "_SHAg", "_SHAb" };
         string[] quadratic = { "_SHBr", "_SHBg", "_SHBb" };
@@ -288,15 +290,15 @@ public class FluidRenderer : MonoBehaviour
         composite.SetVector("_SHC", new Vector4(sh[0, 8], sh[1, 8], sh[2, 8], 1f));
         composite.SetVector("_SunDir", toSun);
         composite.SetColor("_SunColour", sunColour);
-        composite.SetVector("_Body", new Vector4(bodySmoothness, 0f, 0f, 0f));
+        composite.SetVector("_Body", new Vector4(L.bodySmoothness, 0f, 0f, 0f));
         Texture env = ReflectionProbe.defaultTexture;
         if (env != null) composite.SetTexture("_Env", env);
         composite.SetVector("_EnvHDR", ReflectionProbe.defaultTextureHDRDecodeValues);
-        composite.SetVector("_Shape", new Vector4(depthNormals, roundness, edgeSharpness, debugFlatUp ? 1f : 0f));
-        composite.SetVector("_Look", new Vector4(gloss, specular, reflection, ambient));
-        composite.SetVector("_Look2", new Vector4(brightness, rimStrength, rimPower, rimWhiten));
-        composite.SetVector("_Noise", new Vector4(rippleFrequency, rippleStrength, rippleFlow, 0f));
-        composite.SetVector("_Rim", new Vector4(rimThickness, 0f, 0f, 0f));
+        composite.SetVector("_Shape", new Vector4(L.depthNormals, L.roundness, L.edgeSharpness, debugFlatUp ? 1f : 0f));
+        composite.SetVector("_Look", new Vector4(L.gloss, L.specular, L.reflection, L.ambient));
+        composite.SetVector("_Look2", new Vector4(L.brightness, L.rimStrength, L.rimPower, L.rimWhiten));
+        composite.SetVector("_Noise", new Vector4(L.rippleFrequency, L.rippleStrength, L.rippleFlow, 0f));
+        composite.SetVector("_Rim", new Vector4(L.rimThickness, 0f, 0f, 0f));
     }
 
     static Mesh MakeQuad()

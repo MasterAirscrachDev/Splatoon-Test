@@ -80,7 +80,7 @@ public partial class ClimbTestRunner
         if (yawSpread > 2f * (bucket.Spread + bucket.Sway) + 1f) Fail("the slosh isn't a narrow line");
         if (blob.Count != 1 || blobReach <= dropReach) Fail("the blob didn't land out in front of the droplets");
         if (blob.Count == 1 && (blob[0].reason != ProjectileManager.EndReason.Surface || Mathf.Abs(blobReach - airReach) > airReach * 0.35f)) Fail("the blob doesn't land on the floor at about the air flick's reach");
-        if (bucket.BlobSplat <= bucket.DropletSplat || blobRadius <= dropRadius * 1.3f || bucket.BlobSplat * bucket.BlobScale < bucket.DropletSplat * bucket.DropletScale * 2f) Fail("the blob isn't bigger (splat, hit radius, look)");
+        if (bucket.BlobSplat <= bucket.DropletSplat || blobRadius <= dropRadius * 1.3f || InkFluid.Radius(bucket.BlobSplat, bucket.BlobLook) < InkFluid.Radius(bucket.DropletSplat) * 2f) Fail("the blob isn't bigger (splat, hit radius, look)");
         if (Mathf.Abs(inkSpent - bucket.SloshInkCost * 0.001f) > 0.005f) Fail("a slosh didn't cost its ink");
         if (!blobSent) Fail("the slosh wasn't broadcast with its blob");
 

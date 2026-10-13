@@ -1,12 +1,13 @@
 using UnityEngine;
 
-// A Super Jump's trail: blobs of ink left along the launch (the first part of the flight) in the
+// A Super Jump's trail: blobs of ink (drawn as fluid, InkFluid) left along the launch (the first part of the flight) in the
 // jumper's team colour, shrinking away behind them, with a few drifting off, thinning out as the
 // launch ends. Shown for remote jumpers too (their state says they're in flight; timed from when it
 // started). Emitted by distance flown, so a long jump leaves as even a trail as a short one.
 public class SuperJumpTrail : MonoBehaviour
 {
-    [SerializeField] ParticleSystem blobs;            // world space; size and fade over life set on it
+    [SerializeField] ParticleSystem blobs;            // world space; size over life set on it (its renderer's off: drawn as ink)
+    [SerializeField] float fluidSize = 0.6f;          // their radius as ink, x their size
     [SerializeField] float perMetre = 6f;
     [SerializeField] float spread = 0.25f;            // around the path
     [SerializeField] Vector2 size = new Vector2(0.35f, 0.7f);
@@ -21,7 +22,11 @@ public class SuperJumpTrail : MonoBehaviour
 
     public int Emitted { get; private set; } // tests
 
-    void Awake() => player = GetComponentInParent<PlayerController>();
+    void Awake()
+    {
+        player = GetComponentInParent<PlayerController>();
+        if (blobs != null && blobs.TryGetComponent(out ParticleSystemRenderer look)) look.enabled = false;
+    }
 
     void LateUpdate()
     {
@@ -53,5 +58,6 @@ public class SuperJumpTrail : MonoBehaviour
         if (!now) owed = 0f;
         flying = now;
         last = at;
+        InkFluid.DrawParticles(blobs, fluidSize, 0.05f);
     }
 }

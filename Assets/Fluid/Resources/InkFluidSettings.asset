@@ -1,0 +1,79 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 47a4c312e5ca7a146983f993e80791d0, type: 3}
+  m_Name: InkFluidSettings
+  m_EditorClassIdentifier: Assembly-CSharp::InkFluidSettings
+  particleShader: {fileID: 4800000, guid: c65b07666118725488e13f41ae525f59, type: 3}
+  smoothShader: {fileID: 4800000, guid: a4cfb3a190231e14ea8ddc228d983e75, type: 3}
+  compositeShader: {fileID: 4800000, guid: 7fdb349ab1e09e04f9d6bf8d218bef8e, type: 3}
+  renderer:
+    smoothRadius: 0.16
+    depthFalloff: 6
+    blendDepth: 0.35
+    smoothIterations: 2
+    bridging: 0.5
+    maxBlurPixels: 24
+    resolutionScale: 1
+    minPixels: 2.5
+    depthNormals: 0.1
+    roundness: 1
+    edgeSharpness: 400
+    gloss: 0.8
+    specular: 1.4
+    reflection: 0.3
+    bodySmoothness: 0.4
+    ambient: 1
+    brightness: 1
+    rimStrength: 0.9
+    rimPower: 1.5
+    rimThickness: 0.05
+    rimWhiten: 0.55
+    rippleFrequency: 5
+    rippleStrength: 0
+    rippleFlow: 1.2
+  blobFill: 0.3
+  stretch: 0.1
+  wobble: 0.12
+  fillersSeen: 0.33
+  shotCompanions:
+    count: 2
+    size: {x: 0.5, y: 0.85}
+    spread: 2
+    across: 2
+    speed: 0.05
+  rollerCompanions:
+    count: 4
+    size: {x: 0.5, y: 0.85}
+    spread: 2
+    across: 2
+    speed: 0.05
+  bucketCompanions:
+    count: 3
+    size: {x: 0.5, y: 0.85}
+    spread: 1
+    across: 3
+    speed: 0.1
+  crownBlobs: {x: 2, y: 4}
+  crownSize: {x: 0.35, y: 0.55}
+  crownKick: 2.5
+  puddleDrops: 6
+  puddleTime: 0.22
+  coreReach: 0.45
+  coreTime: 0.35
+  coreBlobs: 6
+  coreSize: {x: 0.55, y: 0.8}
+  coreScatter: 0.2
+  shellBlobs: 18
+  shellSize: {x: 0.1, y: 0.16}
+  shellSpeed: {x: 4, y: 6}
+  shellLife: 0.2
+  shellShrink: 0.5

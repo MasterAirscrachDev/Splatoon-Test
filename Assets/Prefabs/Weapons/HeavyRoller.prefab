@@ -61,7 +61,6 @@ MonoBehaviour:
   windup: 0.34
   followThrough: 0.24
   flickInkCost: 160
-  projectile: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   ballistics:
     velocityOverTime:
       serializedVersion: 2
@@ -112,13 +111,13 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   flickPace: 2
-  dropletScale: 2
+  groundBlobScale: 0.5
   aimInfluence: 1
   flickPitchLimits: {x: -40, y: 60}
   groundDroplets: 60
   groundFan: 80
   groundPitch: 25
-  groundSpeed: {x: 8, y: 12.5}
+  groundSpeed: {x: 4, y: 11}
   groundDamage:
     damage: 230
     scaleOverTime:
@@ -154,7 +153,7 @@ MonoBehaviour:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
-  groundSplat: 20
+  groundSplat: 15
   airDroplets: 16
   airFan: 7
   airPitch: 20
@@ -190,10 +189,10 @@ MonoBehaviour:
   rollStartSpeed: 0.35
   rollSpeed: 1
   rollRampTime: 3
-  rollInkPerMetre: 24
+  rollInkPerMetre: 20
   rollPaintSpacing: 0.5
   rollSplatPoints: 5
-  rollInkWidth: 4.2
+  rollInkWidth: 7
   rollSplatSize: 11
   minRollSpeed: 1
   roller: {fileID: 4478241144024813504}

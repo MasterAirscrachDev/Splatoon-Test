@@ -13,12 +13,9 @@ public static class LoadoutBuilder
     const string SprinklerPath = "Assets/Prefabs/Sprinkler.prefab";
     const string CurlingBombPath = "Assets/Prefabs/CurlingBomb.prefab";
     const string BlasterPath = "Assets/Prefabs/Weapons/SolarBlaster.prefab";
-    const string InkBlastPath = "Assets/Prefabs/InkBlast.prefab";
     const string RollerPath = "Assets/Prefabs/Weapons/Inkroller.prefab";
     const string RollerModelPath = "Assets/Models/Weapons/W_Roller.fbx";
-    const string BlastMatPath = "Assets/Materials/SwimWakeLit.mat"; // the curling bomb's blast: lit ink
     const string InkStrikePath = "Assets/Prefabs/InkStrike.prefab";
-    const string ProjectilePath = "Assets/Prefabs/Projectile.prefab";
     const string AirsprayPath = "Assets/Prefabs/Weapons/AirspraySE.prefab";
     const string InkshotPath = "Assets/Prefabs/Weapons/Inkshot.prefab";
     const string PlayerPath = "Assets/Prefabs/PlayerEntity - VOID.prefab";
@@ -44,7 +41,7 @@ public static class LoadoutBuilder
     }
 
     // A see-through column marking the area, and the ink tornado: a swirl filling the column plus a
-    // spray off the ground, both drawn like the projectile splashes (ink spheres, vertex colour).
+    // spray off the ground (particle systems drawn as ink: InkFluid, their renderers off).
     // InkStrike fits their shapes to its radius and height when it starts.
     static InkStrike BuildInkStrike(Material shell)
     {
@@ -52,11 +49,7 @@ public static class LoadoutBuilder
         Renderer marker = Part(PrimitiveType.Cylinder, "Marker", root.transform, Vector3.zero, Vector3.one, shell);
         marker.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-        var projectile = AssetDatabase.LoadAssetAtPath<ProjectileVisual>(ProjectilePath);
-        var splash = new SerializedObject(projectile).FindProperty("splashParticlesPrefab").objectReferenceValue as GameObject;
-        ParticleSystemRenderer look = splash.GetComponentInChildren<ParticleSystemRenderer>(true);
-
-        ParticleSystem tornado = InkParticleSystem("Tornado", root.transform, look);
+        ParticleSystem tornado = InkParticleSystem("Tornado", root.transform);
         var main = tornado.main;
         main.duration = 1.4f;
         main.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.3f);
@@ -80,7 +73,7 @@ public static class LoadoutBuilder
         grow.enabled = true;
         grow.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0f, 0f), new Keyframe(0.2f, 1f), new Keyframe(1f, 0f)));
 
-        ParticleSystem burst = InkParticleSystem("Burst", root.transform, look);
+        ParticleSystem burst = InkParticleSystem("Burst", root.transform);
         main = burst.main;
         main.duration = 0.3f;
         main.startLifetime = new ParticleSystem.MinMaxCurve(0.6f, 1.1f);
@@ -122,7 +115,7 @@ public static class LoadoutBuilder
         return saved.GetComponent<InkStrike>();
     }
 
-    static ParticleSystem InkParticleSystem(string name, Transform parent, ParticleSystemRenderer look)
+    static ParticleSystem InkParticleSystem(string name, Transform parent)
     {
         var go = new GameObject(name);
         go.transform.SetParent(parent, false);
@@ -132,11 +125,7 @@ public static class LoadoutBuilder
         main.loop = false;
         main.playOnAwake = false;
         main.simulationSpace = ParticleSystemSimulationSpace.Local;
-        var r = go.GetComponent<ParticleSystemRenderer>();
-        r.renderMode = look.renderMode;
-        r.mesh = look.mesh;
-        r.sharedMaterial = look.sharedMaterial;
-        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        go.GetComponent<ParticleSystemRenderer>().enabled = false; // drawn as ink (InkFluid)
         return ps;
     }
 
@@ -161,8 +150,6 @@ public static class LoadoutBuilder
         so.FindProperty("pitchSpread").floatValue = 2f;
         so.FindProperty("fillerSpread").floatValue = 10f;
         so.FindProperty("muzzle").objectReferenceValue = copy.transform.Find("BulletSpawn");
-        if (so.FindProperty("projectile").objectReferenceValue == null)
-            so.FindProperty("projectile").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ProjectilePath);
         so.ApplyModifiedPropertiesWithoutUndo();
 
         Directory.CreateDirectory(Path.GetDirectoryName(AirsprayPath));
@@ -237,7 +224,6 @@ public static class LoadoutBuilder
         tinted.arraySize = parts.Length;
         for (int i = 0; i < parts.Length; i++) tinted.GetArrayElementAtIndex(i).objectReferenceValue = parts[i];
         so.FindProperty("head").objectReferenceValue = head;
-        so.FindProperty("projectilePrefab").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ProjectilePath);
         so.ApplyModifiedPropertiesWithoutUndo();
 
         GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, SprinklerPath);
@@ -259,10 +245,6 @@ public static class LoadoutBuilder
             so.FindProperty("displayName").stringValue = "Solar Blaster";
             so.FindProperty("description").stringValue = "Slow, short-ranged shots that explode at the end of their flight or on whatever they hit.";
             so.FindProperty("muzzle").objectReferenceValue = muzzle;
-            so.FindProperty("projectile").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ProjectilePath);
-            GameObject effect = AssetDatabase.LoadAssetAtPath<GameObject>(InkBlastPath);
-            if (effect == null) effect = BuildInkBlast();
-            so.FindProperty("blast.effect").objectReferenceValue = effect;
             so.ApplyModifiedPropertiesWithoutUndo();
             Transform model = c.transform.Find("InkShot");
             if (model != null) model.localScale = Vector3.Scale(model.localScale, new Vector3(1.5f, 1.5f, 0.75f));
@@ -296,7 +278,6 @@ public static class LoadoutBuilder
         var so = new SerializedObject(roller);
         so.FindProperty("displayName").stringValue = "Inkroller";
         so.FindProperty("description").stringValue = "Flick ink in a wide arc (or a long line from the air), then hold to roll a strip of ink and run enemies over.";
-        so.FindProperty("projectile").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ProjectilePath);
         so.FindProperty("roller").objectReferenceValue = drum;
         if (drum != null && drum.TryGetComponent(out MeshFilter mf) && mf.sharedMesh != null)
         {
@@ -312,25 +293,8 @@ public static class LoadoutBuilder
         return AssetDatabase.LoadAssetAtPath<Weapon>(RollerPath);
     }
 
-    // An explosion: a sphere of lit ink that swells and collapses, flinging droplets, and a splash.
-    internal static GameObject BuildInkBlast()
-    {
-        var root = new GameObject("InkBlast");
-        Renderer sphere = Part(PrimitiveType.Sphere, "Sphere", root.transform, Vector3.zero, Vector3.one, AssetDatabase.LoadAssetAtPath<Material>(BlastMatPath));
-        sphere.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        InkBlastEffect effect = root.AddComponent<InkBlastEffect>();
-        var so = new SerializedObject(effect);
-        so.FindProperty("sphere").objectReferenceValue = sphere.transform;
-        var projectile = AssetDatabase.LoadAssetAtPath<ProjectileVisual>(ProjectilePath);
-        if (projectile != null) so.FindProperty("splash").objectReferenceValue = projectile.SplashParticles;
-        so.ApplyModifiedPropertiesWithoutUndo();
-        GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, InkBlastPath);
-        Object.DestroyImmediate(root);
-        return saved;
-    }
-
     // A squat puck with a grip on top and a light that blinks faster as its fuse runs out; it goes
-    // off with the shared InkBlast effect. No collider: it can't be shot.
+    // off in an ink blast (InkFluid). No collider: it can't be shot.
     internal static CurlingBomb BuildCurlingBomb()
     {
         Material body = EnsureMaterial(BeaconBodyMatPath, "Standard", m => m.color = new Color(0.22f, 0.22f, 0.26f));
@@ -353,9 +317,6 @@ public static class LoadoutBuilder
         tinted.GetArrayElementAtIndex(0).objectReferenceValue = band;
         so.FindProperty("blinker").objectReferenceValue = blinker;
         so.FindProperty("body").objectReferenceValue = model;
-        GameObject effect = AssetDatabase.LoadAssetAtPath<GameObject>(InkBlastPath);
-        if (effect == null) effect = BuildInkBlast();
-        so.FindProperty("blastEffect").objectReferenceValue = effect;
         so.ApplyModifiedPropertiesWithoutUndo();
 
         GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, CurlingBombPath);

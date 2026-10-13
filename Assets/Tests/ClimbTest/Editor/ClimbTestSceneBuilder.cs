@@ -15,7 +15,6 @@ public static class ClimbTestSceneBuilder
     const string MeshDir   = Root + "/Meshes";
     const string InkMaterialPath = "Assets/Materials/InkMaterial 1.mat";
     const string PlayerPrefabPath = "Assets/Prefabs/PlayerEntity - VOID.prefab";
-    const string ProjectilePrefabPath = "Assets/Prefabs/Projectile.prefab";
     const string GameUIPrefabPath = "Assets/Prefabs/UI/GameUI.prefab"; // the UI, made by the core
     const int Own = 1, Enemy = 2;
 
@@ -55,7 +54,6 @@ public static class ClimbTestSceneBuilder
 
         ClimbTestRunner runner = new GameObject("ClimbTestRunner").AddComponent<ClimbTestRunner>();
         SerializedObject rso = new SerializedObject(runner);
-        rso.FindProperty("projectilePrefab").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(ProjectilePrefabPath);
         rso.ApplyModifiedPropertiesWithoutUndo();
 
         foreach (Station s in System.Enum.GetValues(typeof(Station)))

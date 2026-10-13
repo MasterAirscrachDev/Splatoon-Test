@@ -17,29 +17,37 @@ public partial class ClimbTestRunner
 
     IEnumerator ProjectilePooling()
     {
-        if (projectilePrefab == null) { Fail("runner has no projectile prefab assigned (rebuild the test scene)"); yield break; }
-
-        // Three volleys of 6 team-2 shots straight down onto the floor, half with hidden visuals.
-        int before = ProjectileManager.VisualsCreated, afterFirst = 0;
+        // Three volleys of 6 team-2 shots straight down onto the floor, half of them hidden.
+        int before = ProjectileManager.ShotsCreated, afterFirst = 0;
+        int seen = 0, drawn = 0, companions = 0;
         var targets = new List<Vector3>();
         for (int volley = 0; volley < 3; volley++)
         {
+            int fluidBefore = InkFluid.Live;
             for (int i = 0; i < 6; i++)
             {
                 Vector3 p = station.TransformPoint(new Vector3(-6f + i * 2.4f, 3f, 4f + volley * 2.5f));
                 targets.Add(new Vector3(p.x, station.position.y, p.z));
-                ProjectileManager.Fire(projectilePrefab, p, Vector3.down * 8f, 10, 2, visible: i % 2 == 0);
+                ProjectileManager.Fire(p, Vector3.down * 8f, 10, 2, visible: i % 2 == 0);
             }
+            companions = Mathf.Max(companions, InkFluid.Live - fluidBefore);
+            yield return null; // drawn as they fly
+            seen = Mathf.Max(seen, ProjectileManager.VisibleCount);
+            drawn = Mathf.Max(drawn, FluidRenderer.DropCount);
             yield return Hold(Still, false, 0.6f, "volley");
-            if (volley == 0) afterFirst = ProjectileManager.VisualsCreated - before;
+            if (volley == 0) afterFirst = ProjectileManager.ShotsCreated - before;
         }
         yield return Hold(Still, false, 0.3f, "settle");
 
-        int created = ProjectileManager.VisualsCreated - before, stillFlying = ProjectileManager.LiveCount;
-        Note($"{targets.Count} shots used {created} visuals");
-        if (afterFirst == 0 || afterFirst > 3) Fail($"expected a visual per visible shot of the first volley, got {afterFirst}");
-        if (created > afterFirst) Fail($"visuals weren't reused ({afterFirst} after the first volley, {created} after three)");
+        int created = ProjectileManager.ShotsCreated - before, stillFlying = ProjectileManager.LiveCount;
+        Camera view = Camera.main;
+        bool fluidCamera = view != null && view.TryGetComponent(out FluidRenderer _);
+        Note($"{targets.Count} shots used {created} shot records; {seen} of a volley seen, drawn as {drawn} ink drops ({companions} companions a volley); the camera {(fluidCamera ? "draws" : "DOESN'T draw")} ink");
+        if (created > 6) Fail($"shot records weren't reused ({afterFirst} after the first volley, {created} after three)");
         if (stillFlying > 0) Fail($"{stillFlying} shot(s) never finished");
+        if (seen != 3) Fail("the seen shots weren't the visible half");
+        if (drawn < seen || companions < seen) Fail("the seen shots weren't drawn as ink, with their companions");
+        if (!fluidCamera) Fail("the main camera has no FluidRenderer");
 
         int painted = 0;
         foreach (Vector3 t in targets)
@@ -63,8 +71,8 @@ public partial class ClimbTestRunner
         Vector3 from = station.TransformPoint(new Vector3(-8f, 2.5f, -8f));
         Vector3 launch = station.TransformDirection(new Vector3(0f, 0.3f, 1f)).normalized * 8f;
         var doubled = new Ballistics { velocityOverTime = AnimationCurve.Constant(0f, 1f, 2f), gravityOverTime = AnimationCurve.Constant(0f, 1f, 4f) };
-        ProjectileManager.Shot plain = ProjectileManager.Fire(projectilePrefab, from, launch, 10, player.Team, ownerId: player.OwnerId);
-        ProjectileManager.Shot quick = ProjectileManager.Fire(projectilePrefab, from + station.TransformDirection(Vector3.right) * 3f, launch, 10, player.Team, ownerId: player.OwnerId, ballistics: doubled);
+        ProjectileManager.Shot plain = ProjectileManager.Fire(from, launch, 10, player.Team, ownerId: player.OwnerId);
+        ProjectileManager.Shot quick = ProjectileManager.Fire(from + station.TransformDirection(Vector3.right) * 3f, launch, 10, player.Team, ownerId: player.OwnerId, ballistics: doubled);
         yield return HoldUntil(Still, false, 3f, "fly", f => landed.ContainsKey(plain) && landed.ContainsKey(quick));
         ProjectileManager.Impact -= onImpact;
         if (!landed.ContainsKey(plain) || !landed.ContainsKey(quick)) { Fail("shots didn't land"); NetGameManager.SendOverride = null; yield break; }
@@ -79,8 +87,8 @@ public partial class ClimbTestRunner
         landed.Clear();
         ProjectileManager.Impact += onImpact;
         Vector3 aside = station.TransformDirection(Vector3.left) * 3f;
-        ProjectileManager.Shot slow = ProjectileManager.Fire(projectilePrefab, from + aside * 2f, launch, 10, player.Team, ownerId: player.OwnerId, ballistics: shaped);
-        ProjectileManager.Shot fast = ProjectileManager.Fire(projectilePrefab, from + aside, launch * 2f, 10, player.Team, ownerId: player.OwnerId, ballistics: shaped.Faster(2f));
+        ProjectileManager.Shot slow = ProjectileManager.Fire(from + aside * 2f, launch, 10, player.Team, ownerId: player.OwnerId, ballistics: shaped);
+        ProjectileManager.Shot fast = ProjectileManager.Fire(from + aside, launch * 2f, 10, player.Team, ownerId: player.OwnerId, ballistics: shaped.Faster(2f));
         yield return HoldUntil(Still, false, 3f, "fly", f => landed.ContainsKey(slow) && landed.ContainsKey(fast));
         ProjectileManager.Impact -= onImpact;
         if (!landed.ContainsKey(slow) || !landed.ContainsKey(fast)) { Fail("paced shots didn't land"); NetGameManager.SendOverride = null; yield break; }
@@ -95,7 +103,7 @@ public partial class ClimbTestRunner
         PlayerController foe = gm.GetPlayer(FoeId);
         sent.Clear();
         Vector3 across = station.TransformDirection(Vector3.right);
-        ProjectileManager.Fire(projectilePrefab, foe.BodyCenter - across * 12f, across * 150f, 10, player.Team, ownerId: player.OwnerId,
+        ProjectileManager.Fire(foe.BodyCenter - across * 12f, across * 150f, 10, player.Team, ownerId: player.OwnerId,
                                ballistics: new Ballistics { gravityOverTime = AnimationCurve.Constant(0f, 1f, 0f) });
         yield return Hold(Still, false, 0.3f, "fast");
         Note($"150 m/s shot: {(sent.Any(m => m.id == NetMsg.Damage && m.to == FoeId) ? "hit" : "missed")} (moves 2m per frame)");
@@ -107,7 +115,7 @@ public partial class ClimbTestRunner
         float Hit(float distance)
         {
             float before = sent.Where(m => m.id == NetMsg.Damage && m.to == FoeId).Sum(m => ((DamageData)m.data).amount);
-            ProjectileManager.Fire(projectilePrefab, foe.BodyCenter - across * distance, across * 24f, 10, player.Team, ownerId: player.OwnerId, ballistics: straight, falloff: falloff);
+            ProjectileManager.Fire(foe.BodyCenter - across * distance, across * 24f, 10, player.Team, ownerId: player.OwnerId, ballistics: straight, falloff: falloff);
             return before;
         }
         float DamageSince(float before) => sent.Where(m => m.id == NetMsg.Damage && m.to == FoeId).Sum(m => ((DamageData)m.data).amount) - before;
@@ -130,7 +138,7 @@ public partial class ClimbTestRunner
         Vector3? throughGrate = null;
         Action<ProjectileManager.Shot, Vector3> onGrate = (shot, point) => throughGrate = point;
         ProjectileManager.Impact += onGrate;
-        ProjectileManager.Fire(projectilePrefab, under + Vector3.up * 3f, Vector3.down * 8f, 10, player.Team, ownerId: player.OwnerId);
+        ProjectileManager.Fire(under + Vector3.up * 3f, Vector3.down * 8f, 10, player.Team, ownerId: player.OwnerId);
         yield return HoldUntil(Still, false, 1f, "grate", f => throughGrate.HasValue);
         ProjectileManager.Impact -= onGrate;
         Destroy(grate);
@@ -173,7 +181,7 @@ public partial class ClimbTestRunner
         {
             if (shot.source != blaster.Source || shot.blast == null) return; // not its feet ink
             blasts.Add((point, shot.travelled, Time.time));
-            foreach (InkBlastEffect fx in FindObjectsByType<InkBlastEffect>(FindObjectsSortMode.None)) blobs = Mathf.Max(blobs, fx.BlobCount);
+            blobs = Mathf.Max(blobs, InkFluid.LastExplosionBlobs);
         };
         ProjectileManager.Impact += onBlast;
         int OnFloor(Vector3 at)
@@ -231,7 +239,7 @@ public partial class ClimbTestRunner
         Vector3 ground = new Vector3(high.x, station.position.y, high.z);
         int belowBefore = OnFloor(ground);
         sent.Clear();
-        InkExplosion.Detonate(high, blaster.Blast, player.Team, player.OwnerId, blaster.Source, true, Color.white, null, projectilePrefab);
+        InkExplosion.Detonate(high, blaster.Blast, player.Team, player.OwnerId, blaster.Source, true, Color.white, null, falls: true);
         yield return Hold(Still, false, 0.6f, "falling ink");
         int fell = 0, fellProbes = 0;
         for (int i = 0; i < 8; i++) { fellProbes++; if (OnFloor(ground + Quaternion.Euler(0f, i * 45f, 0f) * Vector3.forward * 0.6f) == player.Team) fell++; }
@@ -368,7 +376,7 @@ public partial class ClimbTestRunner
         float groundSpread = Spread(roller.LastFlick ?? new Vector3[0]);
         float groundReach = landed.Count > 0 ? landed.Max(p => Flat(p - start).magnitude) : 0f;
         float launchSpeed = roller.LastFlick != null ? roller.LastFlick.Max(v => v.magnitude) : 0f;
-        Note($"droplets launched at up to {launchSpeed:F1} m/s ({roller.FlickPace}x pace), shown {roller.DropletScale}x size");
+        Note($"droplets launched at up to {launchSpeed:F1} m/s ({roller.FlickPace}x pace), ground flick drawn {roller.GroundBlobScale}x size");
         Note($"ground flick: {roller.LastFlick?.Length ?? 0} droplets across {groundSpread:F0}°, landing up to {groundReach:F1}m out; cost {flickCost * 100f:F1}% ink; the enemy 3m ahead took {DamageTo(Foe):0} in {HitsTo(Foe)} hit(s)");
         if (roller.Flicks != 1 || roller.LastFlickInAir) Fail("pressing on the ground didn't do a ground flick");
         if (groundSpread < 45f) Fail("the ground flick isn't a wide fan");

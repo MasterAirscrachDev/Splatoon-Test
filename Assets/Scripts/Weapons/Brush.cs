@@ -17,10 +17,8 @@ public class Brush : Weapon
     [SerializeField] float releaseAt = 0.5f;          // share of the swing when the droplets leave
     [SerializeField] float swipeArc = 80f;            // degrees, from one side to the other
     [SerializeField] float swipeInkCost = 20f;        // x0.001 of a full tank
-    [SerializeField] GameObject projectile;
     [SerializeField] Ballistics ballistics = new Ballistics();
     [SerializeField] float swipePace = 2f;            // droplets fly their path this many times as fast (speeds below are before it)
-    [SerializeField] float dropletScale = 1.4f;       // how big the droplets look, x a shot's size for their splat
     [SerializeField] float aimInfluence = 1f;         // how much looking up/down tilts a swipe
     [SerializeField] Vector2 swipePitchLimits = new Vector2(-40f, 50f);
     [SerializeField] int droplets = 5;
@@ -240,15 +238,15 @@ public class Brush : Weapon
 
     void Fire(Vector3 from, Vector3 launch, Vector3 inherit, int size, int team, ulong ownerId, bool authoritative, DamageFalloff damage, HashSet<Object> hits)
     {
-        ProjectileManager.Fire(projectile, from, launch, size, team, true, authoritative, ownerId, 0f,
-                               ballistics: paced ?? ballistics, falloff: damage, inherit: inherit, source: Source, hitGroup: hits, visualScale: dropletScale);
+        ProjectileManager.Fire(from, launch, size, team, true, authoritative, ownerId, 0f,
+                               ballistics: paced ?? ballistics, falloff: damage, inherit: inherit, source: Source, hitGroup: hits);
     }
 
     // Their swipe, visual-only here, the swing played from where the droplets leave (alternating
     // like theirs).
     public override void Replay(ProjectileSpawnData d)
     {
-        if (projectile == null || d.velocities == null || d.splashSizes == null) return;
+        if (d.velocities == null || d.splashSizes == null) return;
         Vector3 inherit = d.inherit != null ? (Vector3)d.inherit : Vector3.zero;
         int n = Mathf.Min(d.splashSizes.Length, d.velocities.Length / 3);
         if (!local && n > 0)

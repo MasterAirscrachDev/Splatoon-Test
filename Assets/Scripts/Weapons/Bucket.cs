@@ -15,7 +15,6 @@ public class Bucket : Weapon
     [SerializeField] float windup = 0.12f;            // swing back before the ink leaves
     [SerializeField] float followThrough = 0.2f;      // swing on after it does
     [SerializeField] float sloshInkCost = 70f;        // x0.001 of a full tank
-    [SerializeField] GameObject projectile;
     [SerializeField] Ballistics ballistics = new Ballistics();
     [SerializeField] float sloshPace = 2f;            // the ink flies its path this many times as fast (speeds below are before it)
     [SerializeField] float aimInfluence = 1f;         // how much looking up/down tilts the throw (1: as much as the view)
@@ -27,13 +26,12 @@ public class Bucket : Weapon
     [Header("Stream: the droplets behind the blob")]
     [SerializeField] int droplets = 6;
     [SerializeField] Vector2 dropletSpeed = new Vector2(6f, 11f);    // nearest to furthest, so they land along a line
-    [SerializeField] float dropletScale = 1.3f;       // how big they look, x a shot's size for their splat (about 0.45m)
     [SerializeField] DamageFalloff dropletDamage = new DamageFalloff(35f, DamageFalloff.HoldThenFall(0.1f, 0.5f, 0.5f));
     [SerializeField] int dropletSplat = 10;
 
     [Header("Blob: the stream's front")]
     [SerializeField] float blobSpeed = 12f;           // a little faster than the furthest droplet: out in front (about the air flick's reach)
-    [SerializeField] float blobScale = 1.9f;          // how big it looks (about 1.2m: with its bigger splat size, over twice a droplet)
+    [SerializeField] float blobLook = 1.27f;          // drawn this x the usual size for its splat (with its bigger splat, over twice a droplet)
     [SerializeField] float blobHitScale = 1.8f;       // x a shot's hit radius: a bigger target to land
     [SerializeField] DamageFalloff blobDamage = new DamageFalloff(90f, DamageFalloff.HoldThenFall(0.15f, 0.6f, 0.65f)); // well over a droplet's
     [SerializeField] int blobSplat = 18;
@@ -64,8 +62,7 @@ public class Bucket : Weapon
     public int Droplets => droplets;
     public int BlobSplat => blobSplat;
     public int DropletSplat => dropletSplat;
-    public float BlobScale => blobScale;
-    public float DropletScale => dropletScale;
+    public float BlobLook => blobLook;
     public float BlobHitScale => blobHitScale;
     public float SloshRate => sloshRate;
     public float SloshInkCost => sloshInkCost;
@@ -174,16 +171,16 @@ public class Bucket : Weapon
 
     void Fire(Vector3 from, Vector3 launch, Vector3 inherit, int size, int team, ulong ownerId, bool authoritative, bool blob, HashSet<Object> hits)
     {
-        ProjectileManager.Fire(projectile, from, launch, size, team, true, authoritative, ownerId, 0f,
+        ProjectileManager.Fire(from, launch, size, team, true, authoritative, ownerId, 0f,
                                ballistics: paced ?? ballistics, falloff: authoritative ? (blob ? blobDamage : dropletDamage) : null, inherit: inherit,
-                               source: Source, hitGroup: hits, visualScale: blob ? blobScale : dropletScale, radiusScale: blob ? blobHitScale : 1f);
+                               source: Source, hitGroup: hits, look: blob ? blobLook : 1f, radiusScale: blob ? blobHitScale : 1f, kind: FluidKind.Bucket);
     }
 
     // Their slosh, visual-only here, the swing played from where the ink leaves. The blob is the
     // biggest splat (the stream's front).
     public override void Replay(ProjectileSpawnData d)
     {
-        if (projectile == null || d.velocities == null || d.splashSizes == null) return;
+        if (d.velocities == null || d.splashSizes == null) return;
         Vector3 inherit = d.inherit != null ? (Vector3)d.inherit : Vector3.zero;
         int n = Mathf.Min(d.splashSizes.Length, d.velocities.Length / 3);
         if (!local && n > 0)

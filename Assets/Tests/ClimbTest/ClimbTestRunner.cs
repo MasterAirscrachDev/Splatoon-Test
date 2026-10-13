@@ -26,8 +26,6 @@ public partial class ClimbTestRunner : MonoBehaviour
     [SerializeField] string filter = "";
     [Tooltip("Leave play mode once an automatic run finishes (for command-line runs).")]
     [SerializeField] bool exitPlayModeWhenDone = false;
-    [Tooltip("Projectile prefab for the pooling scenario (assigned by ClimbTestSceneBuilder).")]
-    [SerializeField] GameObject projectilePrefab;
     [Tooltip("Write a per-frame CSV of each scenario to <project>/Logs/ClimbTest/.")]
     [SerializeField] bool writeTraces = true;
 
@@ -480,7 +478,7 @@ public partial class ClimbTestRunner : MonoBehaviour
         yield return S("Game UI: one root canvas (panels in the old draw order, a nested one for per-frame marks), made by the core; a scene load closes menus and clears the kill feed", Station.Lobby, OneCanvas, "UI");
         yield return S("Frame rate: a jump peaks at the same height at 30, 75 and 144 fps; standing stays grounded every frame even at 1000 fps", Station.Lobby, FrameRateIndependence, "FrameRate,Swim");
         yield return S("Lobby: switching form glides the camera instead of snapping", Station.Lobby, CameraFormSwitch, "Camera,Swim");
-        yield return S("Lobby: pooled projectiles splat where they land and are reused", Station.Lobby, ProjectilePooling, "Projectiles,Ink");
+        yield return S("Lobby: pooled projectiles splat where they land and are reused; seen ones are drawn as ink (with companions), hidden ones aren't", Station.Lobby, ProjectilePooling, "Projectiles,Ink,Fluid");
         yield return S("Projectiles: speed/gravity curves retime a path without changing it (Ballistics.Faster too, with curves); fast shots can't skip hitboxes; damage falls off along a curve over flight time", Station.Lobby, ProjectileBallistics, "Projectiles");
         yield return S("FlatWall: climb up and over the top", Station.FlatWall, ClimbUpAndOver, "Climb");
         yield return S("FlatWall: no input on the wall slides slowly without letting go", Station.FlatWall, HoldStillOnWall, "Climb");
@@ -567,7 +565,7 @@ public partial class ClimbTestRunner : MonoBehaviour
     void Despawn(ulong id) => NetGameManager.Instance.Receive(NetMsg.PlayerDespawn, new PlayerSpawnData { steamId = id }, id);
 
     void Shoot(Vector3 above, int team, ulong ownerId) =>
-        ProjectileManager.Fire(projectilePrefab, above, Vector3.down * 10f, 10, team, true, authoritative: true, ownerId: ownerId);
+        ProjectileManager.Fire(above, Vector3.down * 10f, 10, team, true, authoritative: true, ownerId: ownerId);
 
     // ── On-screen results ───────────────────────────────────────────────────
 

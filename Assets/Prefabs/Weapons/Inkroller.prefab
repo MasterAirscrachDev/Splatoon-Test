@@ -60,7 +60,6 @@ MonoBehaviour:
   windup: 0.2
   followThrough: 0.15
   flickInkCost: 90
-  projectile: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   ballistics:
     velocityOverTime:
       serializedVersion: 2
@@ -111,7 +110,7 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   flickPace: 2
-  dropletScale: 2
+  groundBlobScale: 0.5
   aimInfluence: 1
   flickPitchLimits: {x: -40, y: 60}
   groundDroplets: 50

@@ -43,7 +43,6 @@ public static class FluidLabBuilder
 
         var lab = new GameObject("FluidLab").AddComponent<FluidLab>();
         var so = new SerializedObject(lab);
-        so.FindProperty("projectilePrefab").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Projectile.prefab");
         so.ApplyModifiedPropertiesWithoutUndo();
         AssignWeapons(lab);
 

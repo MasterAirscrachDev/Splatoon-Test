@@ -3,7 +3,7 @@ using UnityEngine;
 
 // Special: a column of ink called in from the map. The column runs from the lowest ground under the
 // area (even when aimed at something tall) to well above the target. It's marked for everyone, then
-// after a moment an ink column (a spinning mesh, with particles spiralling around it) grows out of
+// after a moment an ink column (a spinning mesh, with ink spiralling around it) grows out of
 // nothing into a thin column up its middle, then widens to nearly the whole area for the explosion
 // (the ink and the damage spreading with it), holds, and shrinks back to nothing. The owner's client
 // paints every surface in the column
@@ -46,8 +46,8 @@ public class InkStrike : MonoBehaviour
     const float SpiralTwist = -12f;               // turning with it, their bands slanting like the mesh's ridges (yaw degrees per metre up),
     const int SpiralArms = 3;                     // in this many bands (they leave the ground from fixed points)
     const float SpiralOut = 1.15f;                // just outside its surface
-    [SerializeField] float fluidSize = 0.5f;      // with a FluidRenderer on the camera, the particles are drawn as fluid ink: radius x their size
-    [SerializeField] float fluidStretch = 0.08f;  // and stretched along their motion
+    [SerializeField] float fluidSize = 0.5f;      // its particles are drawn as fluid ink (InkFluid): radius x their size...
+    [SerializeField] float fluidStretch = 0.08f;  // ...stretched along their motion
 
     static readonly int CoreAlpha = Shader.PropertyToID("_CoreAlpha");
     static readonly int RimAlpha = Shader.PropertyToID("_RimAlpha");
@@ -73,8 +73,6 @@ public class InkStrike : MonoBehaviour
     bool authoritative, struck;
     float startTime;
     MaterialPropertyBlock block;
-    ParticleSystem.Particle[] fluidBuffer;
-    bool fluidShown;
 
     public float Radius => radius;
     public float Height => height;
@@ -90,7 +88,7 @@ public class InkStrike : MonoBehaviour
     public float FullWidth => radius * explosionWidth;
     public bool IsOwnedLocally => authoritative;
 
-    public void Begin(ulong ownerId, int team, Vector3 target, bool ownedLocally, Color? teamColour = null)
+    public void Begin(ulong ownerId, int team, Vector3 target, bool ownedLocally)
     {
         this.ownerId = ownerId;
         this.team = team;
@@ -98,9 +96,7 @@ public class InkStrike : MonoBehaviour
         authoritative = ownedLocally;
         startTime = Time.time;
         transform.SetPositionAndRotation(target, Quaternion.identity);
-        NetGameManager gm = NetGameManager.Instance;
-        if (teamColour.HasValue) colour = teamColour.Value; // (the fluid lab: no game manager)
-        else if (gm != null) colour = gm.TeamColour(team);
+        colour = InkFluid.Colour(team);
         block = new MaterialPropertyBlock();
         bottom = FindBottom();
         top = target.y + height;
@@ -111,10 +107,11 @@ public class InkStrike : MonoBehaviour
         marker.localPosition = new Vector3(0f, (top + bottom - 1f) / 2f - target.y, 0f);
         Tint(0.15f, 0.8f);
 
-        // Fit the effects to the column, in the team colour.
+        // Fit the effects to the column, in the team colour (drawn as ink, not by their renderers).
         foreach (ParticleSystem ps in new[] { tornado, burst })
         {
             ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            if (ps.TryGetComponent(out ParticleSystemRenderer look)) look.enabled = false;
             var main = ps.main;
             main.startColor = colour;
         }
@@ -216,37 +213,11 @@ public class InkStrike : MonoBehaviour
         if (done && !tornado.IsAlive(true) && !burst.IsAlive(true)) Destroy(gameObject);
     }
 
-    // With a FluidRenderer on (the fluid lab, for now), the tornado and burst are drawn as fluid ink
-    // instead of particles: each particle a drop, in the team colour (opaque, as ink is).
+    // The tornado and the burst, as ink.
     void LateUpdate()
     {
-        bool fluid = FluidRenderer.Active.Count > 0;
-        if (fluid != fluidShown)
-        {
-            fluidShown = fluid;
-            foreach (ParticleSystem ps in new[] { tornado, burst })
-                if (ps.TryGetComponent(out ParticleSystemRenderer r)) r.enabled = !fluid;
-        }
-        if (!fluid) return;
-        ShowAsFluid(tornado);
-        ShowAsFluid(burst);
-    }
-
-    void ShowAsFluid(ParticleSystem ps)
-    {
-        int max = ps.main.maxParticles;
-        if (fluidBuffer == null || fluidBuffer.Length < max) fluidBuffer = new ParticleSystem.Particle[max];
-        int n = ps.GetParticles(fluidBuffer);
-        bool local = ps.main.simulationSpace == ParticleSystemSimulationSpace.Local;
-        Color c = colour;
-        c.a = 1f;
-        for (int i = 0; i < n; i++)
-        {
-            ParticleSystem.Particle p = fluidBuffer[i];
-            Vector3 at = local ? ps.transform.TransformPoint(p.position) : p.position;
-            Vector3 v = local ? ps.transform.TransformVector(p.totalVelocity) : p.totalVelocity;
-            FluidRenderer.Streak(at, v, p.GetCurrentSize(ps) * 0.5f * fluidSize, c, fluidStretch);
-        }
+        InkFluid.DrawParticles(tornado, fluidSize, fluidStretch);
+        InkFluid.DrawParticles(burst, fluidSize, fluidStretch);
     }
 
     // Sizes the whole column at once: the mesh spans the column from bottom to top at this radius,

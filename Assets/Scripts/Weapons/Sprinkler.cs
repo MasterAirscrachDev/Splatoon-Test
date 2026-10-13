@@ -7,7 +7,6 @@ using UnityEngine;
 // shots on the same schedule (the owner's real shots paint and damage, and their splats sync).
 public class Sprinkler : SubDevice
 {
-    [SerializeField] GameObject projectilePrefab;
     [SerializeField] Transform head;                  // spins about the surface normal; nozzles on its local ±Z
     [SerializeField] float gravity = 20f;             // during the throw
     [SerializeField] float spinStart = 540f, spinEnd = 90f;              // degrees per second
@@ -117,13 +116,13 @@ public class Sprinkler : SubDevice
     // One shot from each nozzle, along the surface and a little away from it.
     void Fire()
     {
-        if (projectilePrefab == null || head == null) return;
+        if (head == null) return;
         for (int side = -1; side <= 1; side += 2)
         {
             Vector3 along = head.forward * side;
             Vector3 dir = (along + transform.up * shotLift).normalized;
             Vector3 from = head.position + along * 0.25f;
-            ProjectileManager.Fire(projectilePrefab, from, dir * ShotSpeed, splashSize, Team, true, authoritative, OwnerId, shotDamage, source: "Sprinkler");
+            ProjectileManager.Fire(from, dir * ShotSpeed, splashSize, Team, true, authoritative, OwnerId, shotDamage, source: "Sprinkler");
         }
         ShotsFired++;
     }

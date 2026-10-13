@@ -214,7 +214,7 @@ public partial class ClimbTestRunner
         sent.Clear();
         for (int i = 0; i < 3; i++)
         {
-            ProjectileManager.Fire(projectilePrefab, remote.BodyCenter + Vector3.up * 3f, Vector3.down * 8f, 10, player.Team, true, authoritative: true, ownerId: player.OwnerId);
+            ProjectileManager.Fire(remote.BodyCenter + Vector3.up * 3f, Vector3.down * 8f, 10, player.Team, true, authoritative: true, ownerId: player.OwnerId);
             yield return Hold(Still, false, 0.25f, "shoot");
         }
         yield return Hold(Still, false, 0.5f, "shoot");

@@ -29,7 +29,6 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
     [SerializeField] Vector3 velocity;
     [SerializeField] GameObject ViewmodelPlayer, ViewmodelSquid, InkTankScaler;
     [SerializeField] GameObject InkExitSplashPrefab;
-    [SerializeField] GameObject swimSplashParticlesPrefab;
     [SerializeField] Material mat;
 
     [Header("Ink")]

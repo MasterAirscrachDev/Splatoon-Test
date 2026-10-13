@@ -60,7 +60,6 @@ MonoBehaviour:
   windup: 0.12
   followThrough: 0.2
   sloshInkCost: 70
-  projectile: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   ballistics:
     velocityOverTime:
       serializedVersion: 2
@@ -118,7 +117,6 @@ MonoBehaviour:
   sway: 2.5
   droplets: 20
   dropletSpeed: {x: 0, y: 7}
-  dropletScale: 1.5
   dropletDamage:
     damage: 35
     scaleOverTime:
@@ -156,7 +154,7 @@ MonoBehaviour:
       m_RotationOrder: 4
   dropletSplat: 10
   blobSpeed: 8
-  blobScale: 1.9
+  blobLook: 1.27
   blobHitScale: 1.8
   blobDamage:
     damage: 90

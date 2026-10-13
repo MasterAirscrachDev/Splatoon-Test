@@ -268,7 +268,7 @@ public partial class ClimbTestRunner
         Vector3 aim = player.BodyCenter;
         Vector3 from = aim - forward * 9f;
         var straight = new Ballistics { gravityOverTime = AnimationCurve.Constant(0f, 1f, 0f) };
-        ProjectileManager.Fire(projectilePrefab, from, (aim - from).normalized * 30f, 10, enemyTeam, ownerId: 4242, damage: 40f, ballistics: straight);
+        ProjectileManager.Fire(from, (aim - from).normalized * 30f, 10, enemyTeam, ownerId: 4242, damage: 40f, ballistics: straight);
         yield return HoldUntil(Still, false, 1f, "shot", f => stoppedAt.HasValue);
         ProjectileManager.Impact -= onImpact;
         yield return Hold(Still, false, 0.4f, "attacked");

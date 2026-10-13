@@ -5033,7 +5033,6 @@ MonoBehaviour:
   runOnStart: 1
   filter: 
   exitPlayModeWhenDone: 0
-  projectilePrefab: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   writeTraces: 1
 --- !u!4 &2095814482
 Transform:

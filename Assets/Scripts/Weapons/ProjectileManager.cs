@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Pool;
 
 // Every ink projectile in flight. Shots are plain data, moved each frame in steps of at most
 // MaxStep: launch velocity × its speed curve, plus the shooter's carried velocity, plus gravity
@@ -11,8 +10,8 @@ using UnityEngine.Pool;
 // inkable).
 // Shots with a blast (see InkBlast) explode instead of splatting: on whatever they hit, or in
 // mid-air once they've flown their maxDistance. Remote replays (authoritative = false) only fly,
-// splash and show their explosions. Visuals are pooled per prefab; hidden
-// shots have none.
+// splash and show their explosions. Seen shots are drawn as fluid ink (InkFluid: the shot, its
+// companion blobs, and a splatter where it lands), sized from their splat; hidden ones only paint.
 public class ProjectileManager : MonoBehaviour
 {
     public class Shot
@@ -20,11 +19,11 @@ public class ProjectileManager : MonoBehaviour
         public Vector3 position, launch, inherit, fallVelocity;
         public float age;
         public Ballistics ballistics;
-        public GameObject prefab;
-        public ProjectileVisual visual;
+        public bool visible;
+        public float drawRadius, seed;        // its look (InkFluid)
         public float radius, damage;
         public int splashSize, team;
-        public bool authoritative, impactParticles;
+        public bool authoritative, splashes;  // splashes: a splatter where it lands (seen shots)
         public ulong ownerId;
         public string source; // what fired it, for "splatted with"
         public float maxDistance, travelled; // explodes in mid-air at maxDistance (0: no limit)
@@ -39,6 +38,7 @@ public class ProjectileManager : MonoBehaviour
         public Vector3 Velocity => launch * ballistics.velocityOverTime.Evaluate(age) + inherit + fallVelocity;
     }
 
+    public const float HitRadius = 0.12f; // a shot's, before its radiusScale
     const float MaxStep = 1f / 120f; // longest single movement step
     const float MaxLifetime = 10f;
     const float KillHeight = -10f;   // fell off the level
@@ -57,14 +57,21 @@ public class ProjectileManager : MonoBehaviour
 
     readonly List<Shot> live = new List<Shot>();
     readonly Stack<Shot> spare = new Stack<Shot>();
-    readonly Dictionary<GameObject, ObjectPool<ProjectileVisual>> pools = new Dictionary<GameObject, ObjectPool<ProjectileVisual>>();
-    readonly Dictionary<GameObject, ProjectileVisual> templates = new Dictionary<GameObject, ProjectileVisual>();
     readonly RaycastHit[] hits = new RaycastHit[16];
     static readonly HitDistance ByDistance = new HitDistance();
-    int hitMask, visualsCreated;
+    int hitMask, shotsCreated;
 
     public static int LiveCount => instance != null ? instance.live.Count : 0;
-    public static int VisualsCreated => instance != null ? instance.visualsCreated : 0; // tests: pooling
+    public static int ShotsCreated => instance != null ? instance.shotsCreated : 0; // tests: pooling
+    public static int VisibleCount
+    {
+        get
+        {
+            int n = 0;
+            if (instance != null) foreach (Shot s in instance.live) if (s.visible) n++;
+            return n;
+        }
+    }
 
     void Awake()
     {
@@ -81,31 +88,32 @@ public class ProjectileManager : MonoBehaviour
     }
 
     // Launches a shot: `launch` is its starting velocity (direction × speed), `inherit` the shooter's
-    // carried velocity.
-    public static Shot Fire(GameObject prefab, Vector3 origin, Vector3 launch, int splashSize, int team,
+    // carried velocity. A seen one is drawn `look` x the usual size for its splat (InkFluid.Radius),
+    // with `kind`'s companion blobs.
+    public static Shot Fire(Vector3 origin, Vector3 launch, int splashSize, int team,
                             bool visible = true, bool authoritative = true, ulong ownerId = 0, float damage = 30f,
-                            bool impactParticles = true, Ballistics ballistics = null, Vector3 inherit = default,
+                            bool splashes = true, Ballistics ballistics = null, Vector3 inherit = default,
                             string source = null, float maxDistance = 0f, InkBlast blast = null,
-                            float trailSpacing = 0f, int trailSize = 0, HashSet<Object> hitGroup = null, float visualScale = 1f,
-                            DamageFalloff falloff = null, float radiusScale = 1f)
+                            float trailSpacing = 0f, int trailSize = 0, HashSet<Object> hitGroup = null, float look = 1f,
+                            DamageFalloff falloff = null, float radiusScale = 1f, FluidKind kind = FluidKind.Shot)
     {
         ProjectileManager m = Instance;
-        ProjectileVisual template = m.Template(prefab);
-        Shot s = m.spare.Count > 0 ? m.spare.Pop() : new Shot();
+        Shot s;
+        if (m.spare.Count > 0) s = m.spare.Pop();
+        else { s = new Shot(); m.shotsCreated++; }
         s.position = origin;
         s.launch = launch;
         s.inherit = inherit;
         s.fallVelocity = Vector3.zero;
         s.age = 0f;
         s.ballistics = ballistics ?? Ballistics.Default;
-        s.prefab = prefab;
-        s.radius = (template != null ? template.HitRadius : 0.12f) * radiusScale;
+        s.radius = HitRadius * radiusScale;
         s.damage = falloff != null ? falloff.damage : damage;
         s.falloff = falloff;
         s.splashSize = splashSize;
         s.team = team;
         s.authoritative = authoritative;
-        s.impactParticles = impactParticles;
+        s.splashes = splashes;
         s.ownerId = ownerId;
         s.source = source;
         s.maxDistance = maxDistance;
@@ -115,13 +123,13 @@ public class ProjectileManager : MonoBehaviour
         s.trailSize = trailSize;
         s.sinceDrip = 0f;
         s.hitGroup = hitGroup;
-        NetGameManager gm = NetGameManager.Instance;
-        s.colour = gm == null ? Color.white : gm.TeamColour(team);
-        s.visual = visible && template != null ? m.pools[prefab].Get() : null;
-        if (s.visual != null)
+        s.colour = InkFluid.Colour(team);
+        s.visible = visible;
+        if (visible)
         {
-            s.visual.Show(s.colour, splashSize, visualScale);
-            s.visual.Follow(origin, s.Velocity);
+            s.drawRadius = InkFluid.Radius(splashSize, look);
+            s.seed = Random.value * 100f;
+            InkFluid.Companions(origin, launch, inherit, s.ballistics, s.drawRadius, s.colour, kind, maxDistance);
         }
         m.live.Add(s);
         return s;
@@ -129,13 +137,12 @@ public class ProjectileManager : MonoBehaviour
 
     void Update()
     {
-        float dt = Time.deltaTime;
-        if (dt <= 0f) return;
+        float dt = Time.deltaTime; // (0 while paused: still drawn)
         for (int i = live.Count - 1; i >= 0; i--) // removal swaps in the last one, already done
         {
             Shot s = live[i];
-            if (Advance(s, dt)) { Retire(i); continue; }
-            if (s.visual != null) s.visual.Follow(s.position, s.Velocity);
+            if (dt > 0f && Advance(s, dt)) { Retire(i); continue; }
+            if (s.visible) InkFluid.DrawShot(s.position, s.Velocity, s.drawRadius, s.age, s.seed, s.colour);
         }
     }
 
@@ -221,8 +228,7 @@ public class ProjectileManager : MonoBehaviour
             Vector3 at = from + dir * barrierAt;
             pad.Pulse(at);
             Detonate(s, at - dir * 0.1f, null);
-            if (s.impactParticles && templates.TryGetValue(s.prefab, out ProjectileVisual t) && t != null)
-                InkParticles.Spawn(t.SplashParticles, at, Quaternion.FromToRotation(Vector3.up, (at - pad.Centre).normalized), s.colour);
+            if (s.splashes && s.visible) InkFluid.Splatter(at, (at - pad.Centre).normalized, s.Velocity, s.drawRadius, s.colour);
             End(s, at, EndReason.Barrier);
             return true;
         }
@@ -238,15 +244,14 @@ public class ProjectileManager : MonoBehaviour
 
     static bool FirstHit(Shot s, Object target) => s.hitGroup == null || s.hitGroup.Add(target);
 
-    // Splats the surface (re-cast onto it for the exact point and, for mesh colliders, its UV).
+    // Splats the surface (re-cast onto it for the exact point and, for mesh colliders, its UV), and
+    // splatters there if it's seen (on any surface).
     void Land(Shot s, Collider surface, Ray probe)
     {
         if (!surface.Raycast(probe, out RaycastHit hit, 2f)) return;
+        if (s.splashes && s.visible) InkFluid.Splatter(hit.point, hit.normal, s.Velocity, s.drawRadius, s.colour);
         SurfaceInkManager ink = surface.GetComponent<SurfaceInkManager>();
-        if (ink == null) return;
-        if (s.authoritative) ink.SplatAt(hit, s.splashSize, s.team); // remotes get the shooter's Splat message
-        if (s.impactParticles && templates.TryGetValue(s.prefab, out ProjectileVisual t) && t != null)
-            InkParticles.Spawn(t.SplashParticles, hit.point, Quaternion.FromToRotation(Vector3.up, hit.normal), s.colour);
+        if (ink != null && s.authoritative) ink.SplatAt(hit, s.splashSize, s.team); // remotes get the shooter's Splat message
     }
 
     // A trail under its path: every trailSpacing metres, a small unseen drip that falls and splats
@@ -258,8 +263,8 @@ public class ProjectileManager : MonoBehaviour
         while (s.sinceDrip >= s.trailSpacing)
         {
             s.sinceDrip -= s.trailSpacing;
-            Fire(s.prefab, s.position, s.Velocity * DripCarry + Vector3.down * FallSpeed, s.trailSize, s.team,
-                 visible: false, authoritative: true, ownerId: s.ownerId, damage: 0f, impactParticles: false);
+            Fire(s.position, s.Velocity * DripCarry + Vector3.down * FallSpeed, s.trailSize, s.team,
+                 visible: false, authoritative: true, ownerId: s.ownerId, damage: 0f, splashes: false);
         }
     }
 
@@ -268,38 +273,15 @@ public class ProjectileManager : MonoBehaviour
 
     static void Detonate(Shot s, Vector3 centre, Object exclude)
     {
-        if (s.blast != null) InkExplosion.Detonate(centre, s.blast, s.team, s.ownerId, s.source, s.authoritative, s.colour, exclude, s.prefab);
+        if (s.blast != null) InkExplosion.Detonate(centre, s.blast, s.team, s.ownerId, s.source, s.authoritative, s.colour, exclude, falls: true);
     }
 
     void Retire(int index)
     {
         Shot s = live[index];
-        if (s.visual != null) pools[s.prefab].Release(s.visual);
-        s.visual = null;
         live[index] = live[live.Count - 1];
         live.RemoveAt(live.Count - 1);
         spare.Push(s);
-    }
-
-    // The prefab's ProjectileVisual (radius, splashes), and a pool of its instances.
-    ProjectileVisual Template(GameObject prefab)
-    {
-        if (templates.TryGetValue(prefab, out ProjectileVisual t)) return t;
-        t = prefab.GetComponent<ProjectileVisual>();
-        templates[prefab] = t;
-        pools[prefab] = new ObjectPool<ProjectileVisual>(
-            createFunc: () =>
-            {
-                visualsCreated++;
-                GameObject go = Instantiate(prefab, transform);
-                go.SetActive(false);
-                return go.GetComponent<ProjectileVisual>();
-            },
-            actionOnGet: v => v.gameObject.SetActive(true),
-            actionOnRelease: v => v.gameObject.SetActive(false),
-            actionOnDestroy: v => { if (v != null) Destroy(v.gameObject); },
-            collectionCheck: false, defaultCapacity: 32, maxSize: 512);
-        return t;
     }
 
     class HitDistance : IComparer<RaycastHit>

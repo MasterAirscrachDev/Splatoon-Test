@@ -160,6 +160,8 @@ MonoBehaviour:
   riseTime: 1
   holdTime: 0.5
   shrinkTime: 0.6
+  fluidSize: 0.6
+  fluidStretch: 0.08
 --- !u!1 &5435339387045829602
 GameObject:
   m_ObjectHideFlags: 0

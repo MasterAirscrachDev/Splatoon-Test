@@ -293,8 +293,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2f4d2b0c70e4e3e45ba2ef590d7afed8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FluidLab
-  look: 0
-  projectilePrefab: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   weapons:
   - {fileID: 1912437224533128077, guid: f3235f49b560e5a4fa14f7a37e3fba23, type: 3}
   - {fileID: 1680705428740658682, guid: 66bb45dbe338dbf428fa6876f82e5523, type: 3}
@@ -306,37 +304,11 @@ MonoBehaviour:
   - {fileID: 6419638794776388096, guid: 19c78d1aef5f42a42abd3b4d0aa86510, type: 3}
   - {fileID: 4818481672707639767, guid: 9c3d89b636d850942a89cd56c2de88ca, type: 3}
   colourSet: 1
-  sizeScale: 0.8
-  stretch: 0.1
-  wobble: 0.12
-  companions: 2
-  companionSize: {x: 0.5, y: 0.85}
-  companionSpread: 2
-  companionSpeed: 0.05
-  rollerBlobSize: 0.5
-  rollerCompanions: 4
-  bucketCompanionYaw: 3
   sprinklerPrefab: {fileID: 852578584976174736, guid: 0ee17466c68115242acdeaf34118f21c, type: 3}
   inkStrikePrefab: {fileID: 2160948365701607404, guid: 08b0142f80215a64796af04ac1ab99a2, type: 3}
   sprinklerAt: {x: 18.5, y: 0, z: 14}
   inkStrikeAt: {x: -18.5, y: 0, z: 14}
   inkStrikeEvery: 6
-  crownBlobs: {x: 2, y: 4}
-  crownSize: {x: 0.35, y: 0.55}
-  crownKick: 2.5
-  puddleDrops: 6
-  puddleTime: 0.22
-  coreReach: 0.45
-  coreTime: 0.35
-  coreBlobs: 6
-  coreSize: {x: 0.55, y: 0.8}
-  coreScatter: 0.2
-  shellBlobs: 18
-  shellSize: {x: 0.1, y: 0.16}
-  shellSpeed: {x: 4, y: 6}
-  shellLife: 0.2
-  shellShrink: 0.5
-  fillersSeen: 0.33
   paused: 0
   timeScale: 1
 --- !u!1001 &590529192
@@ -743,32 +715,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 766e23a5aa507ef4db26162abd2ec28b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FluidRenderer
-  particleShader: {fileID: 0}
-  smoothShader: {fileID: 0}
-  compositeShader: {fileID: 0}
-  smoothRadius: 0.16
-  depthFalloff: 6
-  smoothIterations: 2
-  bridging: 0.5
-  maxBlurPixels: 24
-  resolutionScale: 1
-  minPixels: 2.5
-  depthNormals: 0.1
-  roundness: 1
-  edgeSharpness: 400
-  gloss: 0.8
-  specular: 1.4
-  reflection: 0.3
-  bodySmoothness: 0.4
-  ambient: 1
-  brightness: 1
-  rimStrength: 0.9
-  rimPower: 1.5
-  rimThickness: 0.05
-  rimWhiten: 0.55
-  rippleFrequency: 5
-  rippleStrength: 0
-  rippleFlow: 1.2
   debugFlatUp: 0
   showInSceneView: 1
 --- !u!1660057539 &9223372036854775807

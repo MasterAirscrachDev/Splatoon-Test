@@ -94,7 +94,6 @@ MonoBehaviour:
   releaseAt: 0.5
   swipeArc: 80
   swipeInkCost: 36
-  projectile: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
   ballistics:
     velocityOverTime:
       serializedVersion: 2
@@ -145,7 +144,6 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   swipePace: 2
-  dropletScale: 1.4
   aimInfluence: 1
   swipePitchLimits: {x: -40, y: 50}
   droplets: 12

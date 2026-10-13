@@ -183,7 +183,7 @@ MonoBehaviour:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
-  projectile: {fileID: 5979602811974540492, guid: 308507e63ec6b0143ba5891c1110c49e, type: 3}
+  shotLook: 0.6
   muzzle: {fileID: 6464432039994988910}
   blast:
     radius: 2.4
@@ -194,7 +194,6 @@ MonoBehaviour:
     splashSize: 17
     fallingDrops: 5
     fallSpread: 0.5
-    effect: {fileID: 7185872467873977352, guid: 11a8dd7a6c667b74b89b51781565ea33, type: 3}
 --- !u!1001 &1940150712976130611
 PrefabInstance:
   m_ObjectHideFlags: 0

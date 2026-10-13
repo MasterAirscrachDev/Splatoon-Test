@@ -14,10 +14,9 @@ public class InkBlast
     public int splashSize = 10;         // each splat it leaves
     public int fallingDrops = 5;        // ...and its ink falls to whatever is below it (unseen, harmless)
     public float fallSpread = 0.7f;     // landing up to this far around under it
-    public GameObject effect;           // InkBlastEffect, swelling to the radius in the team colour
 }
 
-// Explodes ink at a point: everyone sees it (the effect); the owner's copy also paints every
+// Explodes ink at a point: everyone sees it (InkFluid's blast, sized to its radius); the owner's copy also paints every
 // surface within its ink reach (rays out in all directions, so floors, walls and ceilings), drops
 // ink that falls to the surface below (so a blast in mid-air still inks the ground under it), and
 // hurts enemies, and their subs, it can see from the centre: full damage in the core, falling to
@@ -38,12 +37,12 @@ public static class InkExplosion
     }
 
     // exclude: whoever it already hit directly (they took the direct damage instead).
-    // drop: the projectile its falling ink flies as (none: it doesn't fall).
+    // falls: its ink also falls to whatever is below it.
     public static void Detonate(Vector3 centre, InkBlast blast, int team, ulong ownerId, string source, bool authoritative, Color colour,
-                                Object exclude = null, GameObject drop = null)
+                                Object exclude = null, bool falls = false)
     {
         if (blast == null) return;
-        if (blast.effect != null) InkBlastEffect.Spawn(blast.effect, centre, blast.radius, colour);
+        InkFluid.Explode(centre, blast.radius, colour);
         if (!authoritative) return;
 
         foreach (Vector3 dir in Rays)
@@ -52,7 +51,7 @@ public static class InkExplosion
             SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
             if (ink != null) ink.SplatAt(hit, blast.splashSize, team);
         }
-        if (drop != null) Fall(centre, blast, team, ownerId, drop);
+        if (falls) Fall(centre, blast, team, ownerId);
         if (blast.coreDamage <= 0f && blast.edgeDamage <= 0f) return; // ink only (a splatted player's burst)
 
         var struck = new HashSet<Object>();
@@ -77,7 +76,7 @@ public static class InkExplosion
 
     // One drop straight down and the rest in a ring around it, falling fast from beside the centre
     // (any that would start inside a wall are skipped).
-    static void Fall(Vector3 centre, InkBlast blast, int team, ulong ownerId, GameObject drop)
+    static void Fall(Vector3 centre, InkBlast blast, int team, ulong ownerId)
     {
         float turn = Random.Range(0f, 360f);
         for (int i = 0; i < blast.fallingDrops; i++)
@@ -86,8 +85,8 @@ public static class InkExplosion
                 : Quaternion.Euler(0f, turn + 360f * i / (blast.fallingDrops - 1), 0f) * Vector3.forward * (blast.fallSpread * Random.Range(0.6f, 1f));
             Vector3 from = centre + offset;
             if (i > 0 && Physics.Linecast(centre, from, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) continue;
-            ProjectileManager.Fire(drop, from, Vector3.down * ProjectileManager.FallSpeed, blast.splashSize, team,
-                                   visible: false, authoritative: true, ownerId: ownerId, damage: 0f, impactParticles: false);
+            ProjectileManager.Fire(from, Vector3.down * ProjectileManager.FallSpeed, blast.splashSize, team,
+                                   visible: false, authoritative: true, ownerId: ownerId, damage: 0f, splashes: false);
         }
     }
 

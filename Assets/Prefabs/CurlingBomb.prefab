@@ -65,7 +65,6 @@ MonoBehaviour:
   blastRadius: 2.2
   blastDamage: 180
   blastSplash: 22
-  blastEffect: {fileID: 7185872467873977352, guid: 11a8dd7a6c667b74b89b51781565ea33, type: 3}
   blinker: {fileID: 1138203960468566452}
   body: {fileID: 2112102138575536369}
 --- !u!1 &3587090907586885633

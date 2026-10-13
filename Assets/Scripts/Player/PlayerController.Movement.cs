@@ -162,8 +162,7 @@ public partial class PlayerController
         if ((enteredSwimModeOnInk || landedOnInkFromHeight) && Time.time - lastEnterSplatTime >= 0.2f)
         {
             lastEnterSplatTime = Time.time;
-            InkParticles.Spawn(swimSplashParticlesPrefab, transform.position + controller.center,
-                Quaternion.FromToRotation(Vector3.up, groundNormal), teamColor);
+            InkFluid.Burst(transform.position, groundNormal, teamColor, 8, new Vector2(0.08f, 0.15f), 3.5f);
         }
 
         // Exit splash on leaving own ink while still swimming.

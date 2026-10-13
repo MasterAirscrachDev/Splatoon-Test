@@ -484,7 +484,7 @@ public partial class ClimbTestRunner
         for (int i = 0; i < 12; i++)
         {
             Vector3 p = station.TransformPoint(new Vector3(-9f + (i % 6) * 3.5f, 3f, -4f - (i / 6) * 3.5f));
-            ProjectileManager.Fire(projectilePrefab, p, Vector3.down * 8f, 30, player.Team, true, authoritative: true, ownerId: player.OwnerId);
+            ProjectileManager.Fire(p, Vector3.down * 8f, 30, player.Team, true, authoritative: true, ownerId: player.OwnerId);
         }
         yield return Hold(Still, false, 2.5f, "turf");
         Note($"our coverage {ourShare():P2}, bar fill {(player.Team == 1 ? hud.ShownAlphaFill : 0f):F4}");

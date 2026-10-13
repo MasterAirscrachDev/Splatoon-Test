@@ -16,7 +16,7 @@ public class Blaster : Weapon
     [SerializeField] float trailSpacing = 0.45f;      // the shot drips ink along its path this often (metres)
     [SerializeField] int trailSize = 9;               // each drip's splat
     [SerializeField] Ballistics ballistics = new Ballistics { gravityOverTime = AnimationCurve.Constant(0f, 1f, 0f) }; // no drop
-    [SerializeField] GameObject projectile;
+    [SerializeField] float shotLook = 0.6f;          // its shot drawn this x the usual size for its shot size (it doesn't paint itself)
     [SerializeField] Transform muzzle;
 
     [Header("Blast")]
@@ -66,7 +66,7 @@ public class Blaster : Weapon
             if (cameraAim != null) cameraAim.Apply();
         }
         // Still shooting (not out of ink or in swim form): a shot went out within the last cycle.
-        UpdateFeetInk(player, firing && lastShotTime >= 0f && Time.time - lastShotTime <= fireRate + 0.05f, projectile);
+        UpdateFeetInk(player, firing && lastShotTime >= 0f && Time.time - lastShotTime <= fireRate + 0.05f);
         if (!firing || Time.time - lastShotTime < fireRate || !player.ConsumeInk(inkCostPerShot * 0.001f)) return;
         lastShotTime = Time.time;
         Shots++;
@@ -82,15 +82,15 @@ public class Blaster : Weapon
 
     void Fire(Vector3 from, Vector3 launch, Vector3 inherit, int team, ulong ownerId, bool authoritative)
     {
-        ProjectileManager.Fire(projectile, from, launch, shotSize, team, true, authoritative, ownerId, 0f, falloff: directDamage,
-                               impactParticles: false, ballistics: ballistics, inherit: inherit, source: Source,
+        ProjectileManager.Fire(from, launch, shotSize, team, true, authoritative, ownerId, 0f, falloff: directDamage,
+                               splashes: false, look: shotLook, ballistics: ballistics, inherit: inherit, source: Source,
                                maxDistance: range, blast: blast, trailSpacing: trailSpacing, trailSize: trailSize);
     }
 
     // Their shot, visual-only here: it flies and explodes the same way.
     public override void Replay(ProjectileSpawnData d)
     {
-        if (d.velocities == null || d.velocities.Length < 3 || projectile == null) return;
+        if (d.velocities == null || d.velocities.Length < 3) return;
         Vector3 inherit = d.inherit != null ? (Vector3)d.inherit : Vector3.zero;
         Fire(d.origin, new Vector3(d.velocities[0], d.velocities[1], d.velocities[2]), inherit, d.team, d.shooterSteamId, authoritative: false);
     }

@@ -31,7 +31,8 @@ public class SwimWake : MonoBehaviour
     [SerializeField] float rippleSpeed = 3f;      // metres per second
 
     [Header("Spray")]
-    [SerializeField] ParticleSystem spray;        // droplets thrown off the side wakes (world space, emitted from here)
+    [SerializeField] ParticleSystem spray;        // droplets thrown off the side wakes (world space, emitted from here; drawn as ink)
+    [SerializeField] float sprayFluidSize = 0.6f; // their radius as ink, x their size
     [SerializeField] float sprayRate = 60f;       // per side wake per second, at full speed
     [SerializeField] float sprayLift = 2f;        // upward speed, metres per second (at full speed)
     [SerializeField] float sprayOut = 0.8f;       // and outward
@@ -85,6 +86,7 @@ public class SwimWake : MonoBehaviour
         block = new MaterialPropertyBlock();
         block.SetFloat(SeedId, Random.Range(0f, 100f));
         block.SetFloat(ShapeAmpId, SurfaceNoise);
+        if (spray != null && spray.TryGetComponent(out ParticleSystemRenderer look)) look.enabled = false; // drawn as ink
     }
 
     void OnDestroy()
@@ -101,6 +103,7 @@ public class SwimWake : MonoBehaviour
 
     void LateUpdate()
     {
+        InkFluid.DrawParticles(spray, sprayFluidSize, 0.05f);
         float dt = Time.deltaTime;
         view.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
         bool submerged = player != null && !player.IsDead && player.IsInInk && FindSurface(out centre, out up);

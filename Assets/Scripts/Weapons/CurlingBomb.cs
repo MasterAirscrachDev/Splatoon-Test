@@ -7,7 +7,7 @@ using UnityEngine;
 // its light blinking faster as it runs out; then it explodes, inking a wide patch and hurting
 // enemies (and their subs) nearby. The owner's copy paints and damages; remote copies slide the
 // same way, resynced from the owner's updates (sent at the throw and on every bounce), and show
-// the same blast (InkBlastEffect) on their own timer. It can't be shot.
+// the same blast (InkFluid) on their own timer. It can't be shot.
 public class CurlingBomb : SubDevice
 {
     [Header("Slide")]
@@ -27,7 +27,6 @@ public class CurlingBomb : SubDevice
     [SerializeField] float blastRadius = 3f;
     [SerializeField] float blastDamage = 45f;
     [SerializeField] int blastSplash = 26;        // splats around the blast
-    [SerializeField] GameObject blastEffect;      // InkBlastEffect, sized to the blast, in the team colour
     [SerializeField] Renderer blinker;            // flashes, faster as the fuse runs out
     [SerializeField] Transform body;              // hidden at the blast
 
@@ -250,7 +249,7 @@ public class CurlingBomb : SubDevice
         exploded = true;
         Vector3 centre = Centre;
         if (body != null) body.gameObject.SetActive(false);
-        if (blastEffect != null) InkBlastEffect.Spawn(blastEffect, centre, blastRadius, colour);
+        InkFluid.Explode(centre, blastRadius, colour);
         if (authoritative)
         {
             // Ink: straight down, a ring around it, and outwards in every direction (nearby walls).
