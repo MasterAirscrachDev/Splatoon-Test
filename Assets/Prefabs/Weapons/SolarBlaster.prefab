@@ -183,7 +183,14 @@ MonoBehaviour:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
-  shotLook: 0.6
+  shotLook:
+    size: 0.6
+    stretch: 0.1
+    companions: 2
+    companionSize: {x: 0.5, y: 0.85}
+    upDownSpread: 4
+    sideSpread: 4
+    speedSpread: 0.05
   muzzle: {fileID: 6464432039994988910}
   blast:
     radius: 2.4

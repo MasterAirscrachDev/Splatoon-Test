@@ -324,10 +324,13 @@ public class PlayerLoadout : MonoBehaviour
         return true;
     }
 
-    // From in front of us, along the camera's aim plus a lob.
+    // Where a sub is held (and thrown from): in hand, at our right side.
+    public Vector3 Hand => player.transform.TransformPoint(holdOffset);
+
+    // From our hand, along the camera's aim plus a lob.
     void SprinklerThrow(out Vector3 from, out Vector3 velocity)
     {
-        from = player.BodyCenter + Vector3.up * 0.4f + Vector3.ProjectOnPlane(player.AimForward, Vector3.up).normalized * 0.6f;
+        from = Hand;
         velocity = player.AimForward * throwSpeed + Vector3.up * throwLift;
     }
 

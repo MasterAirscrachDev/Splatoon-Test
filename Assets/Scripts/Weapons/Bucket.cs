@@ -11,35 +11,36 @@ using UnityEngine;
 public class Bucket : Weapon
 {
     [Header("Slosh")]
-    [SerializeField] float sloshRate = 0.6f;          // seconds between sloshes
-    [SerializeField] float windup = 0.12f;            // swing back before the ink leaves
-    [SerializeField] float followThrough = 0.2f;      // swing on after it does
-    [SerializeField] float sloshInkCost = 70f;        // x0.001 of a full tank
+    [SerializeField, Tooltip("Seconds between sloshes")] float sloshRate = 0.6f;
+    [SerializeField, Tooltip("Swing back before the ink leaves")] float windup = 0.12f;
+    [SerializeField, Tooltip("Swing on after it does")] float followThrough = 0.2f;
+    [SerializeField, Tooltip("Ink per use, in thousandths of a full tank")] float sloshInkCost = 70f;
     [SerializeField] Ballistics ballistics = new Ballistics();
-    [SerializeField] float sloshPace = 2f;            // the ink flies its path this many times as fast (speeds below are before it)
-    [SerializeField] float aimInfluence = 1f;         // how much looking up/down tilts the throw (1: as much as the view)
-    [SerializeField] Vector2 sloshPitchLimits = new Vector2(-60f, 70f); // degrees (down, up) the throw can be aimed
-    [SerializeField] float sloshPitch = 8f;           // degrees up from the view (the roller's air flick is 20)
-    [SerializeField] float spread = 2f;               // degrees of wobble, left and right...
-    [SerializeField] float sway = 2.5f;               // ...and of the line's bend side to side (a different one each slosh): not dead straight
+    [SerializeField, Tooltip("The ink flies its whole path this many times as fast (the speeds below are before it): snappy, landing where it would")] float sloshPace = 2f;
+    [SerializeField, Tooltip("How much looking up/down tilts the throw (1: as much as the view)")] float aimInfluence = 1f;
+    [SerializeField, Tooltip("Degrees (down, up) the throw can be aimed")] Vector2 sloshPitchLimits = new Vector2(-60f, 70f);
+    [SerializeField, Tooltip("How far above the view the slosh is thrown (degrees; the roller's air flick is 20)")] float sloshPitch = 8f;
+    [SerializeField, Tooltip("Random left-right wobble on each droplet (degrees, ±)")] float spread = 2f;
+    [SerializeField, Tooltip("How far the whole line bends side to side (degrees): a different gentle curve each slosh, so it's not dead straight")] float sway = 2.5f;
 
     [Header("Stream: the droplets behind the blob")]
-    [SerializeField] int droplets = 6;
-    [SerializeField] Vector2 dropletSpeed = new Vector2(6f, 11f);    // nearest to furthest, so they land along a line
+    [SerializeField, Tooltip("Droplets in the stream behind the blob")] int droplets = 6;
+    [SerializeField, Tooltip("Launch speeds from the nearest droplet to the furthest (before Slosh Pace), so they land along a line")] Vector2 dropletSpeed = new Vector2(6f, 11f);
     [SerializeField] DamageFalloff dropletDamage = new DamageFalloff(35f, DamageFalloff.HoldThenFall(0.1f, 0.5f, 0.5f));
-    [SerializeField] int dropletSplat = 10;
+    [SerializeField, Tooltip("Each droplet's splat size (also how big it's drawn)")] int dropletSplat = 10;
+    [SerializeField, Tooltip("How the droplets are drawn")] ShotLook dropletLook = new ShotLook { companions = 3, upDownSpread = 1f, sideSpread = 3f, speedSpread = 0.1f };
 
     [Header("Blob: the stream's front")]
-    [SerializeField] float blobSpeed = 12f;           // a little faster than the furthest droplet: out in front (about the air flick's reach)
-    [SerializeField] float blobLook = 1.27f;          // drawn this x the usual size for its splat (with its bigger splat, over twice a droplet)
-    [SerializeField] float blobHitScale = 1.8f;       // x a shot's hit radius: a bigger target to land
-    [SerializeField] DamageFalloff blobDamage = new DamageFalloff(90f, DamageFalloff.HoldThenFall(0.15f, 0.6f, 0.65f)); // well over a droplet's
-    [SerializeField] int blobSplat = 18;
+    [SerializeField, Tooltip("A little faster than the furthest droplet: out in front (about the air flick's reach)")] float blobSpeed = 12f;
+    [SerializeField, Tooltip("How the blob is drawn (its bigger splat already draws it bigger than a droplet)")] ShotLook blobLook = new ShotLook { size = 1.27f, companions = 3, upDownSpread = 1f, sideSpread = 3f, speedSpread = 0.1f };
+    [SerializeField, Tooltip("Its hit radius, x a normal shot's: easier to land")] float blobHitScale = 1.8f;
+    [SerializeField, Tooltip("Well over a droplet's")] DamageFalloff blobDamage = new DamageFalloff(90f, DamageFalloff.HoldThenFall(0.15f, 0.6f, 0.65f));
+    [SerializeField, Tooltip("Its splat size (also how big it's drawn)")] int blobSplat = 18;
 
     [Header("Model")]
-    [SerializeField] float idlePitch = 0f;            // hanging from the hand
-    [SerializeField] float swingBack = 35f;           // degrees back at the top of the windup...
-    [SerializeField] float swingForward = -110f;      // ...and tipped forward as the ink leaves
+    [SerializeField, Tooltip("Hanging from the hand")] float idlePitch = 0f;
+    [SerializeField, Tooltip("How far it swings back at the top of the windup (degrees)")] float swingBack = 35f;
+    [SerializeField, Tooltip("How far it tips forward as the ink leaves (degrees)")] float swingForward = -110f;
     [SerializeField] float poseSpeed = 14f;
 
     enum State { Idle, Slosh }
@@ -62,7 +63,7 @@ public class Bucket : Weapon
     public int Droplets => droplets;
     public int BlobSplat => blobSplat;
     public int DropletSplat => dropletSplat;
-    public float BlobLook => blobLook;
+    public ShotLook BlobLook => blobLook;
     public float BlobHitScale => blobHitScale;
     public float SloshRate => sloshRate;
     public float SloshInkCost => sloshInkCost;
@@ -173,7 +174,7 @@ public class Bucket : Weapon
     {
         ProjectileManager.Fire(from, launch, size, team, true, authoritative, ownerId, 0f,
                                ballistics: paced ?? ballistics, falloff: authoritative ? (blob ? blobDamage : dropletDamage) : null, inherit: inherit,
-                               source: Source, hitGroup: hits, look: blob ? blobLook : 1f, radiusScale: blob ? blobHitScale : 1f, kind: FluidKind.Bucket);
+                               source: Source, hitGroup: hits, look: blob ? blobLook : dropletLook, radiusScale: blob ? blobHitScale : 1f);
     }
 
     // Their slosh, visual-only here, the swing played from where the ink leaves. The blob is the

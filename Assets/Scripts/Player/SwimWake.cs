@@ -33,6 +33,14 @@ public class SwimWake : MonoBehaviour
     [Header("Spray")]
     [SerializeField] ParticleSystem spray;        // droplets thrown off the side wakes (world space, emitted from here; drawn as ink)
     [SerializeField] float sprayFluidSize = 0.6f; // their radius as ink, x their size
+
+    [Header("Splashes (diving into and out of the ink)")]
+    [SerializeField, Tooltip("Blobs thrown up diving into the ink")] int enterDrops = 10;
+    [SerializeField, Tooltip("Blobs thrown up coming out of it")] int exitDrops = 12;
+    [SerializeField, Tooltip("Each blob's radius, random between these (metres)")] Vector2 splashDropSize = new Vector2(0.08f, 0.16f);
+    [SerializeField, Tooltip("How hard they're thrown up off the surface (metres per second)")] float splashSpeed = 3.5f;
+    [SerializeField, Tooltip("Share of our speed a splash coming out of the ink carries along with us (0: straight up)")] float exitCarry = 0.5f;
+    [SerializeField, Tooltip("Shortest time between splashes (seconds), so skimming an ink edge doesn't spray constantly")] float splashGap = 0.15f;
     [SerializeField] float sprayRate = 60f;       // per side wake per second, at full speed
     [SerializeField] float sprayLift = 2f;        // upward speed, metres per second (at full speed)
     [SerializeField] float sprayOut = 0.8f;       // and outward
@@ -61,6 +69,9 @@ public class SwimWake : MonoBehaviour
     MaterialPropertyBlock block;
     Vector3 centre, up = Vector3.up, heading = Vector3.forward;
     float shown, speed, sprayOwed;
+    bool wasInInk;
+    float lastSplash = -10f;
+    Vector3 lastCentre, lastUp = Vector3.up; // where we last were in the ink (an exit splashes from there)
 
     public float Shown => shown;                                     // tests
     public float Speed => speed;                                     // share of fullSpeed
@@ -101,12 +112,32 @@ public class SwimWake : MonoBehaviour
         if (mesh != null) mesh.Clear();
     }
 
+    // A splash each time we dive into the ink or come out of it (ours and other players', from their
+    // state): blobs thrown up off the surface; coming out, they carry on some of our speed.
+    void Splash(bool submerged)
+    {
+        bool inInk = player != null && !player.IsDead && player.IsInInk;
+        if (submerged) { lastCentre = centre; lastUp = up; }
+        if (inInk == wasInInk) return;
+        wasInInk = inInk;
+        if (player == null || player.IsDead || Time.time - lastSplash < splashGap) return;
+        lastSplash = Time.time;
+        Vector3 at = inInk ? (submerged ? centre : player.transform.position) : lastCentre;
+        Vector3 normal = inInk ? (submerged ? up : Vector3.up) : lastUp;
+        Vector3 carry = inInk ? Vector3.zero : player.TravelVelocity * exitCarry;
+        InkFluid.Burst(at, normal, player.TeamColour, inInk ? enterDrops : exitDrops, splashDropSize, splashSpeed, carry);
+        Splashes++;
+    }
+
+    public int Splashes { get; private set; } // tests
+
     void LateUpdate()
     {
         InkFluid.DrawParticles(spray, sprayFluidSize, 0.05f);
         float dt = Time.deltaTime;
         view.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
         bool submerged = player != null && !player.IsDead && player.IsInInk && FindSurface(out centre, out up);
+        Splash(submerged);
         shown = Mathf.MoveTowards(shown, submerged ? 1f : 0f, dt * FadeRate); // fades out where it was
         if (submerged)
         {

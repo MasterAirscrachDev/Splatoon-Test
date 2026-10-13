@@ -54,7 +54,7 @@ public partial class ClimbTestRunner
         else if (!blocked || shifted < 5f || onBlock > 0.3f) Fail("the true mark didn't move to what's between the gun and the aim point");
         if (!back) Fail("the true mark didn't go back to the ring");
 
-        // Faint in swim form; hidden in a menu.
+        // Hidden in swim form, and in a menu.
         yield return Hold(Still, true, 0.4f, "swim");
         float swimAlpha = ((CanvasGroup)reticle.GetComponent<CanvasGroup>()).alpha;
         player.ScriptedInput.swim = false;
@@ -66,8 +66,8 @@ public partial class ClimbTestRunner
         bool hiddenInMenu = !reticle.Shown;
         pause.SetOpen(false);
         yield return Hold(Still, false, 0.1f, "stand");
-        Note($"in swim form alpha {swimAlpha:F2}; {(hiddenInMenu ? "hidden" : "SHOWN")} in the pause menu, {(reticle.Shown ? "back" : "NOT back")} after");
-        if (swimAlpha <= 0f || swimAlpha >= 1f) Fail("the reticles weren't faint in swim form");
+        Note($"in swim form alpha {swimAlpha:F2} (hidden); {(hiddenInMenu ? "hidden" : "SHOWN")} in the pause menu, {(reticle.Shown ? "back" : "NOT back")} after");
+        if (swimAlpha > 0f) Fail("the reticles weren't hidden in swim form");
         if (!hiddenInMenu || !reticle.Shown) Fail("the reticles weren't hidden in the menu (and back after)");
         loadout.SetMainWeapon(weaponBefore);
     }

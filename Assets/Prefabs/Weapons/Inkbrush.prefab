@@ -144,6 +144,7 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   swipePace: 2
+  levelViewPitch: 30
   aimInfluence: 1
   swipePitchLimits: {x: -40, y: 50}
   droplets: 12
@@ -179,6 +180,15 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   swipeSplat: 9
+  dropletLook:
+    size: 1
+    stretch: 0.1
+    companions: 2
+    companionSize: {x: 0.5, y: 0.85}
+    upDownSpread: 2
+    sideSpread: 2
+    speedSpread: 0.05
+  downDelay: 0.25
   brushDamage: 25
   brushStartSpeed: 1.2
   brushSpeed: 1.9

@@ -4,12 +4,13 @@ using UnityEngine;
 // above the view's centre) and never moves. The true one shows where a shot would really go: on the
 // ring, unless something between the weapon and the aim point is in the way (a wall up close, a
 // ledge when aiming down), when it moves to that. Weapons that throw or swing (no ShotOrigin) keep
-// it on the ring. Faint in swim form; hidden while splatted, Super Jumping, spectating or in a menu.
+// it on the ring. A weapon that works out its own aim (the Sniper: AimEnd) puts it where that ends.
+// On a charging weapon the true ring fills round, clockwise from the top, in the team colour, as it
+// charges. Hidden in swim form, while splatted, Super Jumping, spectating or in a menu.
 public class Reticle : MonoBehaviour
 {
     [SerializeField] RectTransform aligned, trueMark;
     [SerializeField] CanvasGroup group;
-    [SerializeField] float swimAlpha = 0.35f;
 
     RectTransform area;
     PlayerController player;
@@ -21,8 +22,36 @@ public class Reticle : MonoBehaviour
     public bool Blocked { get; private set; }  // the true mark's off the ring: something's in the way
     public Vector3 TruePoint { get; private set; }
     public bool Shown => group != null && group.alpha > 0f;
+    public float ChargeFill => chargeFill != null && chargeFill.enabled ? chargeFill.fillAmount : 0f; // tests
 
-    void Awake() => area = (RectTransform)transform;
+    UnityEngine.UI.Image chargeFill;
+
+    void Awake()
+    {
+        area = (RectTransform)transform;
+        chargeFill = MakeChargeFill();
+    }
+
+    // A copy of the true ring's image over it, filled round as a charge builds.
+    UnityEngine.UI.Image MakeChargeFill()
+    {
+        if (trueMark == null || !trueMark.TryGetComponent(out UnityEngine.UI.Image ring)) return null;
+        var go = new GameObject("ChargeFill", typeof(RectTransform), typeof(UnityEngine.UI.Image));
+        var rt = (RectTransform)go.transform;
+        rt.SetParent(trueMark, false);
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
+        var fill = go.GetComponent<UnityEngine.UI.Image>();
+        fill.sprite = ring.sprite;
+        fill.raycastTarget = false;
+        fill.type = UnityEngine.UI.Image.Type.Filled;
+        fill.fillMethod = UnityEngine.UI.Image.FillMethod.Radial360;
+        fill.fillOrigin = (int)UnityEngine.UI.Image.Origin360.Top;
+        fill.fillClockwise = true;
+        fill.enabled = false;
+        return fill;
+    }
 
     void LateUpdate()
     {
@@ -36,8 +65,8 @@ public class Reticle : MonoBehaviour
             if (view == null && player != null && player.CameraRig != null) view = player.CameraRig.GetComponentInChildren<Camera>();
         }
         bool show = player != null && view != null && !player.IsDead && !player.IsRespawning && !player.IsSuperJumping
-                    && player.Role != PlayerRole.Spectator && !InputGate.Blocked;
-        group.alpha = !show ? 0f : player.IsSquid ? swimAlpha : 1f;
+                    && player.Role != PlayerRole.Spectator && !InputGate.Blocked && !player.IsSquid;
+        group.alpha = show ? 1f : 0f;
         if (!show) return;
 
         Transform eye = view.transform;
@@ -48,8 +77,20 @@ public class Reticle : MonoBehaviour
         TruePoint = camAim != null ? camAim.target : eye.position + aim * 100f;
 
         PlayerLoadout loadout = player.GetComponent<PlayerLoadout>();
-        Transform origin = loadout != null && loadout.CurrentWeapon != null ? loadout.CurrentWeapon.ShotOrigin : null;
-        if (origin != null && camAim != null && camAim.target != Vector3.zero)
+        Weapon weapon = loadout != null ? loadout.CurrentWeapon : null;
+        Transform origin = weapon != null ? weapon.ShotOrigin : null;
+        if (weapon != null && weapon.AimEnd(out Vector3 end))
+        {
+            // Its own aim: where that ends (off the ring when it can't reach the cursor).
+            TruePoint = end;
+            Vector3 s = view.WorldToScreenPoint(end);
+            if (s.z > 0f)
+            {
+                trueScreen = s;
+                Blocked = ((Vector2)s - (Vector2)alignedScreen).sqrMagnitude > 4f;
+            }
+        }
+        else if (origin != null && camAim != null && camAim.target != Vector3.zero)
         {
             Vector3 from = origin.position, to = camAim.target - from;
             float length = to.magnitude;
@@ -63,6 +104,17 @@ public class Reticle : MonoBehaviour
         }
         Place(aligned, alignedScreen);
         Place(trueMark, trueScreen);
+
+        // A charging weapon's charge, round the true ring.
+        float charge = weapon != null ? weapon.ChargeShown : -1f;
+        if (chargeFill != null)
+        {
+            chargeFill.enabled = charge > 0f;
+            chargeFill.fillAmount = Mathf.Clamp01(charge);
+            Color c = player.TeamColour;
+            c.a = 1f;
+            chargeFill.color = c;
+        }
     }
 
     void Place(RectTransform mark, Vector3 screen)

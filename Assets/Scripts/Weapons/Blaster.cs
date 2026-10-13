@@ -7,17 +7,17 @@ using UnityEngine;
 public class Blaster : Weapon
 {
     [Header("Shot")]
-    [SerializeField] float fireRate = 0.75f;          // seconds between shots
-    [SerializeField] float shotSpeed = 30f;
-    [SerializeField] float range = 6.5f;              // explodes after flying this far
-    [SerializeField] DamageFalloff directDamage = new DamageFalloff(125f, DamageFalloff.HoldThenFall(0.2f, 0.3f, 0.8f)); // to whoever it hits, by how long it's flown
-    [SerializeField] float inkCostPerShot = 80f;      // x0.001 of a full tank
-    [SerializeField] int shotSize = 22;               // how big the shot looks
-    [SerializeField] float trailSpacing = 0.45f;      // the shot drips ink along its path this often (metres)
-    [SerializeField] int trailSize = 9;               // each drip's splat
-    [SerializeField] Ballistics ballistics = new Ballistics { gravityOverTime = AnimationCurve.Constant(0f, 1f, 0f) }; // no drop
-    [SerializeField] float shotLook = 0.6f;          // its shot drawn this x the usual size for its shot size (it doesn't paint itself)
-    [SerializeField] Transform muzzle;
+    [SerializeField, Tooltip("Seconds between shots")] float fireRate = 0.75f;
+    [SerializeField, Tooltip("Launch speed (metres per second)")] float shotSpeed = 30f;
+    [SerializeField, Tooltip("It explodes after flying this far (metres), or on whatever it hits first")] float range = 6.5f;
+    [SerializeField, Tooltip("Damage to whoever it hits directly, by how long it's flown (they don't also take the blast)")] DamageFalloff directDamage = new DamageFalloff(125f, DamageFalloff.HoldThenFall(0.2f, 0.3f, 0.8f));
+    [SerializeField, Tooltip("Ink per shot, in thousandths of a full tank")] float inkCostPerShot = 80f;
+    [SerializeField, Tooltip("How big the shot is drawn, as a splat size would be (it paints nothing itself: the blast and its trail do)")] int shotSize = 22;
+    [SerializeField, Tooltip("It drips unseen ink under its path every this many metres")] float trailSpacing = 0.45f;
+    [SerializeField, Tooltip("Each drip's splat size")] int trailSize = 9;
+    [SerializeField, Tooltip("Speed and gravity over its flight (none by default: it flies straight)")] Ballistics ballistics = new Ballistics { gravityOverTime = AnimationCurve.Constant(0f, 1f, 0f) };
+    [SerializeField, Tooltip("How the shot is drawn")] ShotLook shotLook = new ShotLook { size = 0.6f };
+    [SerializeField, Tooltip("Where shots leave from")] Transform muzzle;
 
     [Header("Blast")]
     [SerializeField] InkBlast blast = new InkBlast();

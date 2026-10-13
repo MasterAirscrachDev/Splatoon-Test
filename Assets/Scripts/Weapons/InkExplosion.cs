@@ -6,14 +6,14 @@ using UnityEngine;
 [System.Serializable]
 public class InkBlast
 {
-    public float radius = 2.4f;
-    public float coreRadius = 1f;       // full damage within this
-    public float coreDamage = 70f;
-    public float edgeDamage = 35f;      // at the very edge
-    public float inkReach = 1.2f;       // it splats surfaces within this directly...
-    public int splashSize = 10;         // each splat it leaves
-    public int fallingDrops = 5;        // ...and its ink falls to whatever is below it (unseen, harmless)
-    public float fallSpread = 0.7f;     // landing up to this far around under it
+    [Tooltip("How far its damage reaches (metres); its look is sized to this too")] public float radius = 2.4f;
+    [Tooltip("Full damage within this (metres), falling off to Edge Damage at Radius")] public float coreRadius = 1f;
+    [Tooltip("Damage within Core Radius")] public float coreDamage = 70f;
+    [Tooltip("Damage at the very edge (Radius)")] public float edgeDamage = 35f;
+    [Tooltip("It paints surfaces within this (metres) directly, in every direction")] public float inkReach = 1.2f;
+    [Tooltip("Each splat it leaves")] public int splashSize = 10;
+    [Tooltip("Unseen, harmless drops of its ink that fall to whatever's below it (so a blast in mid-air still inks the ground)")] public int fallingDrops = 5;
+    [Tooltip("How far around under it they land (metres)")] public float fallSpread = 0.7f;
 }
 
 // Explodes ink at a point: everyone sees it (InkFluid's blast, sized to its radius); the owner's copy also paints every

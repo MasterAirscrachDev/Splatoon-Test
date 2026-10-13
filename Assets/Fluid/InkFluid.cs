@@ -2,9 +2,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-// Whose companion blobs a shot carries (InkFluidSettings: shots, rollers' droplets, the bucket's line).
-public enum FluidKind { Shot, Roller, Bucket }
-
 // All ink in the air, drawn as fluid (FluidRenderer). ProjectileManager's seen shots are drawn from
 // their own flight (DrawShot); everything that's only for the look is simulated here: the companion
 // blobs travelling with each seen shot, the splatter where shots land (a crown of blobs and a puddle
@@ -19,7 +16,7 @@ public class InkFluid : MonoBehaviour
     {
         public Vector3 position, start, launch, inherit, fall, velocity; // ballistic: launch x its speed curve + inherit + fall
         public Ballistics ballistics;    // null: plain velocity, gravity and drag
-        public float radius, gravity, drag, age, seed, life, range, shrink;
+        public float radius, gravity, drag, age, seed, life, range, shrink, stretch;
         public Color colour;
         public bool puddle;              // spreading on a surface, slowing and sinking away
         public bool core;                // a blast's core: swells, then collapses
@@ -56,6 +53,7 @@ public class InkFluid : MonoBehaviour
     public static int Live => instance != null ? instance.drops.Count : 0;
     public static int Explosions { get; private set; }       // tests
     public static int LastExplosionBlobs { get; private set; }
+    public static Vector3 LastBurstCarry { get; private set; } // tests
 
     // Team colours without a game manager (the fluid lab).
     public static System.Func<int, Color> ColourOverride;
@@ -95,33 +93,33 @@ public class InkFluid : MonoBehaviour
     // ── Shots ───────────────────────────────────────────────────────────────
 
     // One of ProjectileManager's seen shots, this frame: a wobbling teardrop along its flight.
-    public static void DrawShot(Vector3 position, Vector3 velocity, float radius, float age, float seed, Color colour)
+    public static void DrawShot(Vector3 position, Vector3 velocity, float radius, float age, float seed, Color colour, float stretch)
     {
         float r = radius * (1f + S.wobble * Mathf.Sin(age * 23f + seed));
-        FluidRenderer.Streak(position, velocity, r, colour, S.stretch);
+        FluidRenderer.Streak(position, velocity, r, colour, stretch);
     }
 
-    // A seen shot's companions: a few blobs leaving with it, a little smaller, with a slight
-    // difference in direction and speed so they drift apart a touch. They fly its ballistics, stop
-    // at its range (a blaster's goes off there) and vanish where they land.
-    public static void Companions(Vector3 from, Vector3 launch, Vector3 inherit, Ballistics ballistics, float radius, Color colour, FluidKind kind, float range)
+    // A seen shot's companions (its look's): a few blobs leaving with it, a little smaller, with a
+    // slight difference in direction and speed so they drift apart a touch. They fly its ballistics,
+    // stop at its range (a blaster's goes off there) and vanish where they land.
+    public static void Companions(Vector3 from, Vector3 launch, Vector3 inherit, Ballistics ballistics, float radius, Color colour, ShotLook look, float range)
     {
-        InkFluidSettings.Companions c = kind switch { FluidKind.Roller => S.rollerCompanions, FluidKind.Bucket => S.bucketCompanions, _ => S.shotCompanions };
         Ballistics b = ballistics ?? Ballistics.Default;
-        for (int i = 0; i < c.count; i++)
+        for (int i = 0; i < look.companions; i++)
         {
-            Quaternion nudge = Quaternion.Euler(Random.Range(-c.spread, c.spread), Random.Range(-c.across, c.across), 0f);
+            Quaternion nudge = Quaternion.Euler(Random.Range(-look.upDownSpread, look.upDownSpread), Random.Range(-look.sideSpread, look.sideSpread), 0f);
             Drop d = Instance.New();
             if (d == null) return;
             d.position = from + Random.insideUnitSphere * radius * 0.3f;
             d.start = from;
-            d.launch = nudge * launch * (1f + Random.Range(-c.speed, c.speed));
+            d.launch = nudge * launch * (1f + Random.Range(-look.speedSpread, look.speedSpread));
             d.inherit = inherit;
             d.ballistics = b;
-            d.radius = radius * Random.Range(c.size.x, c.size.y);
+            d.radius = radius * Random.Range(look.companionSize.x, look.companionSize.y);
             d.colour = colour;
             d.range = range;
             d.life = 10f;
+            d.stretch = look.stretch;
         }
     }
 
@@ -205,10 +203,12 @@ public class InkFluid : MonoBehaviour
         return made;
     }
 
-    // A splash: `count` blobs thrown up off a surface (along `normal`) and out, falling back.
-    public static void Burst(Vector3 at, Vector3 normal, Color colour, int count, Vector2 radius, float speed)
+    // A splash: `count` blobs thrown up off a surface (along `normal`) and out, falling back, each
+    // also carrying some of `carry` (whatever made the splash, moving: its velocity).
+    public static void Burst(Vector3 at, Vector3 normal, Color colour, int count, Vector2 radius, float speed, Vector3 carry = default)
     {
         InkFluid f = Instance;
+        LastBurstCarry = carry;
         Vector3 t1 = Vector3.Cross(normal, Mathf.Abs(normal.y) < 0.9f ? Vector3.up : Vector3.right).normalized, t2 = Vector3.Cross(normal, t1);
         for (int i = 0; i < count; i++)
         {
@@ -216,7 +216,8 @@ public class InkFluid : MonoBehaviour
             Drop d = f.New();
             if (d == null) return;
             d.position = at + normal * 0.05f;
-            d.velocity = (normal * Random.Range(0.8f, 1.3f) + (t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a)) * Random.Range(0.3f, 0.8f)) * speed;
+            d.velocity = (normal * Random.Range(0.8f, 1.3f) + (t1 * Mathf.Cos(a) + t2 * Mathf.Sin(a)) * Random.Range(0.3f, 0.8f)) * speed
+                       + carry * Random.Range(0.6f, 1f);
             d.radius = Random.Range(radius.x, radius.y);
             d.gravity = 1.5f;
             d.colour = colour;
@@ -264,6 +265,7 @@ public class InkFluid : MonoBehaviour
         d.position = d.start = d.launch = d.inherit = d.fall = d.velocity = Vector3.zero;
         d.ballistics = null;
         d.radius = d.gravity = d.drag = d.age = d.range = d.shrink = 0f;
+        d.stretch = S.stretch;
         d.life = 1f;
         d.seed = Random.value * 100f;
         d.puddle = d.core = false;
@@ -331,7 +333,7 @@ public class InkFluid : MonoBehaviour
 
     void Show()
     {
-        float wobble = S.wobble, stretch = S.stretch;
+        float wobble = S.wobble;
         foreach (Drop d in drops)
         {
             float r = d.radius * (1f + wobble * Mathf.Sin(d.age * 23f + d.seed));
@@ -339,7 +341,7 @@ public class InkFluid : MonoBehaviour
             if (d.core) r = d.radius * Mathf.Sin(Mathf.Clamp01(d.age / d.life) * Mathf.PI) * (1f + wobble * Mathf.Sin(d.age * 31f + d.seed)); // swelling, then collapsing
             if (d.shrink > 0f) r *= Mathf.SmoothStep(0f, 1f, (d.life - d.age) / (d.shrink * d.life)); // shrinking away
             if (r <= 0.01f) continue;
-            FluidRenderer.Streak(d.position, d.Velocity, r, d.colour, d.puddle || d.core ? 0f : stretch);
+            FluidRenderer.Streak(d.position, d.Velocity, r, d.colour, d.puddle || d.core ? 0f : d.stretch);
         }
     }
 }

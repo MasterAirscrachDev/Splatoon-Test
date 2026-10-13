@@ -8,20 +8,28 @@ using UnityEngine.Serialization;
 public class WeaponShooter : Weapon
 {
     [Header("Shots")]
-    [SerializeField] float fireRate = 0.1f;      // seconds between shots
-    [SerializeField, FormerlySerializedAs("range")]
-    float shotSpeed = 10f;                       // main shot's starting speed (fillers start slower)
-    [SerializeField] int fillerShots = 5;        // shorter shots per volley, spaced between us and the main shot
-    [SerializeField] Ballistics ballistics = new Ballistics(); // its speed and gravity over its flight
-    [SerializeField] int splashSize = 11;
-    [SerializeField] DamageFalloff damage = new DamageFalloff(30f, DamageFalloff.HoldThenFall(0.25f, 0.5f, 0.5f)); // per shot, by how long it's flown
-    [SerializeField] float inkCostPerShot = 16f; // x0.001 of a full tank
-    [SerializeField] Transform muzzle;
+    [SerializeField, Tooltip("Seconds between shots")] float fireRate = 0.1f;
+    [SerializeField, FormerlySerializedAs("range"), Tooltip("The main shot's launch speed (metres per second; its Ballistics shape it from there). Fillers launch slower, spread between us and it")]
+    float shotSpeed = 10f;
+    [SerializeField, Tooltip("Shorter, slower shots per volley, spaced between us and the main shot: they ink the floor in between. They do no damage")]
+    int fillerShots = 5;
+    [SerializeField, Range(0f, 1f), Tooltip("Share of the filler shots that are drawn (the rest only paint): fewer is less visual noise")]
+    float fillersSeen = 0.33f;
+    [SerializeField, Tooltip("Speed and gravity over each shot's flight")] Ballistics ballistics = new Ballistics();
+    [SerializeField, Tooltip("The main shot's splat size: the paint it leaves (fillers leave 70% of it). It also sets how big shots are drawn")]
+    int splashSize = 11;
+    [SerializeField, Tooltip("The main shot's damage, by how long it's flown")] DamageFalloff damage = new DamageFalloff(30f, DamageFalloff.HoldThenFall(0.25f, 0.5f, 0.5f));
+    [SerializeField, Tooltip("Ink per shot, in thousandths of a full tank")] float inkCostPerShot = 16f;
+    [SerializeField, Tooltip("Where shots leave from")] Transform muzzle;
 
     [Header("Spread (degrees)")]
-    [SerializeField] float yawSpread = 15f;      // random aim wobble per shot
-    [SerializeField] float pitchSpread = 2f;
-    [SerializeField] float fillerSpread = 10f;
+    [SerializeField, Tooltip("Random aim wobble left and right on each volley (degrees, ±)")] float yawSpread = 15f;
+    [SerializeField, Tooltip("Random aim wobble up and down on each volley (degrees, ±)")] float pitchSpread = 2f;
+    [SerializeField, Tooltip("Extra random wobble on each filler shot, up/down and left/right (degrees, ±)")] float fillerSpread = 10f;
+
+    [Header("Look")]
+    [SerializeField, Tooltip("How the main shot is drawn")] ShotLook shotLook = new ShotLook();
+    [SerializeField, Tooltip("How the (seen) filler shots are drawn")] ShotLook fillerLook = new ShotLook();
 
     ControlLayer input;
     CharacterController playerController;
@@ -88,7 +96,7 @@ public class WeaponShooter : Weapon
             volleySizes.Clear();
             volleyVisible.Clear();
 
-            Vector3 main = SpawnShot(player, rot, shotSpeed, inherit, splashSize, true);
+            Vector3 main = SpawnShot(player, rot, shotSpeed, inherit, splashSize, true, true, shotLook);
             MainShotFired?.Invoke(main, muzzle.rotation);
 
             // Shorter filler shots cover the floor between the shooter and the main shot.
@@ -99,7 +107,7 @@ public class WeaponShooter : Weapon
                     Random.Range(-fillerSpread, fillerSpread),
                     Random.Range(-fillerSpread, fillerSpread),
                     0f);
-                SpawnShot(player, noisyRot, r + Random.Range(-0.1f, 0.1f), inherit, Mathf.RoundToInt(splashSize * 0.7f), Random.value < InkFluidSettings.Instance.fillersSeen, false);
+                SpawnShot(player, noisyRot, r + Random.Range(-0.1f, 0.1f), inherit, Mathf.RoundToInt(splashSize * 0.7f), Random.value < fillersSeen, false, fillerLook);
             }
 
             NetGameManager.Instance?.BroadcastShots(player, muzzle.position, inherit,
@@ -117,16 +125,17 @@ public class WeaponShooter : Weapon
         {
             Vector3 v = new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]);
             ProjectileManager.Fire(d.origin, v, d.splashSizes[i], d.team, d.visible[i],
-                                   authoritative: false, ownerId: d.shooterSteamId, ballistics: ballistics, inherit: inherit);
+                                   authoritative: false, ownerId: d.shooterSteamId, ballistics: ballistics, inherit: inherit,
+                                   look: i == 0 ? shotLook : fillerLook); // (the main shot first)
         }
     }
 
     // Returns its launch velocity (without what the shooter carries into it).
-    Vector3 SpawnShot(PlayerController player, Quaternion rotation, float speed, Vector3 inherit, int size, bool visible, bool dealDamage = true)
+    Vector3 SpawnShot(PlayerController player, Quaternion rotation, float speed, Vector3 inherit, int size, bool visible, bool dealDamage = true, ShotLook look = null)
     {
         Vector3 launch = rotation * Vector3.forward * speed;
         ProjectileManager.Fire(muzzle.position, launch, size, player.Team, visible,
-                               ownerId: player.OwnerId, falloff: dealDamage ? damage : null, damage: 0f, ballistics: ballistics, inherit: inherit, source: DisplayName);
+                               ownerId: player.OwnerId, falloff: dealDamage ? damage : null, damage: 0f, ballistics: ballistics, inherit: inherit, source: DisplayName, look: look);
 
         volleyVelocities.Add(launch.x); volleyVelocities.Add(launch.y); volleyVelocities.Add(launch.z);
         volleySizes.Add(size);

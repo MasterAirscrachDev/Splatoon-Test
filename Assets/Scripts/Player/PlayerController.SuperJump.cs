@@ -63,7 +63,5 @@ public partial class PlayerController
         CancelSuperJump();
         if (SuperJumpTargets.Alive(landedOn)) landedOn.OnSuperJumpLanded(this); // a beacon breaks, if it's still there
         velocityY = 0;
-        wasGroundedPrev = false;
-        lastGroundedY = transform.position.y + FallSplashMinHeight + 1f; // splash if we land in our ink
     }
 }

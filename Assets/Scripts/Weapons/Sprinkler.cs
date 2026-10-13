@@ -7,14 +7,15 @@ using UnityEngine;
 // shots on the same schedule (the owner's real shots paint and damage, and their splats sync).
 public class Sprinkler : SubDevice
 {
-    [SerializeField] Transform head;                  // spins about the surface normal; nozzles on its local ±Z
-    [SerializeField] float gravity = 20f;             // during the throw
-    [SerializeField] float spinStart = 540f, spinEnd = 90f;              // degrees per second
-    [SerializeField] float shotSpeedStart = 9f, shotSpeedEnd = 3f;
-    [SerializeField] float fireIntervalStart = 0.12f, fireIntervalEnd = 0.45f;
-    [SerializeField] float shotLift = 0.35f;          // share of each shot aimed away from the surface
-    [SerializeField] int splashSize = 8;
-    [SerializeField] float shotDamage = 12f;
+    [SerializeField, Tooltip("The spinning part: it turns about the surface it's stuck to, with nozzles on its local ±Z")] Transform head;
+    [SerializeField, Tooltip("Gravity while it's thrown, before it sticks (metres per second²)")] float gravity = 20f;
+    [SerializeField, Tooltip("Spin speed when it lands and at the end of its life (degrees per second): it winds down between them")] float spinStart = 540f, spinEnd = 90f;
+    [SerializeField, Tooltip("Shot speed when it lands and at the end of its life (metres per second)")] float shotSpeedStart = 9f, shotSpeedEnd = 3f;
+    [SerializeField, Tooltip("Seconds between shots when it lands and at the end of its life")] float fireIntervalStart = 0.12f, fireIntervalEnd = 0.45f;
+    [SerializeField, Tooltip("How much each shot is aimed away from the surface it's stuck to (0: along it)")] float shotLift = 0.35f;
+    [SerializeField, Tooltip("Each shot's splat size (also how big it's drawn)")] int splashSize = 8;
+    [SerializeField, Tooltip("Each shot's damage")] float shotDamage = 12f;
+    [SerializeField, Tooltip("How its shots are drawn")] ShotLook shotLook = new ShotLook();
 
     Vector3 velocity;
     bool landed;
@@ -122,7 +123,7 @@ public class Sprinkler : SubDevice
             Vector3 along = head.forward * side;
             Vector3 dir = (along + transform.up * shotLift).normalized;
             Vector3 from = head.position + along * 0.25f;
-            ProjectileManager.Fire(from, dir * ShotSpeed, splashSize, Team, true, authoritative, OwnerId, shotDamage, source: "Sprinkler");
+            ProjectileManager.Fire(from, dir * ShotSpeed, splashSize, Team, true, authoritative, OwnerId, shotDamage, source: "Sprinkler", look: shotLook);
         }
         ShotsFired++;
     }

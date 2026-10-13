@@ -120,8 +120,6 @@ public partial class PlayerController
         climbBoost = 0f;
         wallJumpGraceUntil = -1f;
         prevInOwnInk = false;
-        wasGroundedPrev = false;
-        lastGroundedY = feetPos.y;
         lastGroundPos = feetPos;
         cameraFormOffset = cameraFormOffsetVelocity = Vector3.zero; // a teleport snaps the camera
         CancelSuperJump();

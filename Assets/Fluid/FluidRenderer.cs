@@ -25,16 +25,21 @@ public class FluidRenderer : MonoBehaviour
     public class Look
     {
         [Header("Merging")]
+        [Tooltip("Blending strength (metres of ink): where drops overlap, thicknesses below about this add up and merge into one body; above it the thicker wins (so drops stacked along the view don't peak into a point). Higher merges more")]
+        [Range(0.01f, 1f)] public float blendStrength = 0.15f;
         [Tooltip("World-space blur radius (metres): how far apart drops can be and still melt together")]
         public float smoothRadius = 0.16f;
-        [Tooltip("How sharply the blur stops at depth jumps (per metre²): higher keeps separate blobs apart")]
-        public float depthFalloff = 6f;
-        [Tooltip("Ink only melts together within this depth of each other (metres): drops further behind stay separate shapes, with their own colour")]
-        public float blendDepth = 0.35f;
-        [Range(1, 4)] public int smoothIterations = 2;
         [Tooltip("Gaps narrower than this share of the blur radius are filled (first pass only), so near drops join")]
         [Range(0f, 1f)] public float bridging = 0.5f;
+        [Tooltip("Ink only melts together within this depth of each other (metres): drops further behind stay separate shapes, with their own colour")]
+        public float blendDepth = 0.35f;
+        [Tooltip("How sharply the blur stops at depth jumps (per metre²): higher keeps separate blobs apart")]
+        public float depthFalloff = 6f;
+        [Tooltip("Smoothing passes over the ink's depth: more is smoother and more merged, and costs more")]
+        [Range(1, 4)] public int smoothIterations = 2;
+        [Tooltip("The most pixels the smoothing reaches, however close the ink: caps its cost up close")]
         [Range(4, 40)] public int maxBlurPixels = 24;
+        [Tooltip("Resolution the ink is worked out at, as a share of the screen's (lower is cheaper, softer)")]
         [Range(0.5f, 1f)] public float resolutionScale = 1f;
         [Tooltip("Drops are drawn at least this many pixels across their radius (tinier ones break up into crosses)")]
         [Range(0f, 6f)] public float minPixels = 2.5f;
@@ -48,19 +53,23 @@ public class FluidRenderer : MonoBehaviour
         public float edgeSharpness = 400f;
 
         [Header("Look")]
-        [Range(0f, 1f)] public float gloss = 0.8f;
-        [Range(0f, 3f)] public float specular = 1.4f;
-        [Range(0f, 1f)] public float reflection = 0.3f;
-        [Tooltip("The body's smoothness: keep it the ink surface material's (InkSurface _Smoothness), so flying ink matches painted ink")]
-        [Range(0f, 1f)] public float bodySmoothness = 0.4f;
         [Tooltip("How much the body is shaded by its shape (1: fully, light and dark sides; 0: lit flat, as the painted ink is). Low keeps just a hint of contour")]
         [Range(0f, 1f)] public float shading = 1f;
-        [Tooltip("Blending strength (metres of ink): where drops overlap, thicknesses below about this add up and merge into one body; above it the thicker wins (so drops stacked along the view don't peak into a point). Higher merges more")]
-        [Range(0.01f, 1f)] public float blendStrength = 0.15f;
-        [Range(0f, 2f)] public float ambient = 1f;          // x the scene's ambient probe
-        [Range(0.5f, 2f)] public float brightness = 1f;     // x the ink colour
+        [Tooltip("The body's smoothness: keep it the ink surface material's (InkSurface _Smoothness), so flying ink matches painted ink")]
+        [Range(0f, 1f)] public float bodySmoothness = 0.4f;
+        [Tooltip("How tight the extra highlight and reflections are: higher is a smaller, sharper highlight and a clearer reflection")]
+        [Range(0f, 1f)] public float gloss = 0.8f;
+        [Tooltip("The sun's highlight strength (0: none)")]
+        [Range(0f, 3f)] public float specular = 1.4f;
+        [Tooltip("How much the sky reflects off the ink at grazing angles (its edges)")]
+        [Range(0f, 1f)] public float reflection = 0.3f;
+        [Tooltip("Ambient light, x the scene's")]
+        [Range(0f, 2f)] public float ambient = 1f;
+        [Tooltip("The ink's colour, x this")]
+        [Range(0.5f, 2f)] public float brightness = 1f;
         [Tooltip("The bright sheen round each blob's edge")]
         [Range(0f, 2f)] public float rimStrength = 0.9f;
+        [Tooltip("How quickly the sheen fades inwards from the edge: higher is a thinner line")]
         [Range(0.5f, 8f)] public float rimPower = 1.5f;
         [Tooltip("How far in from the outline the sheen reaches (metres of ink thickness)")]
         public float rimThickness = 0.05f;
@@ -68,8 +77,11 @@ public class FluidRenderer : MonoBehaviour
         [Range(0f, 1f)] public float rimWhiten = 0.55f;
 
         [Header("Ripples")]
-        public float rippleFrequency = 5f;   // per metre
+        [Tooltip("Ripples across the ink's surface: how many per metre")]
+        public float rippleFrequency = 5f;
+        [Tooltip("How strong they are (0: none)")]
         [Range(0f, 1f)] public float rippleStrength = 0f;
+        [Tooltip("How fast they flow")]
         public float rippleFlow = 1.2f;
     }
 
@@ -254,16 +266,8 @@ public class FluidRenderer : MonoBehaviour
         cmd.SetGlobalVector("_FluidStep", new Vector4(0f, 1f / h, 0f, 0f));
         cmd.Blit(ThickTmpId, ThickId, smooth, 1);
 
-        // 3. Shaded over the scene.
-        cmd.GetTemporaryRT(SceneId, c.pixelWidth, c.pixelHeight, 0, FilterMode.Bilinear, c.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default);
-        cmd.Blit(BuiltinRenderTextureType.CameraTarget, SceneId);
-        SetLook();
-        cmd.Blit(SceneId, BuiltinRenderTextureType.CameraTarget, composite, 0);
-        // ...and its depth into the camera's, so transparent things behind it stay behind it.
-        cmd.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-        cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.Ortho(0f, 1f, 0f, 1f, -1f, 1f));
-        cmd.DrawMesh(screenQuad, Matrix4x4.identity, composite, 0, 1);
-        cmd.SetViewProjectionMatrices(c.worldToCameraMatrix, c.projectionMatrix);
+        // 3. Shaded over the scene, and its depth into the camera's.
+        Composite(c, cmd, 0);
 
         cmd.ReleaseTemporaryRT(DepthId);
         cmd.ReleaseTemporaryRT(DepthTmpId);
@@ -271,6 +275,20 @@ public class FluidRenderer : MonoBehaviour
         cmd.ReleaseTemporaryRT(ZId);
         cmd.ReleaseTemporaryRT(ThickId);
         cmd.ReleaseTemporaryRT(ThickTmpId);
+    }
+
+    // The ink shaded over (a copy of) the scene by the composite's `pass`, then its depth into the
+    // camera's by the next pass, so transparent things behind it stay behind it.
+    void Composite(Camera c, CommandBuffer cmd, int pass)
+    {
+        cmd.GetTemporaryRT(SceneId, c.pixelWidth, c.pixelHeight, 0, FilterMode.Bilinear, c.allowHDR ? RenderTextureFormat.DefaultHDR : RenderTextureFormat.Default);
+        cmd.Blit(BuiltinRenderTextureType.CameraTarget, SceneId);
+        SetLook();
+        cmd.Blit(SceneId, BuiltinRenderTextureType.CameraTarget, composite, pass);
+        cmd.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+        cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.Ortho(0f, 1f, 0f, 1f, -1f, 1f));
+        cmd.DrawMesh(screenQuad, Matrix4x4.identity, composite, 0, pass + 1);
+        cmd.SetViewProjectionMatrices(c.worldToCameraMatrix, c.projectionMatrix);
         cmd.ReleaseTemporaryRT(SceneId);
     }
 

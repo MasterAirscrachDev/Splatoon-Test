@@ -16,22 +16,23 @@ MonoBehaviour:
   smoothShader: {fileID: 4800000, guid: a4cfb3a190231e14ea8ddc228d983e75, type: 3}
   compositeShader: {fileID: 4800000, guid: 7fdb349ab1e09e04f9d6bf8d218bef8e, type: 3}
   renderer:
+    blendStrength: 0.175
     smoothRadius: 0.16
-    depthFalloff: 6
-    blendDepth: 0.35
-    smoothIterations: 2
     bridging: 0.5
+    blendDepth: 0.35
+    depthFalloff: 6
+    smoothIterations: 2
     maxBlurPixels: 24
     resolutionScale: 1
     minPixels: 2.5
     depthNormals: 0.1
     roundness: 1
     edgeSharpness: 400
+    shading: 0.35
+    bodySmoothness: 0.4
     gloss: 0.55
     specular: 0.35
     reflection: 0.08
-    bodySmoothness: 0.4
-    shading: 0.35
     ambient: 1
     brightness: 1
     rimStrength: 0.35
@@ -42,32 +43,21 @@ MonoBehaviour:
     rippleStrength: 0
     rippleFlow: 1.2
   blobFill: 0.3
-  stretch: 0.1
   wobble: 0.12
-  fillersSeen: 0.33
-  shotCompanions:
-    count: 2
-    size: {x: 0.5, y: 0.85}
-    spread: 2
-    across: 2
-    speed: 0.05
-  rollerCompanions:
-    count: 4
-    size: {x: 0.5, y: 0.85}
-    spread: 2
-    across: 2
-    speed: 0.05
-  bucketCompanions:
-    count: 3
-    size: {x: 0.5, y: 0.85}
-    spread: 1
-    across: 3
-    speed: 0.1
+  defaultLook:
+    size: 1
+    stretch: 0.1
+    companions: 2
+    companionSize: {x: 0.5, y: 0.85}
+    upDownSpread: 2
+    sideSpread: 2
+    speedSpread: 0.05
   crownBlobs: {x: 2, y: 4}
   crownSize: {x: 0.35, y: 0.55}
   crownKick: 2.5
   puddleDrops: 6
   puddleTime: 0.22
+  stretch: 0.1
   coreReach: 0.45
   coreTime: 0.35
   coreBlobs: 6

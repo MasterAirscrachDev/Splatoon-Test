@@ -111,7 +111,6 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   flickPace: 2
-  groundBlobScale: 0.5
   aimInfluence: 1
   flickPitchLimits: {x: -40, y: 60}
   groundDroplets: 60
@@ -154,6 +153,14 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   groundSplat: 15
+  groundLook:
+    size: 1
+    stretch: 0.1
+    companions: 4
+    companionSize: {x: 0.7, y: 0.85}
+    upDownSpread: 3
+    sideSpread: 3
+    speedSpread: 0.05
   airDroplets: 16
   airFan: 7
   airPitch: 20
@@ -185,6 +192,14 @@ MonoBehaviour:
       m_PostInfinity: 2
       m_RotationOrder: 4
   airSplat: 15
+  airLook:
+    size: 1
+    stretch: 0.1
+    companions: 4
+    companionSize: {x: 0.5, y: 0.85}
+    upDownSpread: 2
+    sideSpread: 2
+    speedSpread: 0.05
   rollDamage: 150
   rollStartSpeed: 0.35
   rollSpeed: 1

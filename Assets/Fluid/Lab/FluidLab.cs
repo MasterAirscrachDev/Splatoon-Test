@@ -124,11 +124,11 @@ public class FluidLab : MonoBehaviour
 
     // A real shot from a mimic, by angles from straight ahead (+z).
     static void Fire(Mimic m, float yaw, float pitch, float speed, int splat, bool visible = true, Ballistics ballistics = null,
-                     float look = 1f, FluidKind kind = FluidKind.Shot, bool splashes = true, float range = 0f, InkBlast blast = null,
+                     ShotLook look = null, bool splashes = true, float range = 0f, InkBlast blast = null,
                      float trailSpacing = 0f, int trailSize = 0) =>
         ProjectileManager.Fire(m.at, Quaternion.Euler(-pitch, yaw, 0f) * Vector3.forward * speed, splat, m.team, visible, authoritative: true,
                                damage: 0f, splashes: splashes, ballistics: ballistics, maxDistance: range, blast: blast,
-                               trailSpacing: trailSpacing, trailSize: trailSize, look: look, kind: kind, source: m.name);
+                               trailSpacing: trailSpacing, trailSize: trailSize, look: look, source: m.name);
 
     // Shooters (WeaponShooter): a main shot and shorter fillers between us and it (a share of them seen).
     void AddShooter(WeaponShooter w) => Add(w, "fireRate", m =>
@@ -138,17 +138,17 @@ public class FluidLab : MonoBehaviour
         int fillers = Field<int>(w, "fillerShots"), splat = Field<int>(w, "splashSize");
         Ballistics ballistics = Field<Ballistics>(w, "ballistics");
         float yaw = Random.Range(-yawSpread, yawSpread), pitch = AimRaise + Random.Range(-pitchSpread, pitchSpread);
-        Fire(m, yaw, pitch, speed, splat, true, ballistics);
+        Fire(m, yaw, pitch, speed, splat, true, ballistics, Field<ShotLook>(w, "shotLook"));
         for (int i = 1; i <= fillers; i++)
             Fire(m, yaw + Random.Range(-fillerSpread, fillerSpread), pitch + Random.Range(-fillerSpread, fillerSpread),
                  speed * i / (fillers + 1f) + Random.Range(-0.1f, 0.1f), Mathf.RoundToInt(splat * 0.7f),
-                 Random.value < InkFluidSettings.Instance.fillersSeen, ballistics);
+                 Random.value < Field<float>(w, "fillersSeen"), ballistics, Field<ShotLook>(w, "fillerLook"));
     });
 
     // Blasters: one big shot, dripping ink as it goes, that goes off at its range (or what it hits).
     void AddBlaster(Blaster w) => Add(w, "fireRate", m =>
         Fire(m, 0f, AimRaise, Field<float>(w, "shotSpeed"), Field<int>(w, "shotSize"), true, Field<Ballistics>(w, "ballistics"),
-             look: Field<float>(w, "shotLook"), splashes: false, range: Field<float>(w, "range"), blast: Field<InkBlast>(w, "blast"),
+             look: Field<ShotLook>(w, "shotLook"), splashes: false, range: Field<float>(w, "range"), blast: Field<InkBlast>(w, "blast"),
              trailSpacing: Field<float>(w, "trailSpacing"), trailSize: Field<int>(w, "trailSize")));
 
     // Rollers: two ground flicks (a wide fan of many small blobs), then an air flick (a long, narrow line).
@@ -161,14 +161,14 @@ public class FluidLab : MonoBehaviour
         int n = Field<int>(w, kind + "Droplets"), splat = Field<int>(w, kind + "Splat");
         float fan = Field<float>(w, kind + "Fan"), flickPitch = Field<float>(w, kind + "Pitch");
         Vector2 speeds = Field<Vector2>(w, kind + "Speed");
-        float look = inAir ? 1f : Field<float>(w, "groundBlobScale");
+        ShotLook look = Field<ShotLook>(w, inAir ? "airLook" : "groundLook");
         for (int i = 0; i < n; i++)
         {
             float k = n > 1 ? i / (n - 1f) : 0.5f;
             float yaw = inAir ? Random.Range(-fan, fan) * 0.5f : Mathf.Lerp(-fan, fan, k) * 0.5f + Random.Range(-3f, 3f);
             float pitch = flickPitch + AimRaise + Random.Range(-3f, 3f);
             float speed = inAir ? Mathf.Lerp(speeds.x, speeds.y, k) : Random.Range(speeds.x, speeds.y);
-            Fire(m, yaw, pitch, speed * pace, splat, true, ballistics, look, FluidKind.Roller);
+            Fire(m, yaw, pitch, speed * pace, splat, true, ballistics, look);
         }
     });
 
@@ -184,7 +184,7 @@ public class FluidLab : MonoBehaviour
         {
             float k = n > 1 ? i / (n - 1f) : 0.5f;
             float yaw = Mathf.Lerp(-fan, fan, k) * 0.5f + lean * sign + Random.Range(-3f, 3f);
-            Fire(m, yaw, pitch + AimRaise + Random.Range(-3f, 3f), Random.Range(speed.x, speed.y) * pace, splat, true, ballistics);
+            Fire(m, yaw, pitch + AimRaise + Random.Range(-3f, 3f), Random.Range(speed.x, speed.y) * pace, splat, true, ballistics, Field<ShotLook>(w, "dropletLook"));
         }
     });
 
@@ -200,9 +200,9 @@ public class FluidLab : MonoBehaviour
         {
             float k = n > 1 ? i / (n - 1f) : 1f;
             float yaw = Random.Range(-spread, spread) + sway * Mathf.Sin(k * Mathf.PI * bends + phase);
-            Fire(m, yaw, pitch + AimRaise + Random.Range(-1.5f, 1.5f), Mathf.Lerp(speed.x, speed.y, k) * pace, splat, true, ballistics, 1f, FluidKind.Bucket);
+            Fire(m, yaw, pitch + AimRaise + Random.Range(-1.5f, 1.5f), Mathf.Lerp(speed.x, speed.y, k) * pace, splat, true, ballistics, Field<ShotLook>(w, "dropletLook"));
         }
-        Fire(m, 0f, pitch + AimRaise, Field<float>(w, "blobSpeed") * pace, blobSplat, true, ballistics, Field<float>(w, "blobLook"), FluidKind.Bucket);
+        Fire(m, 0f, pitch + AimRaise, Field<float>(w, "blobSpeed") * pace, blobSplat, true, ballistics, Field<ShotLook>(w, "blobLook"));
     });
 
     // The Sprinkler: a model of it stuck to the floor (its scripts and colliders taken off), spun and
@@ -243,7 +243,7 @@ public class FluidLab : MonoBehaviour
             {
                 Vector3 along = head.forward * side;
                 Vector3 dir = (along + model.transform.up * lift).normalized;
-                ProjectileManager.Fire(head.position + along * 0.25f, dir * speed, Field<int>(s, "splashSize"), mm.team, damage: 0f, source: "Sprinkler");
+                ProjectileManager.Fire(head.position + along * 0.25f, dir * speed, Field<int>(s, "splashSize"), mm.team, damage: 0f, source: "Sprinkler", look: Field<ShotLook>(s, "shotLook"));
             }
         };
         m.show = shown => holder.SetActive(shown);

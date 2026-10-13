@@ -20,7 +20,8 @@ public class ProjectileManager : MonoBehaviour
         public float age;
         public Ballistics ballistics;
         public bool visible;
-        public float drawRadius, seed;        // its look (InkFluid)
+        public float drawRadius, seed;        // its look (InkFluid)...
+        public ShotLook look;                 // ...and the rest of it
         public float radius, damage;
         public int splashSize, team;
         public bool authoritative, splashes;  // splashes: a splatter where it lands (seen shots)
@@ -88,14 +89,14 @@ public class ProjectileManager : MonoBehaviour
     }
 
     // Launches a shot: `launch` is its starting velocity (direction × speed), `inherit` the shooter's
-    // carried velocity. A seen one is drawn `look` x the usual size for its splat (InkFluid.Radius),
-    // with `kind`'s companion blobs.
+    // carried velocity. A seen one is drawn by its `look` (its weapon's: size, stretch and companion
+    // blobs; InkFluidSettings' default if none).
     public static Shot Fire(Vector3 origin, Vector3 launch, int splashSize, int team,
                             bool visible = true, bool authoritative = true, ulong ownerId = 0, float damage = 30f,
                             bool splashes = true, Ballistics ballistics = null, Vector3 inherit = default,
                             string source = null, float maxDistance = 0f, InkBlast blast = null,
-                            float trailSpacing = 0f, int trailSize = 0, HashSet<Object> hitGroup = null, float look = 1f,
-                            DamageFalloff falloff = null, float radiusScale = 1f, FluidKind kind = FluidKind.Shot)
+                            float trailSpacing = 0f, int trailSize = 0, HashSet<Object> hitGroup = null, ShotLook look = null,
+                            DamageFalloff falloff = null, float radiusScale = 1f)
     {
         ProjectileManager m = Instance;
         Shot s;
@@ -125,11 +126,12 @@ public class ProjectileManager : MonoBehaviour
         s.hitGroup = hitGroup;
         s.colour = InkFluid.Colour(team);
         s.visible = visible;
+        s.look = look ?? InkFluidSettings.Instance.defaultLook;
         if (visible)
         {
-            s.drawRadius = InkFluid.Radius(splashSize, look);
+            s.drawRadius = InkFluid.Radius(splashSize, s.look.size);
             s.seed = Random.value * 100f;
-            InkFluid.Companions(origin, launch, inherit, s.ballistics, s.drawRadius, s.colour, kind, maxDistance);
+            InkFluid.Companions(origin, launch, inherit, s.ballistics, s.drawRadius, s.colour, s.look, maxDistance);
         }
         m.live.Add(s);
         return s;
@@ -142,7 +144,7 @@ public class ProjectileManager : MonoBehaviour
         {
             Shot s = live[i];
             if (dt > 0f && Advance(s, dt)) { Retire(i); continue; }
-            if (s.visible) InkFluid.DrawShot(s.position, s.Velocity, s.drawRadius, s.age, s.seed, s.colour);
+            if (s.visible) InkFluid.DrawShot(s.position, s.Velocity, s.drawRadius, s.age, s.seed, s.colour, s.look.stretch);
         }
     }
 

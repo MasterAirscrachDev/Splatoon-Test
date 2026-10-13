@@ -63,7 +63,6 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
 
     // Floor/wall threshold, shared with WallClimbSensor. Not controller.slopeLimit: that's 90° while climbing.
     const float WalkableSlopeLimit = 45f;
-    const float FallSplashMinHeight = 0.5f;  // min fall to splash when landing in ink
     const float ViewmodelSwitchSpeed = 12f;  // kid/squid model scale easing
     // Fastest we can rise: a jump's push (2 x jump) is clipped to this before gravity, so it peaks at
     // about 1.52m at any frame rate (the height it had at 75 fps before it was made exact).
@@ -144,10 +143,8 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
     SurfaceInkManager groundInk; // ink surface below, from GetInkTeam
     Vector2 groundInkUV;
     Vector3 groundNormal = Vector3.up;
-    float lastGroundedY;
-    bool wasGroundedPrev;
     bool prevInOwnInk;
-    float lastExitSplatTime = -1f, lastEnterSplatTime = -1f;
+    float lastExitSplatTime = -1f;
 
     // Climbing. isClimbing = sensor sees an own-ink wall; effectivelyClimbing = actually on it.
     bool isClimbing, wasClimbing, effectivelyClimbing;

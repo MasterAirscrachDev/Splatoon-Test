@@ -1,21 +1,11 @@
 using UnityEngine;
 
 // The ink's look, in one place for the game and the fluid lab (Resources/InkFluidSettings): how the
-// FluidRenderer draws ink (renderer), and how big and how many drops InkFluid draws for each shot,
-// splash and blast.
+// FluidRenderer draws ink (renderer), the size rule for drawn shots, and the splatter and blasts.
+// Each weapon's own shots (their size, stretch and companions) are tuned on the weapon (ShotLook).
 [CreateAssetMenu(menuName = "Ink/Fluid Settings", fileName = "InkFluidSettings")]
 public class InkFluidSettings : ScriptableObject
 {
-    [System.Serializable]
-    public class Companions
-    {
-        public int count = 2;                                   // blobs travelling with each seen shot...
-        public Vector2 size = new Vector2(0.5f, 0.85f);         // ...this big (share of the shot)...
-        public float spread = 2f;                               // ...off its direction, up and down (degrees)...
-        public float across = 2f;                               // ...and side to side...
-        public float speed = 0.05f;                             // ...and its speed by up to this share
-    }
-
     [Header("Shaders")]
     public Shader particleShader;   // Fluid/Particles
     public Shader smoothShader;     // Fluid/Smooth
@@ -25,33 +15,48 @@ public class InkFluidSettings : ScriptableObject
     public FluidRenderer.Look renderer = new FluidRenderer.Look();
 
     [Header("Shots")]
-    [Tooltip("A drawn shot's radius, as a share of the radius of the splat it paints (at the map's ink scale)")]
+    [Tooltip("The usual size of a drawn shot: its radius as a share of the radius of the splat it paints (at the map's ink scale). Scales every weapon's ink at once; each weapon's ShotLook Size multiplies it")]
     public float blobFill = 0.3f;
-    public float stretch = 0.1f;                                // teardrop length per m/s (x radius)
-    public float wobble = 0.12f;                                // radius wobble as it flies (share)
-    [Range(0f, 1f)] public float fillersSeen = 0.33f;           // shooters' filler shots drawn (the rest only paint)
-    public Companions shotCompanions = new Companions();
-    public Companions rollerCompanions = new Companions { count = 4 };
-    public Companions bucketCompanions = new Companions { count = 3, spread = 1f, across = 3f, speed = 0.1f }; // along its line: one long body of ink
+    [Tooltip("How much every blob's radius wobbles as it flies (share of its radius), so they don't look like rigid balls")]
+    public float wobble = 0.12f;
+    [Tooltip("The look of shots fired without one of their own (tests, and anything that doesn't say)")]
+    public ShotLook defaultLook = new ShotLook();
 
-    [Header("Splatter (where a shot lands)")]
-    public Vector2Int crownBlobs = new Vector2Int(2, 4);        // thrown up and out (more for bigger shots)
-    public Vector2 crownSize = new Vector2(0.35f, 0.55f);       // share of the shot
-    public float crownKick = 2.5f;                              // m/s off the surface
-    public int puddleDrops = 6;                                 // the puddle spreading along the surface...
-    public float puddleTime = 0.22f;                            // ...and sinking into the paint
+    [Header("Splatter (where a seen shot lands)")]
+    [Tooltip("Blobs thrown up and out where a shot lands (min, max: bigger shots throw more)")]
+    public Vector2Int crownBlobs = new Vector2Int(2, 4);
+    [Tooltip("Their size, a random share of the shot's (min, max)")]
+    public Vector2 crownSize = new Vector2(0.35f, 0.55f);
+    [Tooltip("How hard they're thrown up off the surface (metres per second)")]
+    public float crownKick = 2.5f;
+    [Tooltip("Blobs in the ring of the puddle that spreads out along the surface where a shot lands")]
+    public int puddleDrops = 6;
+    [Tooltip("Seconds the puddle takes to spread and sink into the paint")]
+    public float puddleTime = 0.22f;
+    [Tooltip("How much splatter and blast blobs stretch into teardrops as they fly (as ShotLook Stretch)")]
+    public float stretch = 0.1f;
 
     [Header("Blasts")]
-    public float coreReach = 0.45f;                             // the core's widest radius (share of the blast's)...
-    public float coreTime = 0.35f;                              // ...swelling and collapsing
-    public int coreBlobs = 6;                                   // the core is several blobs...
-    public Vector2 coreSize = new Vector2(0.55f, 0.8f);         // ...this big (share of coreReach)...
-    public float coreScatter = 0.2f;                            // ...set this far off the centre (share of the blast's radius)
-    public int shellBlobs = 18;                                 // a shell bursting out...
-    public Vector2 shellSize = new Vector2(0.1f, 0.16f);        // ...radius, share of the blast's...
-    public Vector2 shellSpeed = new Vector2(4f, 6f);            // ...blast radii per second, slowing...
-    public float shellLife = 0.2f;                              // ...gone quickly (no gravity: the burst, not falling ink)...
-    [Range(0f, 1f)] public float shellShrink = 0.5f;            // ...shrinking away over this last share of it
+    [Tooltip("How wide the blast's core gets at its biggest: each core blob's radius, as a share of the blast's damage radius")]
+    public float coreReach = 0.45f;
+    [Tooltip("Seconds the core takes to swell and collapse")]
+    public float coreTime = 0.35f;
+    [Tooltip("Blobs making up the core (more: a lumpier surface)")]
+    public int coreBlobs = 6;
+    [Tooltip("Each core blob's size, a random share of Core Reach (min, max)")]
+    public Vector2 coreSize = new Vector2(0.55f, 0.8f);
+    [Tooltip("How far the core blobs sit off the centre (share of the blast's radius): higher is lumpier")]
+    public float coreScatter = 0.2f;
+    [Tooltip("Blobs in the shell bursting out of the blast")]
+    public int shellBlobs = 18;
+    [Tooltip("Each shell blob's radius, a random share of the blast's radius (min, max)")]
+    public Vector2 shellSize = new Vector2(0.1f, 0.16f);
+    [Tooltip("How fast the shell bursts out, in blast radii per second (min, max); it slows as it goes")]
+    public Vector2 shellSpeed = new Vector2(4f, 6f);
+    [Tooltip("Seconds the shell lasts (no gravity: it's the burst, not falling ink)")]
+    public float shellLife = 0.2f;
+    [Tooltip("The last share of its life over which each shell blob shrinks away (0: vanishes at once)")]
+    [Range(0f, 1f)] public float shellShrink = 0.5f;
 
     static InkFluidSettings instance;
     public static InkFluidSettings Instance

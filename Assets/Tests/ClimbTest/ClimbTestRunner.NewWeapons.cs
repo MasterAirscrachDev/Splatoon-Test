@@ -120,7 +120,20 @@ public partial class ClimbTestRunner
         NetGameManager.SendOverride = null;
     }
 
-    // Swipes alternating sides, a light hit each; held, a fast, narrow brush along the floor.
+    // Turns the view to `pitch` (degrees down) with the look stick, then lets go.
+    IEnumerator LookAtPitch(float pitch)
+    {
+        player.ScriptedInput.recenter = false;
+        for (float t = 0f; t < 3f && Mathf.Abs(player.CameraPitch - pitch) > 0.5f; t += Time.deltaTime)
+        {
+            player.ScriptedInput.lookStick = new Vector2(0f, Mathf.Clamp((player.CameraPitch - pitch) / 15f, -1f, 1f)); // up on the stick looks up
+            yield return null;
+        }
+        player.ScriptedInput.lookStick = Vector2.zero;
+    }
+
+    // Swipes alternating sides, a light hit each; held, a fast, narrow brush along the floor, a moment
+    // after the swing.
     IEnumerator InkbrushWeapon()
     {
         NetGameManager gm = NetGameManager.Instance;
@@ -149,7 +162,9 @@ public partial class ClimbTestRunner
         Brush brush = loadout.CurrentWeapon as Brush;
         if (brush == null) { Fail("the Inkbrush didn't equip"); loadout.SetMainWeapon(weaponBefore); NetGameManager.SendOverride = null; yield break; }
 
-        // Two swipes: each the other way, the fan leaning the way the head swings; the swing sweeps across.
+        // Two swipes at the usual view (30° down: they fly level): each the other way, the fan leaning
+        // the way the head swings; the swing sweeps across.
+        yield return LookAtPitch(30f);
         const ulong Foe = 3401;
         SpawnRemote(Foe, enemyTeam, new Vector3(start.x, station.position.y + 0.05f, start.z) + forward * 2.5f, "BrushFoe");
         yield return Hold(Still, false, 0.3f, "foe");
@@ -175,25 +190,27 @@ public partial class ClimbTestRunner
         if (HitsTo(Foe) < 1 || HitsTo(Foe) > 2 || DamageTo(Foe) > brush.SwipeDamage.damage * 2f + 0.01f) Fail("a swipe didn't hit the enemy once for its light damage");
         Despawn(Foe);
 
-        // Swung where we look, like a sword: looking up raises the swing and the droplets.
+        // Aimed off the view, like a sword: level at the usual view (about 30° down), as high as it
+        // goes looking 30° up.
         float Elevation(Vector3[] launches) => launches.Average(v => Mathf.Atan2(v.y, Flat(v).magnitude) * Mathf.Rad2Deg);
-        float levelElevation = Elevation(brush.LastSwipe);
-        player.ScriptedInput.lookStick = new Vector2(0f, 1f);
-        yield return Hold(Still, false, 0.2f, "look up");
-        player.ScriptedInput.lookStick = Vector2.zero;
-        float lookedUp = -player.CameraPitch;
-        yield return Hold(Still, false, brush.SwipeRate, "cooldown");
-        brush.ScriptedFire = true; yield return null; brush.ScriptedFire = false;
-        yield return Hold(Still, false, brush.SwipeTime * 0.6f, "aimed swipe");
-        float swingPitch = -brush.SwipePitchNow;
-        yield return Hold(Still, false, brush.SwipeTime, "aimed swipe");
-        float raisedElevation = Elevation(brush.LastSwipe);
+        var swings = new List<float>(); var elevations = new List<float>();
+        foreach (float view in new[] { 30f, -30f })
+        {
+            yield return LookAtPitch(view);
+            yield return Hold(Still, false, brush.SwipeRate, "cooldown");
+            brush.ScriptedFire = true; yield return null; brush.ScriptedFire = false;
+            yield return Hold(Still, false, brush.SwipeTime * 0.6f, "aimed swipe");
+            swings.Add(-brush.SwipePitchNow);
+            yield return Hold(Still, false, brush.SwipeTime, "aimed swipe");
+            elevations.Add(Elevation(brush.LastSwipe));
+        }
         player.ScriptedInput.recenter = true;
         yield return Hold(Still, false, 0.6f, "recenter");
         player.ScriptedInput.recenter = false;
-        Note($"looking {lookedUp:F0}° up: the swing pitched {swingPitch:F0}° up, the droplets rose from {levelElevation:F0}° to {raisedElevation:F0}°");
-        if (Mathf.Abs(swingPitch - lookedUp) > 8f) Fail("the swipe didn't swing where we look");
-        if (Mathf.Abs(raisedElevation - levelElevation - lookedUp) > 6f) Fail("the swipe's droplets didn't follow the view up");
+        float top = brush.SwipePitchLimits.y;
+        Note($"looking 30° down: swung {swings[0]:F0}° up, droplets at {elevations[0]:F0}°; looking 30° up: swung {swings[1]:F0}° up, droplets at {elevations[1]:F0}° (their highest {top:F0}°)");
+        if (Mathf.Abs(swings[0]) > 8f || Mathf.Abs(elevations[0]) > 10f) Fail("at the usual view (30° down) the swipe doesn't aim about level");
+        if (swings[1] < 40f || elevations[1] < top - 6f) Fail("looking 30° up, the swipe doesn't aim as high as it goes");
 
         // Walking speed, then brushing: down, fast, a strip about 2m wide.
         floor.FillRegion(new Rect(0, 0, 1, 1), 0);
@@ -211,8 +228,12 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.3f, "placed");
         player.RefillInk();
         brush.ScriptedFire = true;
+        float pressedAt = Time.time;
         yield return HoldUntil(Still, false, 1f, "to brush", f => brush.Down);
         bool wentDown = brush.Down;
+        float downAfter = Time.time - pressedAt; // the swipe, then a moment before it goes down
+        Note($"held: down {downAfter:F2}s after the press (swipe {brush.SwipeTime:F2}s + wait {brush.DownDelay:F2}s)");
+        if (wentDown && downAfter < brush.SwipeTime + brush.DownDelay - 0.05f) Fail("holding attack, the brush went down straight after the swipe");
         yield return Hold(Still, false, 0.4f, "settle");
         float headUp = brush.Head.position.y - station.position.y;
         floor.FillRegion(new Rect(0, 0, 1, 1), 0); // not the swipe's ink

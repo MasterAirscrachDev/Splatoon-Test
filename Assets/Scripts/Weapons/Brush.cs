@@ -3,8 +3,9 @@ using UnityEngine;
 
 // Inkbrush: quick side-to-side swipes and a fast, narrow brush along the floor. Built from the Roller:
 // pressing attack swipes the brush across in front of us, the other way from the last swipe, flinging
-// a short fan of droplets that leans the way the head's going. Holding attack afterwards drags the
-// bristles along the floor: moving inks a strip as wide as the head under it (costing ink by the
+// a short fan of droplets that leans the way the head's going. Swipes aim off the view: level at a
+// normal downward look (levelViewPitch), higher as we look up, up to their limit. Holding attack
+// afterwards, a moment after the swing, drags the bristles along the floor: moving inks a strip as wide as the head under it (costing ink by the
 // metre), much faster than a roller (starting at brushStartSpeed of our move speed and building to
 // brushSpeed, again after any stop), and catches enemies for brushDamage each time it meets one.
 // Leaving the ground lifts it; out of ink, it stays up. Remote copies show the pose (synced as
@@ -12,43 +13,46 @@ using UnityEngine;
 public class Brush : Weapon
 {
     [Header("Swipe")]
-    [SerializeField] float swipeRate = 0.2f;          // seconds between swipes
-    [SerializeField] float swipeTime = 0.16f;         // the swing across
-    [SerializeField] float releaseAt = 0.5f;          // share of the swing when the droplets leave
-    [SerializeField] float swipeArc = 80f;            // degrees, from one side to the other
-    [SerializeField] float swipeInkCost = 20f;        // x0.001 of a full tank
+    [SerializeField, Tooltip("Seconds between swipes")] float swipeRate = 0.2f;
+    [SerializeField, Tooltip("The swing across")] float swipeTime = 0.16f;
+    [SerializeField, Tooltip("Share of the swing when the droplets leave")] float releaseAt = 0.5f;
+    [SerializeField, Tooltip("Degrees, from one side to the other")] float swipeArc = 80f;
+    [SerializeField, Tooltip("Ink per use, in thousandths of a full tank")] float swipeInkCost = 20f;
     [SerializeField] Ballistics ballistics = new Ballistics();
-    [SerializeField] float swipePace = 2f;            // droplets fly their path this many times as fast (speeds below are before it)
-    [SerializeField] float aimInfluence = 1f;         // how much looking up/down tilts a swipe
-    [SerializeField] Vector2 swipePitchLimits = new Vector2(-40f, 50f);
-    [SerializeField] int droplets = 5;
-    [SerializeField] float fan = 40f;                 // degrees across
-    [SerializeField] float lean = 12f;                // the fan's lean the way the head swings (degrees)
-    [SerializeField] float swipePitch = 4f;           // degrees up from the view
-    [SerializeField] Vector2 swipePoseLimits = new Vector2(-50f, 50f); // the swing follows the view's pitch (down, up), like a sword
-    [SerializeField] Vector2 dropletSpeed = new Vector2(7f, 9.5f);
-    [SerializeField] DamageFalloff swipeDamage = new DamageFalloff(40f, DamageFalloff.HoldThenFall(0f, 0.4f, 0.5f)); // once per enemy per swipe
-    [SerializeField] int swipeSplat = 9;
+    [SerializeField, Tooltip("Droplets fly their whole path this many times as fast (the speeds below are before it): snappy, landing where they would")] float swipePace = 2f;
+    [SerializeField, Tooltip("The view's pitch (degrees down) at which swipes go level. The usual view looks about 30° down: swipes then fly level rather than into the floor")] float levelViewPitch = 30f;
+    [SerializeField, Tooltip("How much looking up or down from that tilts a swipe (1: as much as the view)")] float aimInfluence = 1f;
+    [SerializeField, Tooltip("The lowest and highest the droplets are thrown (degrees from level: down, up). Looking 30° up reaches the top with the defaults")] Vector2 swipePitchLimits = new Vector2(-40f, 50f);
+    [SerializeField, Tooltip("Droplets per swipe. However many hit an enemy, they take its damage once")] int droplets = 5;
+    [SerializeField, Tooltip("How wide the droplets fan out (degrees, edge to edge)")] float fan = 40f;
+    [SerializeField, Tooltip("How far the fan leans the way the head swings (degrees)")] float lean = 12f;
+    [SerializeField, Tooltip("The droplets leave this many degrees above the swing")] float swipePitch = 4f;
+    [SerializeField, Tooltip("The lowest and highest the brush itself swings (degrees from level: down, up); it follows the aim like a sword")] Vector2 swipePoseLimits = new Vector2(-50f, 50f);
+    [SerializeField, Tooltip("Each droplet's launch speed, random between these (min, max), before Swipe Pace")] Vector2 dropletSpeed = new Vector2(7f, 9.5f);
+    [SerializeField, Tooltip("Once per enemy per swipe")] DamageFalloff swipeDamage = new DamageFalloff(40f, DamageFalloff.HoldThenFall(0f, 0.4f, 0.5f));
+    [SerializeField, Tooltip("Each droplet's splat size (also how big it's drawn)")] int swipeSplat = 9;
+    [SerializeField, Tooltip("How the droplets are drawn")] ShotLook dropletLook = new ShotLook();
 
     [Header("Brushing")]
-    [SerializeField] float brushDamage = 25f;         // to each enemy it meets (again only after they're clear of it)
-    [SerializeField] float brushStartSpeed = 1.2f;    // x our move speed as it goes down...
-    [SerializeField] float brushSpeed = 1.9f;         // ...building to this
-    [SerializeField] float brushRampTime = 0.3f;      // of brushing on the move (stopping starts it over)
-    [SerializeField] float brushInkPerMetre = 3f;     // x0.001 of a full tank
-    [SerializeField] float brushPaintSpacing = 0.2f;  // paints a row of splats across the head this often (metres)
-    [SerializeField] int brushSplatPoints = 3;        // splats across its width
-    [SerializeField] int brushSplatSize = 3;          // three side by side: the strip comes out about headWidth
-    [SerializeField] float minBrushSpeed = 1f;        // metres per second: slower than this it neither paints nor hurts
+    [SerializeField, Tooltip("Holding attack after a swipe, seconds before the brush goes down to the floor (so quick swipes stay swipes)")] float downDelay = 0.25f;
+    [SerializeField, Tooltip("To each enemy it meets (again only after they're clear of it)")] float brushDamage = 25f;
+    [SerializeField, Tooltip("Brushing speed as it goes down, x our move speed")] float brushStartSpeed = 1.2f;
+    [SerializeField, Tooltip("Brushing speed it builds up to, x our move speed")] float brushSpeed = 1.9f;
+    [SerializeField, Tooltip("Seconds of brushing on the move to build up to full speed (stopping starts it over)")] float brushRampTime = 0.3f;
+    [SerializeField, Tooltip("Ink per metre brushed, in thousandths of a full tank")] float brushInkPerMetre = 3f;
+    [SerializeField, Tooltip("Paints a row of splats across the head this often (metres)")] float brushPaintSpacing = 0.2f;
+    [SerializeField, Tooltip("Splats across its width")] int brushSplatPoints = 3;
+    [SerializeField, Tooltip("Three side by side: the strip comes out about headWidth")] int brushSplatSize = 3;
+    [SerializeField, Tooltip("Metres per second: slower than this it neither paints nor hurts")] float minBrushSpeed = 1f;
 
     [Header("Model")]
-    [SerializeField] Transform head;                  // the bristles' middle: what meets the floor
-    [SerializeField] float headWidth = 2f;            // the strip it inks (wider than the bristles: the ink spreads)
-    [SerializeField] float headThickness = 0.15f;     // its centre sits this high off the floor
-    [SerializeField] Vector3 brushShift = new Vector3(-0.5f, 0f, 0f); // from the hand to our centre line while it's down
-    [SerializeField] float carryPitch = 10f;          // degrees down, held out in front
-    [SerializeField] float idlePitch = -35f;          // not attacking or brushing: held up...
-    [SerializeField] Vector3 idleOffset = new Vector3(0.05f, 0f, -0.3f); // ...at our side
+    [SerializeField, Tooltip("The bristles' middle: what meets the floor")] Transform head;
+    [SerializeField, Tooltip("The strip it inks (wider than the bristles: the ink spreads)")] float headWidth = 2f;
+    [SerializeField, Tooltip("Its centre sits this high off the floor")] float headThickness = 0.15f;
+    [SerializeField, Tooltip("From the hand to our centre line while it's down")] Vector3 brushShift = new Vector3(-0.5f, 0f, 0f);
+    [SerializeField, Tooltip("Degrees down, held out in front")] float carryPitch = 10f;
+    [SerializeField, Tooltip("Pitch when not attacking or brushing: held up at our side (degrees)")] float idlePitch = -35f;
+    [SerializeField, Tooltip("Where it's held at our side when idle, from the hand")] Vector3 idleOffset = new Vector3(0.05f, 0f, -0.3f);
     [SerializeField] float poseSpeed = 18f;
 
     enum State { Idle, Swipe, Held }
@@ -57,6 +61,7 @@ public class Brush : Weapon
     State state;
     bool wasPressed, dry, local, wantSwipe;
     float swipeStart = -10f, released = -20f, brushing, sincePaint; // brushing: seconds on the move with it down
+    float heldSince;                                  // when the last swipe ended with attack still held
     int swipeSign = -1;                               // the way the current swipe goes: +1 left to right
     CharacterController body;
     Vector3 lastPos, homePos;
@@ -163,11 +168,11 @@ public class Brush : Weapon
             player.MarkAiming();
             float t = Time.time - swipeStart;
             if (t >= swipeTime * releaseAt && released != swipeStart) Release(player);
-            if (t >= swipeTime) { state = pressed ? State.Held : State.Idle; dry = false; }
+            if (t >= swipeTime) { state = pressed ? State.Held : State.Idle; dry = false; heldSince = Time.time; }
         }
 
-        // Down while held on the ground with ink to brush with.
-        bool wantDown = state == State.Held && OnGround(player) && !dry;
+        // Down while held on the ground with ink to brush with, a moment after the swipe.
+        bool wantDown = state == State.Held && (Down || Time.time - heldSince >= downDelay) && OnGround(player) && !dry;
         if (wantDown)
         {
             float metres = moved.magnitude;
@@ -211,7 +216,7 @@ public class Brush : Weapon
         Vector3 flat = Flat(player);
         Vector3 look = Quaternion.AngleAxis(SwipePose(player), Vector3.Cross(Vector3.up, flat)) * flat;
         Vector3 origin = Pivot() + look * (reach * 0.6f);
-        float aimUp = -player.RaisedAimPitch * aimInfluence;
+        float aimUp = SwingUp(player);
         Vector3 inherit = body != null ? body.velocity : Vector3.zero;
         inherit.y = 0f;
         float facing = player.transform.eulerAngles.y;
@@ -239,7 +244,7 @@ public class Brush : Weapon
     void Fire(Vector3 from, Vector3 launch, Vector3 inherit, int size, int team, ulong ownerId, bool authoritative, DamageFalloff damage, HashSet<Object> hits)
     {
         ProjectileManager.Fire(from, launch, size, team, true, authoritative, ownerId, 0f,
-                               ballistics: paced ?? ballistics, falloff: damage, inherit: inherit, source: Source, hitGroup: hits);
+                               ballistics: paced ?? ballistics, falloff: damage, inherit: inherit, source: Source, hitGroup: hits, look: dropletLook);
     }
 
     // Their swipe, visual-only here, the swing played from where the droplets leave (alternating
@@ -332,8 +337,12 @@ public class Brush : Weapon
         transform.rotation = Quaternion.Euler(pitch, BodyYaw(player) + yawOff, 0f); // along the body (which faces the view while swiping)
     }
 
-    // A swipe's pitch (degrees down): the view's, within limits.
-    float SwipePose(PlayerController player) => Mathf.Clamp(player.CameraPitch, -swipePoseLimits.y, -swipePoseLimits.x);
+    // How far above level a swipe aims (degrees): level at levelViewPitch, following the view from there.
+    public float SwingUp(PlayerController player) => (levelViewPitch - player.CameraPitch) * aimInfluence;
+    // A swipe's pose (degrees down): its aim, within limits.
+    float SwipePose(PlayerController player) => Mathf.Clamp(-SwingUp(player), -swipePoseLimits.y, -swipePoseLimits.x);
+    public Vector2 SwipePitchLimits => swipePitchLimits; // tests
+    public float DownDelay => downDelay;
     public float SwipePitchNow => pitch; // tests
 
     // Tipped down until the head sits on the floor in front.

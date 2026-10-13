@@ -18,6 +18,8 @@ public static class WeaponRatings
         ("HeavyRoller",    0.95f, 0.75f, 0.20f),
         ("Inkbrush",       0.25f, 0.20f, 0.95f),
         ("Bucket",         0.80f, 0.55f, 0.40f),
+        ("Sniper",         0.95f, 0.95f, 0.20f),
+        ("Minigun",        0.55f, 0.75f, 0.40f),
     };
 
     [MenuItem("Tools/Weapons/Set Loadout Ratings")]

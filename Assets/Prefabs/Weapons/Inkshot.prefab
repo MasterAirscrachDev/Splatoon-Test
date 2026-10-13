@@ -60,6 +60,7 @@ MonoBehaviour:
   fireRate: 0.18
   shotSpeed: 18.75
   fillerShots: 7
+  fillersSeen: 0.33
   ballistics:
     velocityOverTime:
       serializedVersion: 2
@@ -159,6 +160,22 @@ MonoBehaviour:
   yawSpread: 2
   pitchSpread: 0.5
   fillerSpread: 3
+  shotLook:
+    size: 1
+    stretch: 0.1
+    companions: 2
+    companionSize: {x: 0.5, y: 0.85}
+    upDownSpread: 2
+    sideSpread: 2
+    speedSpread: 0.05
+  fillerLook:
+    size: 1
+    stretch: 0.1
+    companions: 2
+    companionSize: {x: 0.5, y: 0.85}
+    upDownSpread: 2
+    sideSpread: 2
+    speedSpread: 0.05
 --- !u!114 &4562537206152152510
 MonoBehaviour:
   m_ObjectHideFlags: 0

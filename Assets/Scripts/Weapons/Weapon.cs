@@ -8,17 +8,17 @@ public abstract class Weapon : MonoBehaviour
 {
     [SerializeField] string displayName = "Weapon";
     [SerializeField, TextArea] string description;
-    [SerializeField] Sprite icon;          // rendered in the icon studio (Tools/Icons/Render Icons)
+    [SerializeField, Tooltip("Rendered in the icon studio (Tools/Icons/Render Icons)")] Sprite icon;
 
     [Header("Loadout card")] // rough 0-1 ratings, the bars in the loadout menu (hand-set: they don't follow the tuning)
-    [SerializeField, Range(0f, 1f)] float powerRating = 0.5f; // (not "range": the Blaster has its own)
+    [SerializeField, Range(0f, 1f), Tooltip("(not \"range\": the Blaster has its own)")] float powerRating = 0.5f;
     [SerializeField, Range(0f, 1f)] float rangeRating = 0.5f;
     [SerializeField, Range(0f, 1f)] float speedRating = 0.5f;
 
     [Header("Feet ink")] // keeps the shooter standing in their own ink
-    [SerializeField] float feetShotInterval = 0.4f;
-    [SerializeField] int feetShotMinSize = 12, feetShotMaxSize = 18;
-    [SerializeField] float feetShotDropSpeed = 6f; // starts falling at once, so it lands under us even on the move
+    [SerializeField, Tooltip("While shooting, an unseen shot drops at our feet this often (seconds), so we stand in our own ink")] float feetShotInterval = 0.4f;
+    [SerializeField, Tooltip("Its splat size, random between these (min, max)")] int feetShotMinSize = 12, feetShotMaxSize = 18;
+    [SerializeField, Tooltip("How fast it drops (metres per second): it lands under us even on the move")] float feetShotDropSpeed = 6f;
 
     float nextFeetShot;
 
@@ -31,6 +31,11 @@ public abstract class Weapon : MonoBehaviour
     public PlayerController Owner { get; private set; }
     public int FeetShots { get; private set; } // tests
     public virtual Transform ShotOrigin => null;  // where aimed shots leave from (the reticle checks the way from it); none: thrown or swung
+    // Where its shot would end right now, when the weapon works that out itself (the Sniper): the
+    // true reticle shows it. False: the reticle checks the way from ShotOrigin to the aim point.
+    public virtual bool AimEnd(out Vector3 point) { point = default; return false; }
+    // How charged it is (0-1) for the true reticle's fill; below 0: it doesn't charge.
+    public virtual float ChargeShown => -1f;
 
     // Another player's shots with this weapon, shown here (they paint and damage on their side).
     public virtual void Replay(ProjectileSpawnData d) { }
@@ -39,7 +44,12 @@ public abstract class Weapon : MonoBehaviour
     // straight down. Not replayed on remotes: its splat reaches them like any other.
     protected void UpdateFeetInk(PlayerController player, bool shooting)
     {
-        if (!shooting || Time.time < nextFeetShot) return;
+        if (shooting && Time.time >= nextFeetShot) FeetInkNow(player);
+    }
+
+    // One at once (a shot's own, like the Sniper's), the next one feetShotInterval after.
+    protected void FeetInkNow(PlayerController player)
+    {
         nextFeetShot = Time.time + feetShotInterval;
         FeetShots++;
         Vector3 feet = player.transform.position + Vector3.up * 0.5f;

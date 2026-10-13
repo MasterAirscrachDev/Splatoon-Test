@@ -376,7 +376,7 @@ public partial class ClimbTestRunner
         float groundSpread = Spread(roller.LastFlick ?? new Vector3[0]);
         float groundReach = landed.Count > 0 ? landed.Max(p => Flat(p - start).magnitude) : 0f;
         float launchSpeed = roller.LastFlick != null ? roller.LastFlick.Max(v => v.magnitude) : 0f;
-        Note($"droplets launched at up to {launchSpeed:F1} m/s ({roller.FlickPace}x pace), ground flick drawn {roller.GroundBlobScale}x size");
+        Note($"droplets launched at up to {launchSpeed:F1} m/s ({roller.FlickPace}x pace), ground flick drawn {roller.GroundLook.size}x size");
         Note($"ground flick: {roller.LastFlick?.Length ?? 0} droplets across {groundSpread:F0}°, landing up to {groundReach:F1}m out; cost {flickCost * 100f:F1}% ink; the enemy 3m ahead took {DamageTo(Foe):0} in {HitsTo(Foe)} hit(s)");
         if (roller.Flicks != 1 || roller.LastFlickInAir) Fail("pressing on the ground didn't do a ground flick");
         if (groundSpread < 45f) Fail("the ground flick isn't a wide fan");

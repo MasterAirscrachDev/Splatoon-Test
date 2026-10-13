@@ -10524,6 +10524,8 @@ MonoBehaviour:
   - {fileID: 3555775979981969089, guid: 045c887907d4fbb40a3bdf7a342a1eaf, type: 3}
   - {fileID: 6419638794776388096, guid: 19c78d1aef5f42a42abd3b4d0aa86510, type: 3}
   - {fileID: 4818481672707639767, guid: 9c3d89b636d850942a89cd56c2de88ca, type: 3}
+  - {fileID: 7661195894132095809, guid: e7f35cbf52b18aa479a52cc70a6722da, type: 3}
+  - {fileID: 7251735808923394414, guid: 5e8e0c2111502474b8263fe1986088d4, type: 3}
   weaponMount: {fileID: 2034416416101227102}
   beaconPrefab: {fileID: 7517210129143154419, guid: 841058bcdcffb02499cdd9a726fa1d86, type: 3}
   maxBeacons: 3
@@ -10573,6 +10575,12 @@ MonoBehaviour:
   rippleSpeed: 1
   spray: {fileID: 948586138620973865}
   sprayFluidSize: 0.6
+  enterDrops: 10
+  exitDrops: 12
+  splashDropSize: {x: 0.08, y: 0.16}
+  splashSpeed: 3.5
+  exitCarry: 0.5
+  splashGap: 0.15
   sprayRate: 60
   sprayLift: 2
   sprayOut: 0.8

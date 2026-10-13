@@ -46,14 +46,8 @@ public partial class PlayerController
             cameraFormOffset -= transform.InverseTransformVector(transform.position - beforeNudge); // eased out by UpdateCameraFormOffset
             lastFramePos += transform.position - beforeNudge; // not travel
         }
-        bool enteredSwimModeThisFrame = swimMode && controller.height != prevHeight;
-
         bool grounded = controller.isGrounded;
-        bool justLanded = grounded && !wasGroundedPrev;
-        float fallHeight = justLanded ? lastGroundedY - transform.position.y : 0f;
-        if (grounded) lastGroundedY = transform.position.y;
         if (grounded && transform.position.y > KillHeight) lastGroundPos = transform.position; // where a fall out of bounds is shown from
-        wasGroundedPrev = grounded;
 
         gameObject.layer = swimMode ? swimLayer : playerLayer;
         if (surfaceTeam != 0)
@@ -156,16 +150,8 @@ public partial class PlayerController
         bool inOwnInkNow = swimMode && team != 0 && (OnOwnSurfaceInk || onWallInk);
         Vector3 inkNormal = onWallInk ? climbNormal : groundNormal;
 
-        // Enter splash only when entering swim form on ink or landing in ink from a height.
-        bool enteredSwimModeOnInk  = enteredSwimModeThisFrame && surfaceTeam == team;
-        bool landedOnInkFromHeight = justLanded && surfaceTeam == team && fallHeight > FallSplashMinHeight;
-        if ((enteredSwimModeOnInk || landedOnInkFromHeight) && Time.time - lastEnterSplatTime >= 0.2f)
-        {
-            lastEnterSplatTime = Time.time;
-            InkFluid.Burst(transform.position, groundNormal, teamColor, 8, new Vector2(0.08f, 0.15f), 3.5f);
-        }
-
-        // Exit splash on leaving own ink while still swimming.
+        // (The splashes we see diving into and out of the ink are SwimWake's, on every copy.)
+        // Exit splat (paint) on leaving own ink while still swimming.
         if (prevInOwnInk && !inOwnInkNow && swimMode && InkExitSplashPrefab != null && Time.time - lastExitSplatTime >= 0.2f)
         {
             lastExitSplatTime = Time.time;

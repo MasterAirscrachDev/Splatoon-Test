@@ -15,58 +15,59 @@ using UnityEngine;
 public class Roller : Weapon
 {
     [Header("Flick")]
-    [SerializeField] float flickRate = 0.6f;          // seconds between flicks
-    [SerializeField] float windup = 0.2f;             // swing back before the droplets leave
-    [SerializeField] float followThrough = 0.15f;     // swing on after they do
-    [SerializeField] float flickInkCost = 90f;        // x0.001 of a full tank
-    [SerializeField] Ballistics ballistics = new Ballistics();
-    [SerializeField] float flickPace = 2f;            // droplets fly their path this many times as fast (speeds below are before it)
-    [SerializeField] float groundBlobScale = 0.5f;    // the ground flick's droplets drawn this x the usual size for their splat (there are many)
-    [SerializeField] float aimInfluence = 1f;         // how much looking up/down tilts a flick (1: as much as the view)
-    [SerializeField] Vector2 flickPitchLimits = new Vector2(-40f, 60f); // degrees (down, up) a flick can be aimed
+    [SerializeField, Tooltip("Seconds between flicks")] float flickRate = 0.6f;
+    [SerializeField, Tooltip("Seconds it swings back before the droplets leave")] float windup = 0.2f;
+    [SerializeField, Tooltip("Seconds it swings on after they leave")] float followThrough = 0.15f;
+    [SerializeField, Tooltip("Ink per flick, in thousandths of a full tank")] float flickInkCost = 90f;
+    [SerializeField, Tooltip("Speed and gravity over each droplet's flight")] Ballistics ballistics = new Ballistics();
+    [SerializeField, Tooltip("Droplets fly their whole path this many times as fast (the speeds below are before it): a snappy flick that still lands where it would")] float flickPace = 2f;
+    [SerializeField, Tooltip("How much looking up or down tilts a flick (1: as much as the view)")] float aimInfluence = 1f;
+    [SerializeField, Tooltip("The furthest down and up a flick can be aimed (degrees)")] Vector2 flickPitchLimits = new Vector2(-40f, 60f);
 
     [Header("Ground flick: wide and short")]
-    [SerializeField] int groundDroplets = 9;
-    [SerializeField] float groundFan = 70f;           // degrees across
-    [SerializeField] float groundPitch = 5f;          // degrees up
-    [SerializeField] Vector2 groundSpeed = new Vector2(4.5f, 7f);
-    [SerializeField] DamageFalloff groundDamage = new DamageFalloff(125f, DamageFalloff.HoldThenFall(0f, 0.5f, 0.28f)); // once per enemy per flick, weaker the further it's flown
-    [SerializeField] int groundSplat = 14;
+    [SerializeField, Tooltip("Droplets per ground flick. However many hit an enemy, they take its damage once")] int groundDroplets = 9;
+    [SerializeField, Tooltip("How wide the fan is (degrees, edge to edge)")] float groundFan = 70f;
+    [SerializeField, Tooltip("How far above the view it's thrown (degrees)")] float groundPitch = 5f;
+    [SerializeField, Tooltip("Each droplet's launch speed, random between these (min, max), before Flick Pace")] Vector2 groundSpeed = new Vector2(4.5f, 7f);
+    [SerializeField, Tooltip("Its damage, once per enemy per flick, weaker the further the droplet has flown")] DamageFalloff groundDamage = new DamageFalloff(125f, DamageFalloff.HoldThenFall(0f, 0.5f, 0.28f));
+    [SerializeField, Tooltip("Each droplet's splat size (also how big it's drawn)")] int groundSplat = 14;
+    [SerializeField, Tooltip("How the ground flick's droplets are drawn")] ShotLook groundLook = new ShotLook { size = 0.5f, companions = 4 };
 
     [Header("Air flick: narrow and long")]
-    [SerializeField] int airDroplets = 7;
-    [SerializeField] float airFan = 6f;
-    [SerializeField] float airPitch = 20f;
-    [SerializeField] Vector2 airSpeed = new Vector2(9f, 17f); // spread nearest to furthest, so they land along a line
-    [SerializeField] DamageFalloff airDamage = new DamageFalloff(80f, DamageFalloff.HoldThenFall(0f, 0.5f, 0.375f));
-    [SerializeField] int airSplat = 12;
+    [SerializeField, Tooltip("Droplets per air flick. However many hit an enemy, they take its damage once")] int airDroplets = 7;
+    [SerializeField, Tooltip("How wide the line is (degrees, edge to edge)")] float airFan = 6f;
+    [SerializeField, Tooltip("How far above the view it's thrown (degrees)")] float airPitch = 20f;
+    [SerializeField, Tooltip("Launch speeds from the nearest droplet to the furthest (before Flick Pace), so they land along a line")] Vector2 airSpeed = new Vector2(9f, 17f);
+    [SerializeField, Tooltip("Its damage, once per enemy per flick, weaker the further the droplet has flown")] DamageFalloff airDamage = new DamageFalloff(80f, DamageFalloff.HoldThenFall(0f, 0.5f, 0.375f));
+    [SerializeField, Tooltip("Each droplet's splat size (also how big it's drawn)")] int airSplat = 12;
+    [SerializeField, Tooltip("How the air flick's droplets are drawn")] ShotLook airLook = new ShotLook { companions = 4 };
 
     [Header("Rolling")]
-    [SerializeField] float rollDamage = 100f;         // to each enemy it runs into (again only after they're clear of it)
-    [SerializeField] float rollStartSpeed = 0.8f;     // x our move speed as it goes down...
-    [SerializeField] float rollSpeed = 1.2f;          // ...building to this
-    [SerializeField] float rollRampTime = 0.5f;       // of rolling on the move (stopping starts it over)
-    [SerializeField] float rollInkPerMetre = 8f;      // x0.001 of a full tank
-    [SerializeField] float rollPaintSpacing = 0.5f;   // paints a row of splats across the roller this often (metres)
-    [SerializeField] int rollSplatPoints = 3;         // splats across its width
-    [SerializeField] float rollInkWidth = 0f;         // the strip it inks (0: the drum's width; wider: ink thrown out past its ends)
-    [SerializeField] int rollSplatSize = 10;
-    [SerializeField] float minRollSpeed = 1f;         // metres per second: slower than this it neither paints nor hurts
+    [SerializeField, Tooltip("To each enemy it runs into (again only after they're clear of it)")] float rollDamage = 100f;
+    [SerializeField, Tooltip("Rolling speed as it goes down, x our move speed")] float rollStartSpeed = 0.8f;
+    [SerializeField, Tooltip("Rolling speed it builds up to, x our move speed")] float rollSpeed = 1.2f;
+    [SerializeField, Tooltip("Seconds of rolling on the move to build up to full speed (stopping starts it over)")] float rollRampTime = 0.5f;
+    [SerializeField, Tooltip("Ink per metre rolled, in thousandths of a full tank")] float rollInkPerMetre = 8f;
+    [SerializeField, Tooltip("Paints a row of splats across the roller this often (metres)")] float rollPaintSpacing = 0.5f;
+    [SerializeField, Tooltip("Splats painted side by side across the drum each time")] int rollSplatPoints = 3;
+    [SerializeField, Tooltip("Width of the strip it inks (metres; 0: the drum's width, wider: ink thrown out past its ends)")] float rollInkWidth = 0f;
+    [SerializeField, Tooltip("Each of those splats' size")] int rollSplatSize = 10;
+    [SerializeField, Tooltip("Metres per second: slower than this it neither paints nor hurts")] float minRollSpeed = 1f;
 
     [Header("Model")]
-    [SerializeField] Transform roller;                // the drum: spins as it rolls; its width is the strip's
+    [SerializeField, Tooltip("The drum: spins as it rolls; its width is the strip's")] Transform roller;
     [SerializeField] float rollerRadius = 0.225f;
     [SerializeField] float rollerWidth = 2.6f;
-    [SerializeField] Vector3 rollShift = new Vector3(-0.53f, 0f, 0f); // from the hand to our centre line while it's down
-    [SerializeField] float carryPitch = 15f;          // degrees down, held out in front (held in the air, about to roll)
-    [SerializeField] float idlePitch = -70f;          // not attacking or rolling: folded (vertical mode) and held up...
-    [SerializeField] Vector3 idleOffset = new Vector3(0.1f, 0f, -0.35f); // ...at our side
-    [SerializeField] float raisedPitch = -80f;        // the top of a flick's swing
-    [SerializeField] float verticalTurn = 90f;        // the frame's turn (on turnAxis) for the air flick
-    [SerializeField] Vector3 spinAxis = Vector3.up;   // the drum's axle, in the drum's own space (models differ)
-    [SerializeField] Vector3 turnAxis = Vector3.up;   // the frame's turn axis, in its own space: the world's up when held level
-    [SerializeField] float poseSpeed = 18f;           // how fast it eases between poses
-    [SerializeField] float spinDirection = 1f;        // flip if the drum turns the wrong way
+    [SerializeField, Tooltip("From the hand to our centre line while it's down")] Vector3 rollShift = new Vector3(-0.53f, 0f, 0f);
+    [SerializeField, Tooltip("Degrees down, held out in front (held in the air, about to roll)")] float carryPitch = 15f;
+    [SerializeField, Tooltip("Pitch when not attacking or rolling: folded (vertical mode) and held up at our side (degrees)")] float idlePitch = -70f;
+    [SerializeField, Tooltip("Where it's held at our side when idle, from the hand")] Vector3 idleOffset = new Vector3(0.1f, 0f, -0.35f);
+    [SerializeField, Tooltip("The top of a flick's swing")] float raisedPitch = -80f;
+    [SerializeField, Tooltip("The frame's turn (on turnAxis) for the air flick")] float verticalTurn = 90f;
+    [SerializeField, Tooltip("The drum's axle, in the drum's own space (models differ)")] Vector3 spinAxis = Vector3.up;
+    [SerializeField, Tooltip("The frame's turn axis, in its own space: the world's up when held level")] Vector3 turnAxis = Vector3.up;
+    [SerializeField, Tooltip("How fast it eases between poses")] float poseSpeed = 18f;
+    [SerializeField, Tooltip("Flip if the drum turns the wrong way")] float spinDirection = 1f;
 
     enum State { Idle, Flick, Held }
 
@@ -110,7 +111,7 @@ public class Roller : Weapon
     public float Pitch => pitch;             // tests: the pose's tilt (degrees down)
     public float IdlePitch => idlePitch;
     public float FlickPace => flickPace;
-    public float GroundBlobScale => groundBlobScale;
+    public ShotLook GroundLook => groundLook;
     public float VerticalTurn => verticalTurn;
     public bool Flicking => state == State.Flick;
     public float Windup => windup;
@@ -286,7 +287,7 @@ public class Roller : Weapon
     {
         ProjectileManager.Fire(from, launch, size, team, true, authoritative, ownerId, 0f,
                                ballistics: paced ?? ballistics, falloff: damage, inherit: inherit, source: Source, hitGroup: hits,
-                               look: inAir ? 1f : groundBlobScale, kind: FluidKind.Roller);
+                               look: inAir ? airLook : groundLook);
     }
 
     // Their flick, visual-only here, with the swing played from the top (the droplets leave at the

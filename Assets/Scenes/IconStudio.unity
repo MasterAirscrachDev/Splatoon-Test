@@ -301,6 +301,26 @@ MonoBehaviour:
     special: 0
     specialType: 0
     fileName: 
+  - prefab: {fileID: 1540872845283297656, guid: 5e8e0c2111502474b8263fe1986088d4, type: 3}
+    angle: {x: 10, y: 110, z: 0}
+    zoom: 1
+    offset: {x: 0, y: 0}
+    show: []
+    hide: []
+    inkParts: []
+    special: 0
+    specialType: 0
+    fileName: 
+  - prefab: {fileID: 3302642230019150675, guid: e7f35cbf52b18aa479a52cc70a6722da, type: 3}
+    angle: {x: 10, y: 110, z: 0}
+    zoom: 1
+    offset: {x: 0, y: 0}
+    show: []
+    hide: []
+    inkParts: []
+    special: 0
+    specialType: 0
+    fileName: 
 --- !u!4 &83564150
 Transform:
   m_ObjectHideFlags: 0
