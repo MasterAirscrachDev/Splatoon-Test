@@ -98,7 +98,8 @@ Shader "Fluid/Particles"
                 if (!Surface(i, viewPos, through)) discard;
                 float front = tex2D(_FluidDepth, i.pos.xy * _FluidSize.zw).r;
                 float thickness = 2.0 * i.radius * through * through * through * Close(-viewPos.z - front, max(_FluidLayer.x, i.radius)); // (1 - r²)^1.5, near the front only (or within its own size of it)
-                return float4(i.colour.rgb * thickness, thickness);
+                float stored = exp(min(thickness / _FluidLayer.y, 80.0)) - 1.0; // blended: thin overlaps add up, thick ones take the thicker (see FluidSmooth's ThickOf)
+                return float4(i.colour.rgb * stored, stored);
             }
             ENDCG
         }

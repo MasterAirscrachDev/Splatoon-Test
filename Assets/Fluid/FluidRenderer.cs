@@ -53,6 +53,10 @@ public class FluidRenderer : MonoBehaviour
         [Range(0f, 1f)] public float reflection = 0.3f;
         [Tooltip("The body's smoothness: keep it the ink surface material's (InkSurface _Smoothness), so flying ink matches painted ink")]
         [Range(0f, 1f)] public float bodySmoothness = 0.4f;
+        [Tooltip("How much the body is shaded by its shape (1: fully, light and dark sides; 0: lit flat, as the painted ink is). Low keeps just a hint of contour")]
+        [Range(0f, 1f)] public float shading = 1f;
+        [Tooltip("Blending strength (metres of ink): where drops overlap, thicknesses below about this add up and merge into one body; above it the thicker wins (so drops stacked along the view don't peak into a point). Higher merges more")]
+        [Range(0.01f, 1f)] public float blendStrength = 0.15f;
         [Range(0f, 2f)] public float ambient = 1f;          // x the scene's ambient probe
         [Range(0.5f, 2f)] public float brightness = 1f;     // x the ink colour
         [Tooltip("The bright sheen round each blob's edge")]
@@ -211,7 +215,7 @@ public class FluidRenderer : MonoBehaviour
         cmd.SetGlobalVector("_FluidSize", new Vector4(w, h, 1f / w, 1f / h));
         cmd.SetGlobalMatrix("_FluidCamToWorld", c.cameraToWorldMatrix);
         cmd.SetGlobalFloat("_FluidMinPixels", L.minPixels * L.resolutionScale);
-        cmd.SetGlobalVector("_FluidLayer", new Vector4(Mathf.Max(0.01f, L.blendDepth), 0f, 0f, 0f));
+        cmd.SetGlobalVector("_FluidLayer", new Vector4(Mathf.Max(0.01f, L.blendDepth), Mathf.Max(0.01f, L.blendStrength), 0f, 0f));
 
         // 1. Depth (eye depth, the nearest drop's surface), with a depth buffer for the nearest.
         cmd.GetTemporaryRT(DepthId, w, h, 0, FilterMode.Point, RenderTextureFormat.RFloat);
@@ -221,9 +225,10 @@ public class FluidRenderer : MonoBehaviour
         cmd.ClearRenderTarget(true, true, Color.clear);
         cmd.DrawMeshInstancedProcedural(quad, 0, particles, 0, count);
 
-        // ...and thickness + colour, added up (rgb: colour x thickness, a: thickness in metres), from
+        // ...and thickness + colour, blended (rgb: colour x w, a: w, w = exp(t/k) - 1: see FluidSmooth's
+        // ThickOf; full floats, for the exponentials), from
         // the drops near the front surface only (the depth just drawn, as _FluidDepth).
-        cmd.GetTemporaryRT(ThickId, w, h, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBHalf);
+        cmd.GetTemporaryRT(ThickId, w, h, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
         cmd.SetRenderTarget(ThickId);
         cmd.ClearRenderTarget(false, true, Color.clear);
         cmd.DrawMeshInstancedProcedural(quad, 0, particles, 1, count);
@@ -243,7 +248,7 @@ public class FluidRenderer : MonoBehaviour
         if (!inTmp) cmd.Blit(DepthTmpId, DepthId);
         // ...and thickness and colour, at the same world size (filling the bridged gaps, rounding the edges).
         cmd.SetGlobalVector("_FluidBlur", new Vector4(L.smoothRadius * pixelsPerMetre, L.depthFalloff, L.maxBlurPixels, 0f));
-        cmd.GetTemporaryRT(ThickTmpId, w, h, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBHalf);
+        cmd.GetTemporaryRT(ThickTmpId, w, h, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBFloat);
         cmd.SetGlobalVector("_FluidStep", new Vector4(1f / w, 0f, 0f, 0f));
         cmd.Blit(ThickId, ThickTmpId, smooth, 1);
         cmd.SetGlobalVector("_FluidStep", new Vector4(0f, 1f / h, 0f, 0f));
@@ -290,7 +295,7 @@ public class FluidRenderer : MonoBehaviour
         composite.SetVector("_SHC", new Vector4(sh[0, 8], sh[1, 8], sh[2, 8], 1f));
         composite.SetVector("_SunDir", toSun);
         composite.SetColor("_SunColour", sunColour);
-        composite.SetVector("_Body", new Vector4(L.bodySmoothness, 0f, 0f, 0f));
+        composite.SetVector("_Body", new Vector4(L.bodySmoothness, L.shading, 0f, 0f));
         Texture env = ReflectionProbe.defaultTexture;
         if (env != null) composite.SetTexture("_Env", env);
         composite.SetVector("_EnvHDR", ReflectionProbe.defaultTextureHDRDecodeValues);

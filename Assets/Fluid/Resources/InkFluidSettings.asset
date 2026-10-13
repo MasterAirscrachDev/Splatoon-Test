@@ -27,16 +27,17 @@ MonoBehaviour:
     depthNormals: 0.1
     roundness: 1
     edgeSharpness: 400
-    gloss: 0.8
-    specular: 1.4
-    reflection: 0.3
+    gloss: 0.55
+    specular: 0.35
+    reflection: 0.08
     bodySmoothness: 0.4
+    shading: 0.35
     ambient: 1
     brightness: 1
-    rimStrength: 0.9
+    rimStrength: 0.35
     rimPower: 1.5
     rimThickness: 0.05
-    rimWhiten: 0.55
+    rimWhiten: 0.3
     rippleFrequency: 5
     rippleStrength: 0
     rippleFlow: 1.2

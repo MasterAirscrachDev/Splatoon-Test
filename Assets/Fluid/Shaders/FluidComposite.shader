@@ -33,18 +33,24 @@ Shader "Fluid/Composite"
             float4 _SunDir, _SunColour;
             float4 _Shape;            // depth normals share, roundness, edge sharpness
             float4 _Look;             // gloss, specular, reflection, ambient (x the probe)
-            float4 _Body;             // x: the body's smoothness (the ink surface's)
+            float4 _Body;             // x: the body's smoothness (the ink surface's), y: how much its shape shades it
             float4 _Look2;            // brightness, rim strength, rim power, rim whiten
             float4 _Rim;              // x: the thickness (metres) the sheen fades out by, inwards from the outline
             float4 _Noise;            // ripple frequency (per metre), strength, flow speed
-            float4 _FluidLayer;       // x: how far apart in depth ink still melts together (metres)
+            float4 _FluidLayer;       // x: how far apart in depth ink still melts together (metres), y: the blend strength (metres)
+            // Thickness is stored as the sum of exp(t/k) - 1 (k = _FluidLayer.y, the blend strength in
+            // metres) and read back as k ln(1 + sum): where overlapping drops are thin (their edges, the
+            // necks between neighbours) their thicknesses add up and merge into one body; where they're
+            // thicker than k (one drop's middle stacked on another's along the view) the thicker wins,
+            // so stacks don't peak into a point.
+            float ThickOf(float stored) { return _FluidLayer.y * log(1.0 + max(stored, 0.0)); }
 
             // The thickness beside us, or ours if that's other ink at another depth (in front or
             // behind): its outline isn't our slope.
             float ThicknessBeside(float2 uv, float raw, float t)
             {
                 float s = tex2D(_FluidRawDepth, uv).r;
-                return (s > 0 && raw > 0 && abs(s - raw) > max(_FluidLayer.x, t * 0.5)) ? t : tex2D(_FluidThick, uv).a;
+                return (s > 0 && raw > 0 && abs(s - raw) > max(_FluidLayer.x, t * 0.5)) ? t : ThickOf(tex2D(_FluidThick, uv).a);
             }
 
             float Hash(float3 p)
@@ -100,7 +106,7 @@ Shader "Fluid/Composite"
                 float d = tex2D(_FluidDepth, i.uv).r;
                 if (d <= 0) return scene;
                 float4 tc = tex2D(_FluidThick, i.uv);
-                float t = tc.a;
+                float t = ThickOf(tc.a);
                 float2 tx = float2(_FluidSize.z, 0), ty = float2(0, _FluidSize.w);
 
                 // Shape: from the thickness (half of it as a height, per metre across the screen here)...
@@ -130,7 +136,7 @@ Shader "Fluid/Composite"
 
                 float gloss = _Look.x, specular = _Look.y, reflection = _Look.z, ambient = _Look.w;
                 float brightness = _Look2.x, rimStrength = _Look2.y, rimPower = _Look2.z, rimWhiten = _Look2.w;
-                float3 ink = t > 1e-5 ? tc.rgb / t : float3(1, 1, 1);
+                float3 ink = tc.a > 1e-12 ? tc.rgb / tc.a : float3(1, 1, 1);
 
                 // The body, lit as the ink on surfaces is (InkSurface's Standard BRDF and smoothness).
                 float3 L = normalize(_SunDir.xyz);
@@ -145,6 +151,19 @@ Shader "Fluid/Composite"
                 Unity_GlossyEnvironmentData bodyEnv = UnityGlossyEnvironmentSetup(_Body.x, V, N, specColour);
                 indirect.specular = Unity_GlossyEnvironment(UNITY_PASS_TEXCUBE(_Env), _EnvHDR, bodyEnv);
                 float3 col = UNITY_BRDF_PBS(diffColour, specColour, oneMinusReflectivity, _Body.x, N, V, sun, indirect).rgb;
+                // ...eased towards the ink lit as the paint is (facing up), so its shape shows only as
+                // much as `shading` asks: the colour stays the paint's, the dark side doesn't go dark.
+                float3 up = float3(0, 1, 0);
+                UnityLight flatSun = sun;
+                flatSun.ndotl = saturate(L.y);
+                UnityIndirect flatIndirect;
+                flatIndirect.diffuse = Ambient(up) * ambient;
+                // (Seen from above, as the paint's colour is: from low down a glossy face reflects the
+                // sky at a grazing angle and washes out, which ink in the air shouldn't.)
+                Unity_GlossyEnvironmentData flatEnv = UnityGlossyEnvironmentSetup(_Body.x, up, up, specColour);
+                flatIndirect.specular = Unity_GlossyEnvironment(UNITY_PASS_TEXCUBE(_Env), _EnvHDR, flatEnv);
+                float3 flat = UNITY_BRDF_PBS(diffColour, specColour, oneMinusReflectivity, _Body.x, up, up, flatSun, flatIndirect).rgb;
+                col = lerp(flat, col, _Body.y);
 
                 // The liquid's extra gloss: the environment sharply reflected at grazing angles.
                 float facing = saturate(dot(N, V));
@@ -178,12 +197,13 @@ Shader "Fluid/Composite"
             #include "UnityCG.cginc"
 
             sampler2D _FluidDepth, _FluidThick;
-            float4 _Shape;
+            float4 _Shape, _FluidLayer;
+            float ThickOf(float stored) { return _FluidLayer.y * log(1.0 + max(stored, 0.0)); }
 
             float4 fragDepth(v2f_img i, out float z : SV_Depth) : SV_Target
             {
                 float d = tex2D(_FluidDepth, i.uv).r;
-                if (d <= 0 || tex2D(_FluidThick, i.uv).a * _Shape.z < 0.5) discard;
+                if (d <= 0 || ThickOf(tex2D(_FluidThick, i.uv).a) * _Shape.z < 0.5) discard;
                 z = (1.0 / d - _ZBufferParams.w) / _ZBufferParams.z; // eye depth to the buffer's
                 return 0;
             }

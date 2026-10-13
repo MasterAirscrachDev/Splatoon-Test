@@ -30,6 +30,13 @@ Shader "Fluid/Smooth"
         // How far apart in depth ink here still melts: the setting, or half the ink's thickness here
         // (a big blob's own drops can be further apart than small ones').
         float Layer(float thickness) { return max(_FluidLayer.x, thickness * 0.5); }
+        // Thickness is stored as the sum of exp(t/k) - 1 (k = _FluidLayer.y, the blend strength in
+        // metres) and read back as k ln(1 + sum): where overlapping drops are thin (their edges, the
+        // necks between neighbours) their thicknesses add up and merge into one body; where they're
+        // thicker than k (one drop's middle stacked on another's along the view) the thicker wins,
+        // so stacks don't peak into a point.
+        float ThickOf(float stored) { return _FluidLayer.y * log(1.0 + max(stored, 0.0)); }
+
         ENDCG
 
         // 0: depth, in 2D: 48 samples on a spiral (Vogel) disc, turned per pixel by a little noise,
@@ -53,7 +60,7 @@ Shader "Fluid/Smooth"
                 float sum = d > 0 ? d : 0, weight = d > 0 ? 1 : 0;
                 float2 around = 0;                    // where the ink is, on average (to bridge a gap: ink all round, so it cancels out)
                 float nearest = 1e6, furthest = 0;    // (and bridging only between ink at about one depth)
-                float layer = Layer(tex2Dlod(_FluidThick, float4(i.uv, 0, 0)).a);
+                float layer = Layer(ThickOf(tex2Dlod(_FluidThick, float4(i.uv, 0, 0)).a));
                 [loop] for (int k = 0; k < Samples; k++)
                 {
                     float a = k * 2.3999632 + turn;
@@ -88,7 +95,7 @@ Shader "Fluid/Smooth"
                 float4 c = tex2D(_MainTex, i.uv);
                 if (d <= 0) return c;
                 float r = RadiusAt(d) * 0.75;
-                float layer = Layer(c.a);
+                float layer = Layer(ThickOf(c.a));
                 float raw = tex2D(_FluidRawDepth, i.uv).r;
                 int reach = (int)ceil(r);
                 float sigma = max(r * 0.5, 0.5);
@@ -117,7 +124,7 @@ Shader "Fluid/Smooth"
                 float d = tex2D(_MainTex, i.uv).r;
                 if (d <= 0) return 0;
                 float sum = 0, weight = 0;
-                float layer = Layer(tex2D(_FluidThick, i.uv).a);
+                float layer = Layer(ThickOf(tex2D(_FluidThick, i.uv).a));
                 for (int y = -1; y <= 1; y++)
                 for (int x = -1; x <= 1; x++)
                 {
