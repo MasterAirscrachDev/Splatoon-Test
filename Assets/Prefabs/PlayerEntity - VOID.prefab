@@ -9990,6 +9990,8 @@ MonoBehaviour:
   spread: 0.25
   size: {x: 0.35, y: 0.7}
   drift: 1
+  launch: 0.33
+  taper: 0.4
 --- !u!1 &2881129909466041971
 GameObject:
   m_ObjectHideFlags: 0
@@ -10490,7 +10492,6 @@ MonoBehaviour:
   superJumpHeight: 70
   superJumpFlightTime: 2
   playerMode: 0
-  uiController: {fileID: 0}
   deathBurst:
     radius: 1.3
     coreRadius: 0.5
@@ -10523,6 +10524,7 @@ MonoBehaviour:
   - {fileID: 3969233499896776995, guid: 7a7aa6a385394dd3b12f09beccfcff90, type: 3}
   - {fileID: 3555775979981969089, guid: 045c887907d4fbb40a3bdf7a342a1eaf, type: 3}
   - {fileID: 6419638794776388096, guid: 19c78d1aef5f42a42abd3b4d0aa86510, type: 3}
+  - {fileID: 4818481672707639767, guid: 9c3d89b636d850942a89cd56c2de88ca, type: 3}
   weaponMount: {fileID: 2034416416101227102}
   beaconPrefab: {fileID: 7517210129143154419, guid: 841058bcdcffb02499cdd9a726fa1d86, type: 3}
   maxBeacons: 3

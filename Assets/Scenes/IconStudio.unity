@@ -291,6 +291,16 @@ MonoBehaviour:
     special: 0
     specialType: 0
     fileName: 
+  - prefab: {fileID: 4187103714305775761, guid: 9c3d89b636d850942a89cd56c2de88ca, type: 3}
+    angle: {x: -40, y: 180, z: 15}
+    zoom: 1
+    offset: {x: 0, y: 0}
+    show: []
+    hide: []
+    inkParts: []
+    special: 0
+    specialType: 0
+    fileName: 
 --- !u!4 &83564150
 Transform:
   m_ObjectHideFlags: 0

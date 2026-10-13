@@ -46,6 +46,12 @@ public class ProjectileManager : MonoBehaviour
     // A shot ended by hitting something: where. Fired before the shot is recycled.
     public static event System.Action<Shot, Vector3> Impact;
 
+    // How a shot's flight ended: on a surface, on a target (a player or sub), at its maxDistance in
+    // mid-air, on a spawn barrier, too old, or fallen out of the level.
+    public enum EndReason { Surface, Target, Air, Barrier, Expired, Fell }
+    // Every shot's end (ShotDebug: how long shots really live), with where; fired before it's recycled.
+    public static event System.Action<Shot, Vector3, EndReason> Ended;
+
     static ProjectileManager instance;
     static ProjectileManager Instance => instance != null ? instance : instance = new GameObject("ProjectileManager").AddComponent<ProjectileManager>();
 
@@ -81,7 +87,7 @@ public class ProjectileManager : MonoBehaviour
                             bool impactParticles = true, Ballistics ballistics = null, Vector3 inherit = default,
                             string source = null, float maxDistance = 0f, InkBlast blast = null,
                             float trailSpacing = 0f, int trailSize = 0, HashSet<Object> hitGroup = null, float visualScale = 1f,
-                            DamageFalloff falloff = null)
+                            DamageFalloff falloff = null, float radiusScale = 1f)
     {
         ProjectileManager m = Instance;
         ProjectileVisual template = m.Template(prefab);
@@ -93,7 +99,7 @@ public class ProjectileManager : MonoBehaviour
         s.age = 0f;
         s.ballistics = ballistics ?? Ballistics.Default;
         s.prefab = prefab;
-        s.radius = template != null ? template.HitRadius : 0.12f;
+        s.radius = (template != null ? template.HitRadius : 0.12f) * radiusScale;
         s.damage = falloff != null ? falloff.damage : damage;
         s.falloff = falloff;
         s.splashSize = splashSize;
@@ -157,10 +163,11 @@ public class ProjectileManager : MonoBehaviour
             if (lastStep)
             {
                 Detonate(s, s.position, null); // as far as it goes
-                Impact?.Invoke(s, s.position);
+                End(s, s.position, EndReason.Air);
                 return true;
             }
-            if (s.age > MaxLifetime || s.position.y < KillHeight) return true;
+            if (s.age > MaxLifetime) { Ended?.Invoke(s, s.position, EndReason.Expired); return true; }
+            if (s.position.y < KillHeight) { Ended?.Invoke(s, s.position, EndReason.Fell); return true; }
         }
         return false;
     }
@@ -189,7 +196,7 @@ public class ProjectileManager : MonoBehaviour
                 if (device.Team == s.team || s.damage <= 0f) continue; // drips fall through
                 if (s.authoritative && FirstHit(s, device)) device.TakeDamage(s.DamageNow, s.team, s.ownerId);
                 Detonate(s, from + dir * Mathf.Max(0f, h.distance), device);
-                Impact?.Invoke(s, point);
+                End(s, point, EndReason.Target);
                 return true;
             }
             PlayerHitbox hitbox = c.GetComponentInParent<PlayerHitbox>();
@@ -198,14 +205,14 @@ public class ProjectileManager : MonoBehaviour
                 if (hitbox.Team == s.team || s.damage <= 0f) continue; // teammates and the shooter; drips fall through
                 if (s.authoritative && FirstHit(s, hitbox)) hitbox.TakeDamage(s.DamageNow, s.team, s.ownerId, s.source);
                 Detonate(s, from + dir * Mathf.Max(0f, h.distance), hitbox); // they took the direct hit
-                Impact?.Invoke(s, point);
+                End(s, point, EndReason.Target);
                 return true;
             }
             if (c.isTrigger) continue; // volumes don't stop ink
 
             if (s.blast != null) Detonate(s, overlapping ? from : h.point + h.normal * 0.1f, null);
             else Land(s, c, overlapping ? new Ray(from - dir * 0.5f, dir) : new Ray(h.point + h.normal * 0.5f, -h.normal));
-            Impact?.Invoke(s, point);
+            End(s, point, EndReason.Surface);
             return true;
         }
         if (barrier)
@@ -216,10 +223,17 @@ public class ProjectileManager : MonoBehaviour
             Detonate(s, at - dir * 0.1f, null);
             if (s.impactParticles && templates.TryGetValue(s.prefab, out ProjectileVisual t) && t != null)
                 InkParticles.Spawn(t.SplashParticles, at, Quaternion.FromToRotation(Vector3.up, (at - pad.Centre).normalized), s.colour);
-            Impact?.Invoke(s, at);
+            End(s, at, EndReason.Barrier);
             return true;
         }
         return false;
+    }
+
+    // It hit something (or flew its full distance): both events.
+    static void End(Shot s, Vector3 at, EndReason reason)
+    {
+        Impact?.Invoke(s, at);
+        Ended?.Invoke(s, at, reason);
     }
 
     static bool FirstHit(Shot s, Object target) => s.hitGroup == null || s.hitGroup.Add(target);

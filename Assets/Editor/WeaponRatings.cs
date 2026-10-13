@@ -17,6 +17,7 @@ public static class WeaponRatings
         ("EraRoller",      0.30f, 0.35f, 0.80f),
         ("HeavyRoller",    0.95f, 0.75f, 0.20f),
         ("Inkbrush",       0.25f, 0.20f, 0.95f),
+        ("Bucket",         0.80f, 0.55f, 0.40f),
     };
 
     [MenuItem("Tools/Weapons/Set Loadout Ratings")]

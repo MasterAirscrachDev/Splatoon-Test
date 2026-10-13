@@ -148,7 +148,7 @@ MonoBehaviour:
   dropletScale: 1.4
   aimInfluence: 1
   swipePitchLimits: {x: -40, y: 50}
-  droplets: 5
+  droplets: 12
   fan: 40
   lean: 12
   swipePitch: 4
