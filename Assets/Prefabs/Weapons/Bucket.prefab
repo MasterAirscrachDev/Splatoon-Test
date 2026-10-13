@@ -115,6 +115,7 @@ MonoBehaviour:
   sloshPitchLimits: {x: -60, y: 70}
   sloshPitch: 35
   spread: 2
+  sway: 2.5
   droplets: 20
   dropletSpeed: {x: 0, y: 7}
   dropletScale: 1.5

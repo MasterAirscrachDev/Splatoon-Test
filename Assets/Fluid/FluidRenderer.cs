@@ -28,6 +28,8 @@ public class FluidRenderer : MonoBehaviour
     [SerializeField] float smoothRadius = 0.16f;
     [Tooltip("How sharply the blur stops at depth jumps (per metre²): higher keeps separate blobs apart")]
     [SerializeField] float depthFalloff = 6f;
+    [Tooltip("Ink only melts together within this depth of each other (metres): drops further behind stay separate shapes, with their own colour")]
+    [SerializeField] float blendDepth = 0.35f;
     [SerializeField, Range(1, 4)] int smoothIterations = 2;
     [Tooltip("Gaps narrower than this share of the blur radius are filled (first pass only), so near drops join")]
     [SerializeField, Range(0f, 1f)] float bridging = 0.5f;
@@ -82,13 +84,14 @@ public class FluidRenderer : MonoBehaviour
     ComputeBuffer buffer;
     int uploadedFrame = -1, uploadedCount;
     Material particles, smooth, composite;
-    Mesh quad;
+    Mesh quad, screenQuad; // the drops' quad; a 0-1 square (with UVs) covering the screen
 
     public int Drawn => uploadedCount; // tests: drops in the last frame drawn
 
     static readonly int ParticlesId = Shader.PropertyToID("_Particles");
     static readonly int DepthId = Shader.PropertyToID("_FluidDepth");
     static readonly int DepthTmpId = Shader.PropertyToID("_FluidDepthTmp");
+    static readonly int RawDepthId = Shader.PropertyToID("_FluidRawDepth"); // the depth before smoothing: crisp, for telling layers apart
     static readonly int ThickId = Shader.PropertyToID("_FluidThick");
     static readonly int ThickTmpId = Shader.PropertyToID("_FluidThickTmp");
     static readonly int SceneId = Shader.PropertyToID("_FluidScene");
@@ -127,6 +130,13 @@ public class FluidRenderer : MonoBehaviour
         smooth = new Material(smoothShader) { hideFlags = HideFlags.HideAndDontSave };
         composite = new Material(compositeShader) { hideFlags = HideFlags.HideAndDontSave };
         quad = MakeQuad();
+        screenQuad = new Mesh
+        {
+            vertices = new[] { new Vector3(0f, 0f, 0f), new Vector3(1f, 0f, 0f), new Vector3(1f, 1f, 0f), new Vector3(0f, 1f, 0f) },
+            uv = new[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(0f, 1f) },
+            triangles = new[] { 0, 2, 1, 0, 3, 2 },
+            hideFlags = HideFlags.HideAndDontSave,
+        };
         Camera.onPreRender += BeforeRender;
         Active.Add(this);
     }
@@ -147,6 +157,7 @@ public class FluidRenderer : MonoBehaviour
         DestroyImmediate(smooth);
         DestroyImmediate(composite);
         DestroyImmediate(quad);
+        DestroyImmediate(screenQuad);
     }
 
     // Any camera about to render: ours, or (in the editor) a Scene view. The frame's drops go to the
@@ -198,6 +209,7 @@ public class FluidRenderer : MonoBehaviour
         cmd.SetGlobalVector("_FluidSize", new Vector4(w, h, 1f / w, 1f / h));
         cmd.SetGlobalMatrix("_FluidCamToWorld", c.cameraToWorldMatrix);
         cmd.SetGlobalFloat("_FluidMinPixels", minPixels * resolutionScale);
+        cmd.SetGlobalVector("_FluidLayer", new Vector4(Mathf.Max(0.01f, blendDepth), 0f, 0f, 0f));
 
         // 1. Depth (eye depth, the nearest drop's surface), with a depth buffer for the nearest.
         cmd.GetTemporaryRT(DepthId, w, h, 0, FilterMode.Point, RenderTextureFormat.RFloat);
@@ -207,13 +219,16 @@ public class FluidRenderer : MonoBehaviour
         cmd.ClearRenderTarget(true, true, Color.clear);
         cmd.DrawMeshInstancedProcedural(quad, 0, particles, 0, count);
 
-        // ...and thickness + colour, added up (rgb: colour x thickness, a: thickness in metres).
+        // ...and thickness + colour, added up (rgb: colour x thickness, a: thickness in metres), from
+        // the drops near the front surface only (the depth just drawn, as _FluidDepth).
         cmd.GetTemporaryRT(ThickId, w, h, 0, FilterMode.Bilinear, RenderTextureFormat.ARGBHalf);
         cmd.SetRenderTarget(ThickId);
         cmd.ClearRenderTarget(false, true, Color.clear);
         cmd.DrawMeshInstancedProcedural(quad, 0, particles, 1, count);
 
-        // 2. Smoothed depth (ping-pong, then ironed, ending in DepthId)...
+        // 2. Smoothed depth (ping-pong, then ironed, ending in DepthId), keeping the raw depth...
+        cmd.GetTemporaryRT(RawDepthId, w, h, 0, FilterMode.Point, RenderTextureFormat.RFloat);
+        cmd.CopyTexture(DepthId, RawDepthId);
         float pixelsPerMetre = proj[1, 1] * h * 0.5f; // at an eye depth of 1m
         for (int i = 0; i < smoothIterations; i++)
         {
@@ -237,9 +252,15 @@ public class FluidRenderer : MonoBehaviour
         cmd.Blit(BuiltinRenderTextureType.CameraTarget, SceneId);
         SetLook();
         cmd.Blit(SceneId, BuiltinRenderTextureType.CameraTarget, composite, 0);
+        // ...and its depth into the camera's, so transparent things behind it stay behind it.
+        cmd.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+        cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.Ortho(0f, 1f, 0f, 1f, -1f, 1f));
+        cmd.DrawMesh(screenQuad, Matrix4x4.identity, composite, 0, 1);
+        cmd.SetViewProjectionMatrices(c.worldToCameraMatrix, c.projectionMatrix);
 
         cmd.ReleaseTemporaryRT(DepthId);
         cmd.ReleaseTemporaryRT(DepthTmpId);
+        cmd.ReleaseTemporaryRT(RawDepthId);
         cmd.ReleaseTemporaryRT(ZId);
         cmd.ReleaseTemporaryRT(ThickId);
         cmd.ReleaseTemporaryRT(ThickTmpId);

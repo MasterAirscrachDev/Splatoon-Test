@@ -21,7 +21,8 @@ public class Bucket : Weapon
     [SerializeField] float aimInfluence = 1f;         // how much looking up/down tilts the throw (1: as much as the view)
     [SerializeField] Vector2 sloshPitchLimits = new Vector2(-60f, 70f); // degrees (down, up) the throw can be aimed
     [SerializeField] float sloshPitch = 8f;           // degrees up from the view (the roller's air flick is 20)
-    [SerializeField] float spread = 2f;               // degrees of wobble, left and right
+    [SerializeField] float spread = 2f;               // degrees of wobble, left and right...
+    [SerializeField] float sway = 2.5f;               // ...and of the line's bend side to side (a different one each slosh): not dead straight
 
     [Header("Stream: the droplets behind the blob")]
     [SerializeField] int droplets = 6;
@@ -69,6 +70,8 @@ public class Bucket : Weapon
     public float SloshRate => sloshRate;
     public float SloshInkCost => sloshInkCost;
     public float SloshPitch => sloshPitch;
+    public float Spread => spread;
+    public float Sway => sway;
     public bool Sloshing => state == State.Slosh;
     public float PitchNow => pitch;
     public string Source => DisplayName;
@@ -146,6 +149,7 @@ public class Bucket : Weapon
         inherit.y = 0f; // running carries into the stream; jumping doesn't
         float facing = player.transform.eulerAngles.y;
         int n = droplets + 1;
+        float phase = Random.Range(0f, Mathf.PI * 2f), bends = Random.Range(1f, 2f); // this slosh's sway
         var launches = new Vector3[n];
         var velocities = new float[n * 3];
         var sizes = new int[n];
@@ -155,7 +159,7 @@ public class Bucket : Weapon
             bool blob = i == n - 1;
             float k = droplets > 1 ? Mathf.Min(i, droplets - 1) / (droplets - 1f) : 1f;
             float speed = blob ? blobSpeed : Mathf.Lerp(dropletSpeed.x, dropletSpeed.y, k);
-            float yawOff = blob ? 0f : Random.Range(-spread, spread);
+            float yawOff = blob ? 0f : Random.Range(-spread, spread) + sway * Mathf.Sin(k * Mathf.PI * bends + phase);
             float up = Mathf.Clamp(sloshPitch + (blob ? 0f : Random.Range(-1.5f, 1.5f)) + aimUp, sloshPitchLimits.x, sloshPitchLimits.y);
             Vector3 launch = Quaternion.Euler(-up, facing + yawOff, 0f) * Vector3.forward * (speed * sloshPace);
             launches[i] = launch;

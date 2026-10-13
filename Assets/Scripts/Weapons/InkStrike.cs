@@ -46,6 +46,8 @@ public class InkStrike : MonoBehaviour
     const float SpiralTwist = -12f;               // turning with it, their bands slanting like the mesh's ridges (yaw degrees per metre up),
     const int SpiralArms = 3;                     // in this many bands (they leave the ground from fixed points)
     const float SpiralOut = 1.15f;                // just outside its surface
+    [SerializeField] float fluidSize = 0.5f;      // with a FluidRenderer on the camera, the particles are drawn as fluid ink: radius x their size
+    [SerializeField] float fluidStretch = 0.08f;  // and stretched along their motion
 
     static readonly int CoreAlpha = Shader.PropertyToID("_CoreAlpha");
     static readonly int RimAlpha = Shader.PropertyToID("_RimAlpha");
@@ -71,6 +73,8 @@ public class InkStrike : MonoBehaviour
     bool authoritative, struck;
     float startTime;
     MaterialPropertyBlock block;
+    ParticleSystem.Particle[] fluidBuffer;
+    bool fluidShown;
 
     public float Radius => radius;
     public float Height => height;
@@ -86,7 +90,7 @@ public class InkStrike : MonoBehaviour
     public float FullWidth => radius * explosionWidth;
     public bool IsOwnedLocally => authoritative;
 
-    public void Begin(ulong ownerId, int team, Vector3 target, bool ownedLocally)
+    public void Begin(ulong ownerId, int team, Vector3 target, bool ownedLocally, Color? teamColour = null)
     {
         this.ownerId = ownerId;
         this.team = team;
@@ -95,7 +99,8 @@ public class InkStrike : MonoBehaviour
         startTime = Time.time;
         transform.SetPositionAndRotation(target, Quaternion.identity);
         NetGameManager gm = NetGameManager.Instance;
-        if (gm != null) colour = gm.TeamColour(team);
+        if (teamColour.HasValue) colour = teamColour.Value; // (the fluid lab: no game manager)
+        else if (gm != null) colour = gm.TeamColour(team);
         block = new MaterialPropertyBlock();
         bottom = FindBottom();
         top = target.y + height;
@@ -209,6 +214,39 @@ public class InkStrike : MonoBehaviour
         bool done = s >= AttackTime + holdTime + shrinkTime;
         if (done && tornado.isEmitting) tornado.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear); // gone with the column
         if (done && !tornado.IsAlive(true) && !burst.IsAlive(true)) Destroy(gameObject);
+    }
+
+    // With a FluidRenderer on (the fluid lab, for now), the tornado and burst are drawn as fluid ink
+    // instead of particles: each particle a drop, in the team colour (opaque, as ink is).
+    void LateUpdate()
+    {
+        bool fluid = FluidRenderer.Active.Count > 0;
+        if (fluid != fluidShown)
+        {
+            fluidShown = fluid;
+            foreach (ParticleSystem ps in new[] { tornado, burst })
+                if (ps.TryGetComponent(out ParticleSystemRenderer r)) r.enabled = !fluid;
+        }
+        if (!fluid) return;
+        ShowAsFluid(tornado);
+        ShowAsFluid(burst);
+    }
+
+    void ShowAsFluid(ParticleSystem ps)
+    {
+        int max = ps.main.maxParticles;
+        if (fluidBuffer == null || fluidBuffer.Length < max) fluidBuffer = new ParticleSystem.Particle[max];
+        int n = ps.GetParticles(fluidBuffer);
+        bool local = ps.main.simulationSpace == ParticleSystemSimulationSpace.Local;
+        Color c = colour;
+        c.a = 1f;
+        for (int i = 0; i < n; i++)
+        {
+            ParticleSystem.Particle p = fluidBuffer[i];
+            Vector3 at = local ? ps.transform.TransformPoint(p.position) : p.position;
+            Vector3 v = local ? ps.transform.TransformVector(p.totalVelocity) : p.totalVelocity;
+            FluidRenderer.Streak(at, v, p.GetCurrentSize(ps) * 0.5f * fluidSize, c, fluidStretch);
+        }
     }
 
     // Sizes the whole column at once: the mesh spans the column from bottom to top at this radius,

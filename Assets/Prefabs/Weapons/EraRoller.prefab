@@ -114,7 +114,7 @@ MonoBehaviour:
   dropletScale: 2
   aimInfluence: 1
   flickPitchLimits: {x: -40, y: 60}
-  groundDroplets: 12
+  groundDroplets: 36
   groundFan: 90
   groundPitch: 25
   groundSpeed: {x: 4.5, y: 7}

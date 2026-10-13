@@ -327,6 +327,10 @@ public partial class ClimbTestRunner
         floor.FillRegion(new Rect(0, 0, 1, 1), 0);
         int enemyTeam = player.Team == 1 ? 2 : 1;
         yield return Hold(Still, false, 0.3f, "equip");
+        // Aim level (an earlier scenario may have left the view tilted).
+        player.ScriptedInput.recenter = true;
+        yield return HoldUntil(Still, false, 2f, "level", f => Mathf.Abs(player.CameraPitch) < 0.01f);
+        player.ScriptedInput.recenter = false;
         Roller roller = loadout.CurrentWeapon as Roller;
         if (roller == null) { Fail("the Roller didn't equip"); loadout.SetMainWeapon(weaponBefore); NetGameManager.SendOverride = null; yield break; }
         Vector3 Flat(Vector3 v) { v.y = 0f; return v; }

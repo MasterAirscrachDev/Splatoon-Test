@@ -152,6 +152,8 @@ public static class FluidLabBuilder
         var list = so.FindProperty("weapons");
         list.arraySize = loadout.arraySize;
         for (int i = 0; i < loadout.arraySize; i++) list.GetArrayElementAtIndex(i).objectReferenceValue = loadout.GetArrayElementAtIndex(i).objectReferenceValue;
+        so.FindProperty("sprinklerPrefab").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Sprinkler.prefab");
+        so.FindProperty("inkStrikePrefab").objectReferenceValue = AssetDatabase.LoadAssetAtPath<InkStrike>("Assets/Prefabs/InkStrike.prefab");
         so.ApplyModifiedPropertiesWithoutUndo();
     }
 }

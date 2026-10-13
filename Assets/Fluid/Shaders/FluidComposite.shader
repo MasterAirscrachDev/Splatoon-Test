@@ -23,7 +23,7 @@ Shader "Fluid/Composite"
             #include "UnityPBSLighting.cginc"
             #include "UnityStandardUtils.cginc"
 
-            sampler2D _MainTex, _FluidDepth, _FluidThick;
+            sampler2D _MainTex, _FluidDepth, _FluidThick, _FluidRawDepth;
             UNITY_DECLARE_TEXCUBE(_Env);
             float4 _SHAr, _SHAg, _SHAb, _SHBr, _SHBg, _SHBb, _SHC; // the scene's ambient probe (a full-screen pass doesn't get it)
             float4 _EnvHDR;
@@ -37,6 +37,15 @@ Shader "Fluid/Composite"
             float4 _Look2;            // brightness, rim strength, rim power, rim whiten
             float4 _Rim;              // x: the thickness (metres) the sheen fades out by, inwards from the outline
             float4 _Noise;            // ripple frequency (per metre), strength, flow speed
+            float4 _FluidLayer;       // x: how far apart in depth ink still melts together (metres)
+
+            // The thickness beside us, or ours if that's other ink at another depth (in front or
+            // behind): its outline isn't our slope.
+            float ThicknessBeside(float2 uv, float raw, float t)
+            {
+                float s = tex2D(_FluidRawDepth, uv).r;
+                return (s > 0 && raw > 0 && abs(s - raw) > max(_FluidLayer.x, t * 0.5)) ? t : tex2D(_FluidThick, uv).a;
+            }
 
             float Hash(float3 p)
             {
@@ -96,8 +105,9 @@ Shader "Fluid/Composite"
 
                 // Shape: from the thickness (half of it as a height, per metre across the screen here)...
                 float metresX = d * 2.0 / (_FluidProj.x * _FluidSize.x), metresY = d * 2.0 / (_FluidProj.y * _FluidSize.y);
-                float dhdx = (tex2D(_FluidThick, i.uv + tx).a - tex2D(_FluidThick, i.uv - tx).a) * 0.25 / metresX;
-                float dhdy = (tex2D(_FluidThick, i.uv + ty).a - tex2D(_FluidThick, i.uv - ty).a) * 0.25 / metresY;
+                float raw = tex2D(_FluidRawDepth, i.uv).r;
+                float dhdx = (ThicknessBeside(i.uv + tx, raw, t) - ThicknessBeside(i.uv - tx, raw, t)) * 0.25 / metresX;
+                float dhdy = (ThicknessBeside(i.uv + ty, raw, t) - ThicknessBeside(i.uv - ty, raw, t)) * 0.25 / metresY;
                 float3 fromThickness = normalize(float3(-dhdx * _Shape.y, -dhdy * _Shape.y, 1.0));
                 // ...and the depth.
                 float3 p = ViewPos(i.uv, d);
@@ -153,6 +163,29 @@ Shader "Fluid/Composite"
 
                 float cover = saturate(t * _Shape.z); // opaque, with a crisp antialiased edge
                 return float4(lerp(scene.rgb, col, cover), scene.a);
+            }
+            ENDCG
+        }
+
+        // 1: the ink's depth into the camera's depth buffer (where it's opaque), so what's drawn
+        // after it (transparent things: the Inkstrike's column) is hidden behind it.
+        Pass
+        {
+            ZWrite On ZTest LEqual ColorMask 0
+            CGPROGRAM
+            #pragma vertex vert_img
+            #pragma fragment fragDepth
+            #include "UnityCG.cginc"
+
+            sampler2D _FluidDepth, _FluidThick;
+            float4 _Shape;
+
+            float4 fragDepth(v2f_img i, out float z : SV_Depth) : SV_Target
+            {
+                float d = tex2D(_FluidDepth, i.uv).r;
+                if (d <= 0 || tex2D(_FluidThick, i.uv).a * _Shape.z < 0.5) discard;
+                z = (1.0 / d - _ZBufferParams.w) / _ZBufferParams.z; // eye depth to the buffer's
+                return 0;
             }
             ENDCG
         }

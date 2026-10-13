@@ -5,6 +5,9 @@
 // thickness falls off as (1 - r²)^1.5 rather than a sphere's sqrt(1 - r²): flat at the rim, so drops
 // overlapping in a line add up to a smooth surface (a sphere's steep rim leaves creases), but still
 // domed like a sphere ((1 - r²)² looked pointed) - it's read as the ink's shape (FluidComposite).
+// Only drops near the front surface count (within _FluidLayer.x of pass 0's depth, or their own
+// radius for big ones): ink further
+// behind doesn't swell or tint what's in front of it.
 Shader "Fluid/Particles"
 {
     SubShader
@@ -21,6 +24,9 @@ Shader "Fluid/Particles"
         UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
         float4 _FluidSize; // w, h, 1/w, 1/h
         float _FluidMinPixels; // drops are at least this many pixels across their radius (tinier ones break up into crosses)
+        sampler2D _FluidDepth;  // pass 1: the nearest drop's eye depth (pass 0's)
+        float4 _FluidLayer; // x: how far apart in depth (metres) ink can be and still melt together
+        float Close(float dz, float layer) { return 1.0 - smoothstep(0.5, 1.0, abs(dz) / layer); }
 
         struct v2f
         {
@@ -90,7 +96,8 @@ Shader "Fluid/Particles"
             {
                 float3 viewPos; float through;
                 if (!Surface(i, viewPos, through)) discard;
-                float thickness = 2.0 * i.radius * through * through * through; // (1 - r²)^1.5
+                float front = tex2D(_FluidDepth, i.pos.xy * _FluidSize.zw).r;
+                float thickness = 2.0 * i.radius * through * through * through * Close(-viewPos.z - front, max(_FluidLayer.x, i.radius)); // (1 - r²)^1.5, near the front only (or within its own size of it)
                 return float4(i.colour.rgb * thickness, thickness);
             }
             ENDCG

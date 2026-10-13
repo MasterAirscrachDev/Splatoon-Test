@@ -152,7 +152,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
   pixelsPerUnit: 32
-  splatScale: 1
+  splatScale: 1.35
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &249323323
@@ -314,9 +314,13 @@ MonoBehaviour:
   companionSpread: 2
   companionSpeed: 0.05
   rollerBlobSize: 0.5
-  rollerCompanions: 14
-  bucketWander: 2.5
+  rollerCompanions: 4
   bucketCompanionYaw: 3
+  sprinklerPrefab: {fileID: 852578584976174736, guid: 0ee17466c68115242acdeaf34118f21c, type: 3}
+  inkStrikePrefab: {fileID: 2160948365701607404, guid: 08b0142f80215a64796af04ac1ab99a2, type: 3}
+  sprinklerAt: {x: 18.5, y: 0, z: 14}
+  inkStrikeAt: {x: -18.5, y: 0, z: 14}
+  inkStrikeEvery: 6
   crownBlobs: {x: 2, y: 4}
   crownSize: {x: 0.35, y: 0.55}
   crownKick: 2.5
@@ -335,6 +339,63 @@ MonoBehaviour:
   fillersSeen: 0.33
   paused: 0
   timeScale: 1
+--- !u!1001 &590529192
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 2486116128829741760, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_Name
+      value: SplatScaleRefrence
+      objectReference: {fileID: 0}
+    - target: {fileID: 8018299277432053244, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -21.603004
+      objectReference: {fileID: 0}
+    - target: {fileID: 8018299277432053244, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 2.98
+      objectReference: {fileID: 0}
+    - target: {fileID: 8018299277432053244, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -9.5369625
+      objectReference: {fileID: 0}
+    - target: {fileID: 8018299277432053244, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8018299277432053244, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8018299277432053244, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8018299277432053244, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8018299277432053244, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8018299277432053244, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8018299277432053244, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 45fb983a5f9ce8f49a42a4e99c52692e, type: 3}
 --- !u!1 &1000411465
 GameObject:
   m_ObjectHideFlags: 0
@@ -537,7 +598,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SurfaceInkManager
   pixelsPerUnit: 32
-  splatScale: 1
+  splatScale: 2.4
   maxFloorAngle: 50
   SurfaceId: 0
 --- !u!64 &1573171774
@@ -719,3 +780,4 @@ SceneRoots:
   - {fileID: 1573171772}
   - {fileID: 253369633}
   - {fileID: 249323326}
+  - {fileID: 590529192}

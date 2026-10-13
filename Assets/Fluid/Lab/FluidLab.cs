@@ -11,20 +11,26 @@ using Random = UnityEngine.Random;
 // against the whole set, apart from the game. The mimics are built from the real weapon prefabs (the
 // player's loadout; their settings read directly): fire rates, speeds, counts, spreads, splat sizes,
 // the flick paces, and each shot flown with its weapon's own ballistics (speed and gravity over its
-// age, as ProjectileManager flies them), in the lab's own little simulation. Four teams (one of the
-// game's colour sets; teams 1-4 across the row).
+// age, as ProjectileManager flies them), in the lab's own little simulation. They're read as each
+// shot fires, so edits to the prefabs (or the lab) show at once. Four teams (one of the game's
+// colour sets; teams 1-4 across the row). Shots are drawn a share of the size of the splat they
+// paint, at the floor's ink scale (blobFill), so the ink in the air matches the paint.
 // The look: each shot is a big blob travelling with a few companion blobs (a little smaller, with a
 // slight starting difference in speed and direction, so they drift apart a touch); where shots land
 // they paint (their weapon's splat size) and splatter: a few blobs thrown up and out, and a quick
 // puddle that spreads and sinks into the paint. Blasters go off entirely in blobs: a core that swells
 // and collapses, and a shell of blobs flung out that slow, fall and paint where they land. As in the
 // game, shooters' unseen filler shots and blasters' trail drips paint without being drawn.
+// Past the row's ends: a Sprinkler (a model, spinning and spraying as the sub does, winding down over
+// its life) and an Inkstrike (the real one, its particles drawn as fluid; see InkStrike.LateUpdate).
 // Keys: F1 cycles the look (the screen-space fluid, the game's current per-shot spheres, or both);
-// P pauses the drops; 1-9 toggle each weapon, 0 turns them all on; C changes the colour set; X
-// clears the ink. The camera flies (FlyCamera).
+// P pauses; [ and ] slow time down and speed it up (T toggles); 1-9 toggle each weapon, F2 the
+// sprinkler, F3 the inkstrike, 0 turns them all on; C changes the colour set; X clears the ink.
+// The camera flies (FlyCamera) at its own speed whatever the time scale.
 public class FluidLab : MonoBehaviour
 {
     public enum Look { Fluid, Spheres, Both }
+    public enum Kind { Shot, Roller, Bucket }
 
     class Mimic
     {
@@ -35,10 +41,11 @@ public class FluidLab : MonoBehaviour
         public bool on = true;
         public int fired;
         public Action<Mimic> fire;
-        public int companions;            // blobs travelling with each shot (see FluidLab.companions)
-        public float companionSpread, companionSpeed;
-        public float companionYaw;        // their spread across (degrees; companionSpread is up and down)
-        public float blobSize = 1f;       // drawn shots' size (share of the game's)
+        public Kind kind;                 // whose companion settings its shots use
+        public float blobSize = 1f;       // drawn shots' size (share of the usual)
+        public string key;                // its toggle (null: its number in the row)
+        public Action<Mimic, float> tick; // runs every frame while on, instead of firing on `rate`
+        public Action<bool> show;         // its model shown (on) or hidden (off)
     }
 
     class InkDrop
@@ -63,17 +70,26 @@ public class FluidLab : MonoBehaviour
     [SerializeField] Weapon[] weapons;               // the prefabs mimicked (the player's loadout, in its order)
     [SerializeField] int colourSet = 1;              // NetGameManager.DefaultColourSets()
     [Header("Shots")]
-    [SerializeField] float sizeScale = 0.8f;         // x the game's shot sizes (its visuals are splat size x 0.035 x scale across)
+    [SerializeField] float blobFill = 0.3f;          // a drawn shot's radius, as a share of the radius of the splat it paints (on the floor, at its ink scale)
+    [SerializeField] float blasterShotSize = 0.6f;   // a blaster's shot (which doesn't paint itself), x that for its shot size
     [SerializeField] float stretch = 0.1f;           // teardrop length per m/s (x radius)
     [SerializeField] float wobble = 0.12f;           // radius wobble as it flies (share of its radius)
-    [SerializeField] int companions = 2;             // blobs travelling with each shot (rollers and the bucket have more, see their Add)...
+    [SerializeField] int companions = 2;             // blobs travelling with each shot (rollers and the bucket have their own, below)...
     [SerializeField] Vector2 companionSize = new Vector2(0.5f, 0.85f); // ...this big (share of the shot)...
     [SerializeField] float companionSpread = 2f;     // ...off its direction by up to this (degrees)...
     [SerializeField] float companionSpeed = 0.05f;   // ...and its speed by up to this share
-    [SerializeField] float rollerBlobSize = 0.5f;    // rollers' blobs drawn this big (share)...
-    [SerializeField] int rollerCompanions = 14;      // ...and this many with each droplet (3x the blobs: 15 to a droplet)
-    [SerializeField] float bucketWander = 2.5f;      // the slosh's line sways side to side by up to this (degrees)...
-    [SerializeField] float bucketCompanionYaw = 3f;  // ...and its blobs spread across it by up to this
+    [SerializeField] float rollerBlobSize = 0.5f;    // rollers' ground flick blobs drawn this big (share; there are many)...
+    [SerializeField] int rollerCompanions = 4;       // ...and rollers' companions
+    [SerializeField] int bucketCompanions = 3;       // the bucket's companions...
+    [SerializeField] float bucketCompanionSpread = 1f;  // ...up and down (degrees)...
+    [SerializeField] float bucketCompanionYaw = 3f;     // ...across its line (its sway is the weapon's)...
+    [SerializeField] float bucketCompanionSpeed = 0.1f; // ...and along it (share of the speed): one long body of ink
+    [Header("Sub and special")]
+    [SerializeField] GameObject sprinklerPrefab;
+    [SerializeField] InkStrike inkStrikePrefab;
+    [SerializeField] Vector3 sprinklerAt = new Vector3(18.5f, 0f, 14f);
+    [SerializeField] Vector3 inkStrikeAt = new Vector3(-18.5f, 0f, 14f);
+    [SerializeField] float inkStrikeEvery = 6f;      // seconds
     [Header("Splatter")]
     [SerializeField] Vector2Int crownBlobs = new Vector2Int(2, 4); // blobs thrown up where a shot lands (more for bigger shots)
     [SerializeField] Vector2 crownSize = new Vector2(0.35f, 0.55f); // share of the shot
@@ -93,7 +109,7 @@ public class FluidLab : MonoBehaviour
     [SerializeField, Range(0f, 1f)] float shellShrink = 0.5f;       // ...shrinking away over this last share of it
     [SerializeField, Range(0f, 1f)] float fillersSeen = 0.33f;      // shooters' filler shots drawn (the game draws one in ten; the rest only paint)
     [SerializeField] bool paused;
-    [SerializeField, Range(0.02f, 1f)] float timeScale = 1f;        // slow motion ([ and ], T toggles); the camera keeps its speed
+    [SerializeField, Range(0.02f, 1f)] float timeScale = 1f;        // slow motion ([ and ], T toggles): Time.timeScale, so the inkstrike slows too; the camera keeps its speed
 
     public static FluidLab Instance { get; private set; }
     public int Live => drops.Count;
@@ -111,8 +127,17 @@ public class FluidLab : MonoBehaviour
 
     const float AimRaise = 5f;     // the game aims this far above the view (level here)
 
-    // A shot's look in the game: splat size x 0.035 x visual scale across.
-    float Radius(float splatSize, float visualScale = 1f) => splatSize * 0.035f * visualScale * 0.5f * sizeScale;
+    // A drawn shot's radius: a share of its splat's radius on the floor (the lab's ink scale, as the
+    // maps' should be), so the ink in the air matches the paint it leaves.
+    float Radius(float splatSize, float look = 1f) => splatSize * InkMetresPerSize * blobFill * look;
+    float InkMetresPerSize
+    {
+        get
+        {
+            foreach (SurfaceInkManager s in surfaces) if (s != null && s.name == "Floor") return s.SplatMetresPerSize;
+            return 2.5f / SurfaceInkManager.ReferenceTexelsPerMetre; // the maps'
+        }
+    }
 
     public Color TeamColour(int team)
     {
@@ -153,145 +178,200 @@ public class FluidLab : MonoBehaviour
             mimics[i].team = i % 4 + 1;
             mimics[i].next = i * 0.07f;
         }
+        AddSprinkler();
+        AddInkStrike();
     }
+
+    void OnDestroy() => Time.timeScale = 1f;
 
     void Start() => surfaces = FindObjectsByType<SurfaceInkManager>(FindObjectsSortMode.None);
 
-    void Add(Weapon w, float rate, Action<Mimic> fire, int companionCount = -1, float spread = -1f, float speedJitter = -1f, float spreadAcross = -1f, float blobSize = 1f) =>
+    // A weapon's mimic. Everything is read from the prefab as it fires, so editing it (or the lab)
+    // while playing shows at once.
+    void Add(Weapon w, string rate, Action<Mimic> fire, Kind kind = Kind.Shot) =>
         mimics.Add(new Mimic
         {
-            name = w.DisplayName, rate = rate, fire = fire,
-            companions = companionCount >= 0 ? companionCount : companions,
-            companionSpread = spread >= 0f ? spread : companionSpread,
-            companionSpeed = speedJitter >= 0f ? speedJitter : companionSpeed,
-            companionYaw = spreadAcross >= 0f ? spreadAcross : spread >= 0f ? spread : companionSpread,
-            blobSize = blobSize,
+            name = w.DisplayName, rate = Field<float>(w, rate), kind = kind,
+            fire = m => { m.rate = Field<float>(w, rate); fire(m); },
         });
 
-    // Shooters (WeaponShooter): a main shot and shorter fillers between us and it (one in ten seen).
-    void AddShooter(WeaponShooter w)
+    // Shooters (WeaponShooter): a main shot and shorter fillers between us and it (a share of them seen).
+    void AddShooter(WeaponShooter w) => Add(w, "fireRate", m =>
     {
         float speed = Field<float>(w, "shotSpeed"), yawSpread = Field<float>(w, "yawSpread"), pitchSpread = Field<float>(w, "pitchSpread");
         float fillerSpread = Field<float>(w, "fillerSpread");
         int fillers = Field<int>(w, "fillerShots"), splat = Field<int>(w, "splashSize");
         Ballistics ballistics = Field<Ballistics>(w, "ballistics");
-        Add(w, Field<float>(w, "fireRate"), m =>
+        float yaw = Random.Range(-yawSpread, yawSpread), pitch = AimRaise + Random.Range(-pitchSpread, pitchSpread);
+        Shot(m, yaw, pitch, speed, ballistics, Radius(splat), splat, true);
+        for (int i = 1; i <= fillers; i++)
         {
-            float yaw = Random.Range(-yawSpread, yawSpread), pitch = AimRaise + Random.Range(-pitchSpread, pitchSpread);
-            Shot(m, yaw, pitch, speed, ballistics, Radius(splat), splat, true);
-            for (int i = 1; i <= fillers; i++)
-            {
-                int size = Mathf.RoundToInt(splat * 0.7f);
-                Shot(m, yaw + Random.Range(-fillerSpread, fillerSpread), pitch + Random.Range(-fillerSpread, fillerSpread),
-                     speed * i / (fillers + 1f) + Random.Range(-0.1f, 0.1f), ballistics, Radius(size), size, Random.value < fillersSeen);
-            }
-        });
-    }
+            int size = Mathf.RoundToInt(splat * 0.7f);
+            Shot(m, yaw + Random.Range(-fillerSpread, fillerSpread), pitch + Random.Range(-fillerSpread, fillerSpread),
+                 speed * i / (fillers + 1f) + Random.Range(-0.1f, 0.1f), ballistics, Radius(size), size, Random.value < fillersSeen);
+        }
+    });
 
     // Blasters: one big shot, dripping unseen ink as it goes, that goes off at its range (or what it hits).
-    void AddBlaster(Blaster w)
+    void AddBlaster(Blaster w) => Add(w, "fireRate", m =>
     {
-        float speed = Field<float>(w, "shotSpeed"), range = Field<float>(w, "range"), drips = Field<float>(w, "trailSpacing");
-        int size = Field<int>(w, "shotSize"), dripSize = Field<int>(w, "trailSize");
-        Ballistics ballistics = Field<Ballistics>(w, "ballistics");
-        InkBlast blast = Field<InkBlast>(w, "blast");
-        Add(w, Field<float>(w, "fireRate"), m =>
-        {
-            InkDrop d = Shot(m, 0f, AimRaise, speed, ballistics, Radius(size), 0, true);
-            foreach (InkDrop c in companionsOf) c.range = range; // gone where it goes off
-            d.range = range;
-            d.blast = blast;
-            d.splashes = false;
-            d.trailSpacing = drips;
-            d.trailSize = dripSize;
-        });
-    }
+        float speed = Field<float>(w, "shotSpeed"), range = Field<float>(w, "range");
+        int size = Field<int>(w, "shotSize");
+        InkDrop d = Shot(m, 0f, AimRaise, speed, Field<Ballistics>(w, "ballistics"), Radius(size, blasterShotSize), 0, true);
+        foreach (InkDrop c in companionsOf) c.range = range; // gone where it goes off
+        d.range = range;
+        d.blast = Field<InkBlast>(w, "blast");
+        d.splashes = false;
+        d.trailSpacing = Field<float>(w, "trailSpacing");
+        d.trailSize = Field<int>(w, "trailSize");
+    });
 
-    // Rollers: two ground flicks (a wide fan), then an air flick (a long, narrow line).
-    void AddRoller(Roller w)
+    // Rollers: two ground flicks (a wide fan of many small blobs), then an air flick (a long, narrow line).
+    void AddRoller(Roller w) => Add(w, "flickRate", m =>
     {
-        float pace = Field<float>(w, "flickPace"), scale = Field<float>(w, "dropletScale");
+        float pace = Field<float>(w, "flickPace");
         Ballistics ballistics = Field<Ballistics>(w, "ballistics").Faster(pace);
-        var ground = (n: Field<int>(w, "groundDroplets"), fan: Field<float>(w, "groundFan"), pitch: Field<float>(w, "groundPitch"), speed: Field<Vector2>(w, "groundSpeed"), splat: Field<int>(w, "groundSplat"));
-        var air = (n: Field<int>(w, "airDroplets"), fan: Field<float>(w, "airFan"), pitch: Field<float>(w, "airPitch"), speed: Field<Vector2>(w, "airSpeed"), splat: Field<int>(w, "airSplat"));
-        Add(w, Field<float>(w, "flickRate"), m =>
+        bool inAir = m.fired % 3 == 2;
+        string kind = inAir ? "air" : "ground";
+        int n = Field<int>(w, kind + "Droplets"), splat = Field<int>(w, kind + "Splat");
+        float fan = Field<float>(w, kind + "Fan"), flickPitch = Field<float>(w, kind + "Pitch");
+        Vector2 speeds = Field<Vector2>(w, kind + "Speed");
+        m.blobSize = inAir ? 1f : rollerBlobSize;
+        for (int i = 0; i < n; i++)
         {
-            bool inAir = m.fired % 3 == 2;
-            var f = inAir ? air : ground;
-            for (int i = 0; i < f.n; i++)
-            {
-                float k = f.n > 1 ? i / (f.n - 1f) : 0.5f;
-                float yaw = inAir ? Random.Range(-f.fan, f.fan) * 0.5f : Mathf.Lerp(-f.fan, f.fan, k) * 0.5f + Random.Range(-3f, 3f);
-                float pitch = f.pitch + AimRaise + Random.Range(-3f, 3f);
-                float speed = inAir ? Mathf.Lerp(f.speed.x, f.speed.y, k) : Random.Range(f.speed.x, f.speed.y);
-                Shot(m, yaw, pitch, speed * pace, ballistics, Radius(f.splat, scale), f.splat, true);
-            }
-        }, companionCount: rollerCompanions, blobSize: rollerBlobSize); // smaller blobs, more of them
-    }
+            float k = n > 1 ? i / (n - 1f) : 0.5f;
+            float yaw = inAir ? Random.Range(-fan, fan) * 0.5f : Mathf.Lerp(-fan, fan, k) * 0.5f + Random.Range(-3f, 3f);
+            float pitch = flickPitch + AimRaise + Random.Range(-3f, 3f);
+            float speed = inAir ? Mathf.Lerp(speeds.x, speeds.y, k) : Random.Range(speeds.x, speeds.y);
+            Shot(m, yaw, pitch, speed * pace, ballistics, Radius(splat), splat, true);
+        }
+    }, Kind.Roller);
 
     // The Inkbrush: swipes across, alternating sides, leaning the way it swings.
-    void AddBrush(Brush w)
+    void AddBrush(Brush w) => Add(w, "swipeRate", m =>
     {
-        float pace = Field<float>(w, "swipePace"), scale = Field<float>(w, "dropletScale"), fan = Field<float>(w, "fan"), lean = Field<float>(w, "lean");
-        float pitch = Field<float>(w, "swipePitch");
+        float pace = Field<float>(w, "swipePace"), fan = Field<float>(w, "fan"), lean = Field<float>(w, "lean"), pitch = Field<float>(w, "swipePitch");
         int n = Field<int>(w, "droplets"), splat = Field<int>(w, "swipeSplat");
         Vector2 speed = Field<Vector2>(w, "dropletSpeed");
         Ballistics ballistics = Field<Ballistics>(w, "ballistics").Faster(pace);
-        Add(w, Field<float>(w, "swipeRate"), m =>
+        float sign = m.fired % 2 == 0 ? 1f : -1f;
+        for (int i = 0; i < n; i++)
         {
-            float sign = m.fired % 2 == 0 ? 1f : -1f;
-            for (int i = 0; i < n; i++)
+            float k = n > 1 ? i / (n - 1f) : 0.5f;
+            float yaw = Mathf.Lerp(-fan, fan, k) * 0.5f + lean * sign + Random.Range(-3f, 3f);
+            Shot(m, yaw, pitch + AimRaise + Random.Range(-3f, 3f), Random.Range(speed.x, speed.y) * pace, ballistics, Radius(splat), splat, true);
+        }
+    });
+
+    // The Bucket: a line of droplets, nearest to furthest, and a big blob out in front (as much bigger
+    // than the droplets as the prefab draws it).
+    void AddBucket(Bucket w) => Add(w, "sloshRate", m =>
+    {
+        float pace = Field<float>(w, "sloshPace"), pitch = Field<float>(w, "sloshPitch"), spread = Field<float>(w, "spread"), sway = Field<float>(w, "sway");
+        int n = Field<int>(w, "droplets"), splat = Field<int>(w, "dropletSplat"), blobSplat = Field<int>(w, "blobSplat");
+        Vector2 speed = Field<Vector2>(w, "dropletSpeed");
+        float blobSpeed = Field<float>(w, "blobSpeed"), blobLook = Field<float>(w, "blobScale") / Mathf.Max(0.01f, Field<float>(w, "dropletScale"));
+        Ballistics ballistics = Field<Ballistics>(w, "ballistics").Faster(pace);
+        // The line sways as the weapon's does: a gentle bend (a different one each slosh) and each droplet's own wobble.
+        float phase = Random.Range(0f, Mathf.PI * 2f), bends = Random.Range(1f, 2f);
+        for (int i = 0; i < n; i++)
+        {
+            float k = n > 1 ? i / (n - 1f) : 1f;
+            float yaw = Random.Range(-spread, spread) + sway * Mathf.Sin(k * Mathf.PI * bends + phase);
+            Shot(m, yaw, pitch + AimRaise + Random.Range(-1.5f, 1.5f), Mathf.Lerp(speed.x, speed.y, k) * pace, ballistics, Radius(splat), splat, true);
+        }
+        Shot(m, 0f, pitch + AimRaise, blobSpeed * pace, ballistics, Radius(blobSplat, blobLook), blobSplat, true);
+    }, Kind.Bucket);
+
+    // The Sprinkler: a model of it stuck to the floor (its scripts and colliders taken off), spun and
+    // fired here as Sprinkler does: from both nozzles, along the floor and a little up, slower and
+    // further apart as it winds down over its life (then it starts again).
+    void AddSprinkler()
+    {
+        if (sprinklerPrefab == null || !sprinklerPrefab.TryGetComponent(out Sprinkler s)) return;
+        var holder = new GameObject("Sprinkler (model)");
+        holder.SetActive(false); // nothing on the copy wakes up
+        holder.transform.SetParent(transform, false);
+        holder.transform.position = sprinklerAt;
+        GameObject model = Instantiate(sprinklerPrefab, holder.transform);
+        model.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+        Sprinkler copy = model.GetComponent<Sprinkler>();
+        Transform head = Field<Transform>(copy, "head");
+        Renderer[] tinted = Field<Renderer[]>(copy, "teamTinted");
+        foreach (MonoBehaviour b in model.GetComponentsInChildren<MonoBehaviour>(true)) DestroyImmediate(b);
+        foreach (Collider c in model.GetComponentsInChildren<Collider>(true)) DestroyImmediate(c);
+        foreach (Rigidbody r in model.GetComponentsInChildren<Rigidbody>(true)) DestroyImmediate(r);
+        holder.SetActive(true);
+
+        var m = new Mimic { name = "Sprinkler", key = "F2", at = sprinklerAt, team = 2 };
+        if (tinted != null) foreach (Renderer r in tinted) if (r != null) tints.Add((r, m));
+        float age = 0f, next = 0f;
+        m.tick = (mm, dt) =>
+        {
+            float life = Field<float>(s, "lifetime"), lift = Field<float>(s, "shotLift");
+            int splat = Field<int>(s, "splashSize");
+            age += dt;
+            if (age > life) { age = 0f; next = 0f; } // spent: a fresh one
+            float wind = age / life;
+            if (head != null) head.Rotate(0f, Mathf.Lerp(Field<float>(s, "spinStart"), Field<float>(s, "spinEnd"), wind) * dt, 0f, Space.Self);
+            next -= dt;
+            if (next > 0f || head == null) return;
+            next += Mathf.Lerp(Field<float>(s, "fireIntervalStart"), Field<float>(s, "fireIntervalEnd"), wind);
+            float speed = Mathf.Lerp(Field<float>(s, "shotSpeedStart"), Field<float>(s, "shotSpeedEnd"), wind);
+            for (int side = -1; side <= 1; side += 2)
             {
-                float k = n > 1 ? i / (n - 1f) : 0.5f;
-                float yaw = Mathf.Lerp(-fan, fan, k) * 0.5f + lean * sign + Random.Range(-3f, 3f);
-                Shot(m, yaw, pitch + AimRaise + Random.Range(-3f, 3f), Random.Range(speed.x, speed.y) * pace, ballistics, Radius(splat, scale), splat, true);
+                Vector3 along = head.forward * side;
+                Vector3 dir = (along + model.transform.up * lift).normalized;
+                ShotFrom(mm, head.position + along * 0.25f, dir * speed, null, Radius(splat), splat, true);
             }
+        };
+        m.show = shown => holder.SetActive(shown);
+        mimics.Add(m);
+    }
+
+    // The Inkstrike: the real one, called in on its spot every few seconds (it paints the lab, and
+    // its particles are drawn as fluid while a FluidRenderer is on).
+    void AddInkStrike()
+    {
+        if (inkStrikePrefab == null) return;
+        mimics.Add(new Mimic
+        {
+            name = "Inkstrike", key = "F3", at = inkStrikeAt, team = 1, rate = inkStrikeEvery, next = 0.5f,
+            fire = m => { m.rate = inkStrikeEvery; Instantiate(inkStrikePrefab).Begin(0, m.team, m.at, true, TeamColour(m.team)); },
         });
     }
 
-    // The Bucket: a line of droplets, nearest to furthest, and a big blob out in front.
-    void AddBucket(Bucket w)
-    {
-        float pace = Field<float>(w, "sloshPace"), pitch = Field<float>(w, "sloshPitch"), spread = Field<float>(w, "spread");
-        int n = Field<int>(w, "droplets"), splat = Field<int>(w, "dropletSplat"), blobSplat = Field<int>(w, "blobSplat");
-        Vector2 speed = Field<Vector2>(w, "dropletSpeed");
-        float scale = Field<float>(w, "dropletScale"), blobSpeed = Field<float>(w, "blobSpeed"), blobScale = Field<float>(w, "blobScale");
-        Ballistics ballistics = Field<Ballistics>(w, "ballistics").Faster(pace);
-        Add(w, Field<float>(w, "sloshRate"), m =>
-        {
-            // The line sways: a gentle bend (a different one each slosh) as well as each droplet's own jitter.
-            float phase = Random.Range(0f, Mathf.PI * 2f), bends = Random.Range(1f, 2f);
-            for (int i = 0; i < n; i++)
-            {
-                float k = n > 1 ? i / (n - 1f) : 1f;
-                float yaw = Random.Range(-spread, spread) + bucketWander * Mathf.Sin(k * Mathf.PI * bends + phase);
-                Shot(m, yaw, pitch + AimRaise + Random.Range(-1.5f, 1.5f), Mathf.Lerp(speed.x, speed.y, k) * pace, ballistics, Radius(splat, scale), splat, true);
-            }
-            Shot(m, 0f, pitch + AimRaise, blobSpeed * pace, ballistics, Radius(blobSplat, blobScale), blobSplat, true);
-        }, companionCount: 3, spread: 1f, speedJitter: 0.1f, spreadAcross: bucketCompanionYaw); // spread along the line (one long body of ink), a little across it
-    }
+    readonly List<(Renderer renderer, Mimic mimic)> tints = new List<(Renderer, Mimic)>(); // models' team-coloured parts
 
     readonly List<InkDrop> companionsOf = new List<InkDrop>(); // the last Shot's (a blaster's stop at its range)
 
     // A shot (drawn, or unseen and only painting), with its companion blobs if it's seen.
-    InkDrop Shot(Mimic m, float yaw, float pitch, float speed, Ballistics ballistics, float radius, int splat, bool visible)
+    InkDrop Shot(Mimic m, float yaw, float pitch, float speed, Ballistics ballistics, float radius, int splat, bool visible) =>
+        ShotFrom(m, m.at, Quaternion.Euler(-pitch, yaw, 0f) * Vector3.forward * speed, ballistics, radius, splat, visible);
+
+    InkDrop ShotFrom(Mimic m, Vector3 from, Vector3 launch, Ballistics ballistics, float radius, int splat, bool visible)
     {
-        Vector3 launch = Quaternion.Euler(-pitch, yaw, 0f) * Vector3.forward * speed;
         var d = new InkDrop
         {
-            position = m.at, start = m.at, launch = launch, ballistics = ballistics ?? Ballistics.Default, radius = radius * m.blobSize,
+            position = from, start = from, launch = launch, ballistics = ballistics ?? Ballistics.Default, radius = radius * m.blobSize,
             team = m.team, splat = splat, splashes = visible, hidden = !visible, seed = Random.value * 100f,
         };
         drops.Add(d);
         companionsOf.Clear();
         if (!visible) return d;
-        for (int i = 0; i < m.companions; i++)
+        (int count, float upDown, float across, float jitter) = m.kind switch
         {
-            Quaternion nudge = Quaternion.Euler(Random.Range(-m.companionSpread, m.companionSpread), Random.Range(-m.companionYaw, m.companionYaw), 0f);
+            Kind.Roller => (rollerCompanions, companionSpread, companionSpread, companionSpeed),
+            Kind.Bucket => (bucketCompanions, bucketCompanionSpread, bucketCompanionYaw, bucketCompanionSpeed),
+            _ => (companions, companionSpread, companionSpread, companionSpeed),
+        };
+        for (int i = 0; i < count; i++)
+        {
+            Quaternion nudge = Quaternion.Euler(Random.Range(-upDown, upDown), Random.Range(-across, across), 0f);
             companionsOf.Add(new InkDrop
             {
-                position = m.at + Random.insideUnitSphere * d.radius * 0.3f, start = m.at,
-                launch = nudge * launch * (1f + Random.Range(-m.companionSpeed, m.companionSpeed)), ballistics = d.ballistics,
+                position = from + Random.insideUnitSphere * d.radius * 0.3f, start = from,
+                launch = nudge * launch * (1f + Random.Range(-jitter, jitter)), ballistics = d.ballistics,
                 radius = d.radius * Random.Range(companionSize.x, companionSize.y), team = m.team, seed = Random.value * 100f,
             });
         }
@@ -316,13 +396,25 @@ public class FluidLab : MonoBehaviour
             if (k.cKey.wasPressedThisFrame) colourSet++;
             if (k.xKey.wasPressedThisFrame) foreach (SurfaceInkManager s in surfaces) if (s != null) s.ClearInk();
             if (k.digit0Key.wasPressedThisFrame) foreach (Mimic m in mimics) m.on = true;
-            for (int i = 0; i < mimics.Count && i < 9; i++)
-                if (k[Key.Digit1 + i].wasPressedThisFrame) mimics[i].on = !mimics[i].on;
+            for (int i = 0, n = 0; i < mimics.Count; i++)
+            {
+                Mimic m = mimics[i];
+                if (m.key == null ? n < 9 && k[Key.Digit1 + n++].wasPressedThisFrame
+                                  : m.key == "F2" ? k.f2Key.wasPressedThisFrame : m.key == "F3" && k.f3Key.wasPressedThisFrame)
+                    m.on = !m.on;
+            }
         }
         if (appliedSet != colourSet && Time.frameCount > 1) ApplyColours(); // after the surfaces have made their materials
-        float dt = paused ? 0f : Time.deltaTime * timeScale;
+        Time.timeScale = paused ? 0f : timeScale;
+        float dt = Time.deltaTime;
         foreach (Mimic m in mimics)
         {
+            m.show?.Invoke(m.on);
+            if (m.tick != null)
+            {
+                if (m.on) m.tick(m, dt);
+                continue;
+            }
             m.next -= dt;
             if (m.next > 0f) continue;
             m.next += m.rate;
@@ -338,6 +430,14 @@ public class FluidLab : MonoBehaviour
     void ApplyColours()
     {
         appliedSet = colourSet;
+        var block = new MaterialPropertyBlock();
+        foreach ((Renderer r, Mimic m) in tints)
+        {
+            if (r == null) continue;
+            block.SetColor("_Color", TeamColour(m.team));
+            block.SetColor("_EmissionColor", TeamColour(m.team) * 0.6f);
+            r.SetPropertyBlock(block);
+        }
         foreach (SurfaceInkManager s in surfaces)
         {
             if (s == null || !s.TryGetComponent(out Renderer r)) continue;
@@ -537,15 +637,18 @@ public class FluidLab : MonoBehaviour
         }
     }
 
+    float fps = 60f;
+
     void OnGUI()
     {
+        if (Event.current.type == EventType.Repaint) fps = Mathf.Lerp(fps, 1f / Mathf.Max(Time.unscaledDeltaTime, 1e-4f), 0.05f);
         var style = new GUIStyle(GUI.skin.box) { fontSize = 15, alignment = TextAnchor.UpperLeft };
         style.normal.textColor = Color.white;
         FluidRenderer r = FluidRenderer.Active.Count > 0 ? FluidRenderer.Active[0] : null;
         NetGameManager.TeamColours[] sets = NetGameManager.DefaultColourSets();
         GUI.Box(new Rect(10, 10, 700, 54),
-            $"Fluid lab: {look} (F1 look, P pause{(paused ? ": PAUSED" : "")}, 1-9 weapons, 0 all, C colours: {sets[((colourSet % sets.Length) + sets.Length) % sets.Length].name}, X clear ink)\n" +
-            $"{drops.Count} drops, {(r != null ? r.Drawn : 0)} spheres drawn, {1f / Mathf.Max(Time.smoothDeltaTime, 1e-4f):0} fps; hold right mouse + WASD/QE to fly, R resets", style);
+            $"Fluid lab: {look} (F1 look, P pause{(paused ? ": PAUSED" : "")}, 1-9 weapons, F2 sprinkler, F3 inkstrike, 0 all, C colours: {sets[((colourSet % sets.Length) + sets.Length) % sets.Length].name}, X clear ink)\n" +
+            $"{drops.Count} drops, {(r != null ? r.Drawn : 0)} spheres drawn, {fps:0} fps; hold right mouse + WASD/QE to fly, R resets", style);
         GUI.Box(new Rect(10, 68, 300, 30), $"Time x{timeScale:0.##}  ([ ] slower/faster, T toggles)", style);
         TimeScale = GUI.HorizontalSlider(new Rect(10, 102, 300, 16), timeScale, SlowSteps[0], 1f);
 
@@ -558,7 +661,7 @@ public class FluidLab : MonoBehaviour
             Mimic m = mimics[i];
             Vector3 p = cam.WorldToScreenPoint(m.at + Vector3.up * 0.8f);
             if (p.z <= 0f) continue;
-            string text = $"{i + 1} {m.name}";
+            string text = $"{m.key ?? (i + 1).ToString()} {m.name}";
             var rect = new Rect(p.x - 80f, Screen.height - p.y - 12f, 160f, 24f);
             label.normal.textColor = new Color(0f, 0f, 0f, 0.7f);
             GUI.Label(new Rect(rect.x + 1f, rect.y + 1f, rect.width, rect.height), text, label);

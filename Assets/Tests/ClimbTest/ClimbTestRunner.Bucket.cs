@@ -77,7 +77,7 @@ public partial class ClimbTestRunner
         Note($"slosh: {shots} shots ({bucket.Droplets} droplets + blob) in a line {yawSpread:F1}° wide, blob {(blobFastest ? "fastest" : "NOT fastest")} at {blobLaunch.magnitude:F1} m/s, launched {Elevation(blobLaunch):F1}° up (the air flick: {airElevation:F1}°); " +
              $"blob landed {blobReach:F1}m out (droplets up to {dropReach:F1}m; the air flick {airReach:F1}m), splat {bucket.BlobSplat} vs {bucket.DropletSplat}, hit radius {blobRadius:F2} vs {dropRadius:F2}; ink {inkSpent:P0}; broadcast {(blobSent ? "with the blob last" : "WRONG")}");
         if (shots != bucket.Droplets + 1 || !blobFastest) Fail("a slosh isn't its droplets then a faster blob");
-        if (yawSpread > 6f) Fail("the slosh isn't a narrow line");
+        if (yawSpread > 2f * (bucket.Spread + bucket.Sway) + 1f) Fail("the slosh isn't a narrow line");
         if (blob.Count != 1 || blobReach <= dropReach) Fail("the blob didn't land out in front of the droplets");
         if (blob.Count == 1 && (blob[0].reason != ProjectileManager.EndReason.Surface || Mathf.Abs(blobReach - airReach) > airReach * 0.35f)) Fail("the blob doesn't land on the floor at about the air flick's reach");
         if (bucket.BlobSplat <= bucket.DropletSplat || blobRadius <= dropRadius * 1.3f || bucket.BlobSplat * bucket.BlobScale < bucket.DropletSplat * bucket.DropletScale * 2f) Fail("the blob isn't bigger (splat, hit radius, look)");
