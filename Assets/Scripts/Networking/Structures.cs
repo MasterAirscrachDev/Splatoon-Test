@@ -156,7 +156,7 @@ public class DamageData
 }
 
 // ── Sub weapons: ids are per owner ───────────────────────────────────────
-public enum SubType { Beacon, Sprinkler, CurlingBomb }
+public enum SubType { Beacon, Sprinkler, CurlingBomb, SuctionBomb, ImpactBomb, InkBomb } // append only: synced
 
 [System.Serializable]
 public class SubData
@@ -169,7 +169,7 @@ public class SubData
     public NVector3 velocity; // thrown subs, until they land
     public NVector3 normal;   // the surface it's stuck to, once landed
     public bool landed;
-    public float fuse;        // curling bomb: seconds left until it explodes
+    public float fuse;        // curling bomb: seconds left until it explodes; thrown bombs: the same once armed (0: not yet), -1: it went off
 }
 
 [System.Serializable]

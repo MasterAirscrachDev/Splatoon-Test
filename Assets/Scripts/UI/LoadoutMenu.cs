@@ -141,6 +141,13 @@ public class LoadoutMenu : MonoBehaviour
             CurlingBomb c = loadout.CurlingBombPrefab;
             return $"Slides along the ground inking a stripe, bouncing off walls; {c.PassDamage:0} damage to anyone it passes. Explodes after {c.Fuse:0}s for {c.BlastDamage:0} damage. Hold the button to cook it: the fuse runs {c.CookRate:0.#}x as fast.";
         }
+        if (loadout.BombPrefab(loadout.Sub) is ThrownBomb t && t != null)
+        {
+            string how = t.Contact == ThrownBomb.ContactMode.Stick ? $"Thrown. Sticks to whatever it hits, walls too, and goes off {t.Fuse:0.#}s later"
+                       : t.Contact == ThrownBomb.ContactMode.Burst ? "Thrown. Goes off the moment it hits anything, or anyone"
+                       : $"Thrown. Bounces and rolls to a stop, going off {t.Fuse:0.#}s after it first lands";
+            return $"{how}: up to {t.Blast.coreDamage:0} damage close in, {t.Blast.edgeDamage:0} at the edge of its {t.Blast.radius:0.#}m blast.";
+        }
         return "";
     }
 

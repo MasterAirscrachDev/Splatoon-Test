@@ -28,4 +28,12 @@ public class ShotLook
 
     [Tooltip("How much each companion's speed randomly differs from the shot's (share, ±; 0.1 = up to 10% faster or slower): strings them out along the line of flight")]
     public float speedSpread = 0.05f;
+
+    // A copy drawn `scale` times the size (a charged shot's, say).
+    public ShotLook Scaled(float scale)
+    {
+        var c = (ShotLook)MemberwiseClone();
+        c.size *= scale;
+        return c;
+    }
 }

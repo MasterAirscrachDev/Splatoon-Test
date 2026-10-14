@@ -1,0 +1,277 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &4187103714305775761
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 254398472697323789}
+  - component: {fileID: 4818481672707639767}
+  m_Layer: 0
+  m_Name: TriBucket
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &254398472697323789
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4187103714305775761}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 2457625530361628119}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &4818481672707639767
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4187103714305775761}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 113a4c1b905d28b45afe2aa5a8c3430a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Bucket
+  displayName: Triplesplash Bucket
+  description: 'Slosh three streams at once, fanned out side by side, each with a
+    blob at its front: short range, but hard to dodge.'
+  icon: {fileID: 21300000, guid: 8b1e9559cee412b4593f93d4059f1c13, type: 3}
+  powerRating: 0.7
+  rangeRating: 0.35
+  speedRating: 0.45
+  feetShotInterval: 0.4
+  feetShotMinSize: 12
+  feetShotMaxSize: 18
+  feetShotDropSpeed: 6
+  sloshRate: 0.6
+  windup: 0.12
+  followThrough: 0.2
+  sloshInkCost: 80
+  ballistics:
+    velocityOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    gravityOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  sloshPace: 2
+  aimInfluence: 1
+  sloshPitchLimits: {x: -60, y: 70}
+  sloshPitch: 35
+  spread: 2
+  sway: 2.5
+  streams: 3
+  streamFan: 40
+  droplets: 12
+  dropletSpeed: {x: 0, y: 5.5}
+  dropletDamage:
+    damage: 35
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.1
+        value: 1
+        inSlope: 0
+        outSlope: -1.25
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.5
+        value: 0.5
+        inSlope: -1.25
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  dropletSplat: 10
+  dropletLook:
+    size: 1.3
+    stretch: 0.1
+    companions: 1
+    companionSize: {x: 0.5, y: 0.85}
+    upDownSpread: 3
+    sideSpread: 3
+    speedSpread: 0.1
+  blobSpeed: 6.5
+  blobLook:
+    size: 1.5
+    stretch: 0.1
+    companions: 8
+    companionSize: {x: 0.6, y: 0.85}
+    upDownSpread: 3
+    sideSpread: 3
+    speedSpread: 0.1
+  blobHitScale: 1.8
+  blobDamage:
+    damage: 70
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.15
+        value: 1
+        inSlope: 0
+        outSlope: -0.7777778
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.6
+        value: 0.65
+        inSlope: -0.7777778
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  blobSplat: 18
+  idlePitch: 0
+  swingBack: 35
+  swingForward: -110
+  poseSpeed: 14
+--- !u!1001 &2707090104247099964
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 254398472697323789}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0.077
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: -0.289
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.7071067
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0.7071068
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+      propertyPath: m_Name
+      value: Model
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+--- !u!4 &2457625530361628119 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: a8d0d0e64e7e4de4990e637818ddcd80, type: 3}
+  m_PrefabInstance: {fileID: 2707090104247099964}
+  m_PrefabAsset: {fileID: 0}

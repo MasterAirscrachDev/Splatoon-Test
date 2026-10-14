@@ -1,0 +1,283 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3440197209969277772
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3649981995808550906}
+  - component: {fileID: 3969233499896776995}
+  m_Layer: 0
+  m_Name: LightRoller
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3649981995808550906
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3440197209969277772}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 6570885036004512787}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &3969233499896776995
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3440197209969277772}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f3f778b33d699054f9f061e31a07c7c1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Roller
+  displayName: Light Roller
+  description: 'The fastest roller: quick, wide flicks (even from the air) and a
+    roll that builds up speed fast. Light on damage.'
+  icon: {fileID: 21300000, guid: 3b30838a8622d4b44938f63a7c4ec742, type: 3}
+  powerRating: 0.35
+  rangeRating: 0.3
+  speedRating: 0.95
+  feetShotInterval: 0.4
+  feetShotMinSize: 12
+  feetShotMaxSize: 18
+  feetShotDropSpeed: 6
+  flickMode: 1
+  flickRate: 0.4
+  windup: 0.13
+  followThrough: 0.1
+  flickInkCost: 60
+  ballistics:
+    velocityOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+    gravityOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  flickPace: 2
+  aimInfluence: 1
+  flickPitchLimits: {x: -40, y: 60}
+  groundDroplets: 30
+  groundFan: 80
+  groundPitch: 25
+  groundSpeed: {x: 4, y: 6.5}
+  groundDamage:
+    damage: 60
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: -1.44
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.5
+        value: 0.28
+        inSlope: -1.44
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  groundSplat: 14
+  groundLook:
+    size: 1
+    stretch: 0.1
+    companions: 4
+    companionSize: {x: 0.5, y: 0.85}
+    upDownSpread: 3
+    sideSpread: 3
+    speedSpread: 0.05
+  airDroplets: 16
+  airFan: 7
+  airPitch: 20
+  airSpeed: {x: 0, y: 12}
+  airDamage:
+    damage: 160
+    scaleOverTime:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: -1.25
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 0.5
+        value: 0.375
+        inSlope: -1.25
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  airSplat: 12
+  airLook:
+    size: 1.6
+    stretch: 0.1
+    companions: 4
+    companionSize: {x: 0.5, y: 0.85}
+    upDownSpread: 2
+    sideSpread: 2
+    speedSpread: 0.05
+  rollDamage: 50
+  rollStartSpeed: 1.4
+  rollSpeed: 2
+  rollRampTime: 0.3
+  rollInkPerMetre: 12
+  rollPaintSpacing: 0.5
+  rollSplatPoints: 3
+  rollInkWidth: 3
+  rollSplatSize: 8
+  minRollSpeed: 1
+  roller: {fileID: 1596520261178478173}
+  rollerRadius: 0.229
+  rollerWidth: 2.48
+  rollShift: {x: -0.53, y: 0, z: 0}
+  carryPitch: 15
+  idlePitch: -70
+  idleOffset: {x: 0.1, y: 0, z: -0.35}
+  raisedPitch: -80
+  verticalTurn: 90
+  spinAxis: {x: -1, y: 0, z: 0}
+  turnAxis: {x: 0, y: 0, z: -1}
+  poseSpeed: 18
+  spinDirection: 1
+--- !u!1001 &6681864503632065528
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 3649981995808550906}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.7071067
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0.7071068
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+      propertyPath: m_Name
+      value: Model
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+--- !u!4 &1596520261178478173 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 5376518286244986277, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+  m_PrefabInstance: {fileID: 6681864503632065528}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &6570885036004512787 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: a0b7b5d26ddf1374680d85b1593b46b1, type: 3}
+  m_PrefabInstance: {fileID: 6681864503632065528}
+  m_PrefabAsset: {fileID: 0}

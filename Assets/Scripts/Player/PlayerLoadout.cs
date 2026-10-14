@@ -4,7 +4,8 @@ using UnityEngine;
 // Main weapon, sub and special. The main weapon and sub are picked in the loadout menu (and
 // remembered); weapons are prefabs, equipped under the weapon mount (remote copies follow the
 // owner's choice from their state updates). Subs cost a fixed share of the ink tank: a beacon is placed in front of the player,
-// a sprinkler is thrown, a curling bomb slides off along the aim (holding the button first runs its
+// a sprinkler or a bomb (suction, impact, ink: ThrownBomb) is thrown, each lobbed by its own prefab's
+// throw (SubThrow), a curling bomb slides off along the aim (holding the button first runs its
 // fuse down). The special (bubble shield) charges from turf inked and damage dealt,
 // refills the tank and makes the player immune to damage for a few seconds; or the Inkstrike,
 // called in on a spot picked from the map. Specials charge from turf inked and damage dealt, and
@@ -21,9 +22,12 @@ public class PlayerLoadout : MonoBehaviour
     [SerializeField] float placeDistance = 1.5f;   // in front of the player
 
     [Header("Sub: sprinkler")]
-    [SerializeField] Sprinkler sprinklerPrefab;    // as is the sprinkler's
-    [SerializeField] float throwSpeed = 11f;       // along the aim, plus an upward lob
-    [SerializeField] float throwLift = 4f;
+    [SerializeField] Sprinkler sprinklerPrefab;    // as is the sprinkler's (and how it's thrown)
+
+    [Header("Sub: bombs")]
+    [SerializeField] ThrownBomb suctionBombPrefab; // each with its own throw, fuse and blast
+    [SerializeField] ThrownBomb impactBombPrefab;
+    [SerializeField] ThrownBomb inkBombPrefab;
 
     [Header("Sub: curling bomb")]
     [SerializeField] CurlingBomb curlingBombPrefab; // as is the curling bomb's (and its fuse)
@@ -57,8 +61,14 @@ public class PlayerLoadout : MonoBehaviour
     public CurlingBomb CurlingBombPrefab => curlingBombPrefab;
     public CurlingBomb HeldBomb => held;            // cooking in our hand
     public CurlingBomb LastBomb { get; private set; } // tests
+    public ThrownBomb LastThrownBomb { get; private set; } // tests
+    public ThrownBomb BombPrefab(SubType type) => type == SubType.SuctionBomb ? suctionBombPrefab : type == SubType.ImpactBomb ? impactBombPrefab : type == SubType.InkBomb ? inkBombPrefab : null;
     public SubType Sub => sub;
-    public string SubName => sub == SubType.Beacon ? "BEACON" : sub == SubType.Sprinkler ? "SPRINKLER" : "CURLING";
+    public string SubName => sub switch
+    {
+        SubType.Beacon => "BEACON", SubType.Sprinkler => "SPRINKLER", SubType.CurlingBomb => "CURLING",
+        SubType.SuctionBomb => "SUCTION", SubType.ImpactBomb => "IMPACT", _ => "INK BOMB"
+    };
     public SpecialType Special => special;
     public string SpecialName => special == SpecialType.BubbleShield ? "BUBBLE" : "INKSTRIKE";
     public InkStrike InkStrikePrefab => inkStrikePrefab;
@@ -68,13 +78,17 @@ public class PlayerLoadout : MonoBehaviour
     public Sprite SubIcon => SubIconOf(sub);
     public Sprite SubIconOf(SubType type) => SubPrefab(type) is SubDevice d && d != null ? d.Icon : null;
     public Sprite SpecialIconOf(SpecialType type) => specialIcons != null && (int)type < specialIcons.Length ? specialIcons[(int)type] : null;
-    SubDevice SubPrefab(SubType type) => type == SubType.Beacon ? beaconPrefab : type == SubType.Sprinkler ? sprinklerPrefab : curlingBombPrefab;
+    SubDevice SubPrefab(SubType type) => type switch
+    {
+        SubType.Beacon => beaconPrefab, SubType.Sprinkler => sprinklerPrefab, SubType.CurlingBomb => curlingBombPrefab,
+        _ => BombPrefab(type)
+    };
     // The icon of the weapon this player has equipped (or null without one).
     public Sprite WeaponIcon => weapons != null && weapons.Length > 0 && weapons[Mathf.Clamp(player.WeaponIndex, 0, weapons.Length - 1)] is Weapon w && w != null ? w.Icon : null;
     public Light SubReadyLight => subReadyLight;
     public float InkCost(SubType type)
     {
-        SubDevice prefab = type == SubType.Beacon ? beaconPrefab : type == SubType.Sprinkler ? sprinklerPrefab : (SubDevice)curlingBombPrefab;
+        SubDevice prefab = SubPrefab(type);
         return prefab != null ? prefab.InkCost : 1f;
     }
     public bool CanUseSub => player.InkLevel >= SubInkCost;
@@ -234,7 +248,7 @@ public class PlayerLoadout : MonoBehaviour
         if (InTransition && sub != SubType.CurlingBomb) { pressQueuedAt = Time.time; player.ActionQueued = true; return true; }
         player.MarkAiming(0.5f); // turn to the view to throw or place it
         if (sub == SubType.CurlingBomb) return PressSub() && ReleaseSub();
-        return sub == SubType.Beacon ? PlaceBeacon() : ThrowSprinkler();
+        return UseReadied();
     }
 
     // The sub button went down: it's readied (a curling bomb taken in hand, its fuse running), its
@@ -268,7 +282,7 @@ public class PlayerLoadout : MonoBehaviour
             if (InTransition) { releaseQueuedAt = Time.time; player.ActionQueued = true; return true; } // used once the kid form's up
             readying = false;
             player.MarkAiming(0.5f);
-            return sub == SubType.Beacon ? PlaceBeacon() : ThrowSprinkler();
+            return UseReadied();
         }
         if (player.IsSquid) { Destroy(held.gameObject); held = null; return false; } // called off
         if (InTransition) { releaseQueuedAt = Time.time; player.ActionQueued = true; return true; } // thrown once the kid form's up
@@ -295,6 +309,23 @@ public class PlayerLoadout : MonoBehaviour
         if (held.FuseLeft <= held.MinFuse) ReleaseSub();
     }
 
+    // The readied sub (not a curling bomb) put out: placed, or thrown.
+    bool UseReadied() => sub == SubType.Beacon ? PlaceBeacon() : sub == SubType.Sprinkler ? ThrowSprinkler() : ThrowBomb(sub);
+
+    // From our hand, by the bomb's own throw; any number can be out at once.
+    bool ThrowBomb(SubType type)
+    {
+        ThrownBomb prefab = BombPrefab(type);
+        if (prefab == null || !player.ConsumeInk(InkCost(type))) return false;
+        ThrowFrom(prefab.Throwing, out Vector3 from, out Vector3 velocity);
+        ThrownBomb bomb = Instantiate(prefab, from, Quaternion.LookRotation(Vector3.ProjectOnPlane(velocity, Vector3.up).sqrMagnitude > 1e-4f ? Vector3.ProjectOnPlane(velocity, Vector3.up) : player.transform.forward));
+        bomb.Init(player.OwnerId, nextSubId++, player.Team, ownedLocally: true);
+        bomb.Throw(velocity);
+        LastThrownBomb = bomb;
+        NetGameManager.Instance?.SendSubSpawn(bomb);
+        return true;
+    }
+
     // On the ground in front of the player; needs a spot to stand it on.
     bool PlaceBeacon()
     {
@@ -316,7 +347,7 @@ public class PlayerLoadout : MonoBehaviour
         if (sprinklerPrefab == null || !player.ConsumeInk(InkCost(SubType.Sprinkler))) return false;
         if (ownSprinkler != null) ownSprinkler.Break();
 
-        SprinklerThrow(out Vector3 from, out Vector3 velocity);
+        ThrowFrom(sprinklerPrefab.Throwing, out Vector3 from, out Vector3 velocity);
         ownSprinkler = Instantiate(sprinklerPrefab, from, Quaternion.identity);
         ownSprinkler.Init(player.OwnerId, nextSubId++, player.Team, ownedLocally: true);
         ownSprinkler.Throw(velocity);
@@ -327,11 +358,23 @@ public class PlayerLoadout : MonoBehaviour
     // Where a sub is held (and thrown from): in hand, at our right side.
     public Vector3 Hand => player.transform.TransformPoint(holdOffset);
 
-    // From our hand, along the camera's aim plus a lob.
-    void SprinklerThrow(out Vector3 from, out Vector3 velocity)
+    // From our hand, lobbed by the sub's throw to land on what the reticle's on (or as far as it can).
+    void ThrowFrom(SubThrow throwing, out Vector3 from, out Vector3 velocity)
     {
         from = Hand;
-        velocity = player.AimForward * throwSpeed + Vector3.up * throwLift;
+        velocity = throwing.VelocityTo(from, player.AimForward, AimPoint());
+    }
+
+    CameraAim camAim;
+    const float AimReach = 100f;
+
+    // What the reticle's on: down the camera's (raised) aim to the first surface; null if nothing's there.
+    public Vector3? AimPoint()
+    {
+        if (camAim == null) camAim = GetComponentInChildren<CameraAim>(true);
+        Vector3 eye = camAim != null ? camAim.transform.position : player.BodyCenter;
+        return Physics.Raycast(eye, player.AimForward, out RaycastHit hit, AimReach, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)
+            ? hit.point : (Vector3?)null;
     }
 
     // ── Preview: what the readied sub will do ───────────────────────────────
@@ -356,8 +399,14 @@ public class PlayerLoadout : MonoBehaviour
         }
         else if (sub == SubType.Sprinkler && sprinklerPrefab != null)
         {
-            SprinklerThrow(out Vector3 from, out Vector3 velocity);
+            ThrowFrom(sprinklerPrefab.Throwing, out Vector3 from, out Vector3 velocity);
             sprinklerPrefab.PredictPath(from, velocity, 4f, previewPath);
+            preview.ShowPath(previewPath, colour);
+        }
+        else if (BombPrefab(sub) is ThrownBomb bomb && bomb != null)
+        {
+            ThrowFrom(bomb.Throwing, out Vector3 from, out Vector3 velocity);
+            bomb.PredictPath(from, velocity, 4f, previewPath);
             preview.ShowPath(previewPath, colour);
         }
         else if (sub == SubType.Beacon && beaconPrefab != null && FindBeaconSpot(out Vector3 spot))
@@ -386,7 +435,18 @@ public class PlayerLoadout : MonoBehaviour
         SubDevice existing = SubDevice.Find(d.ownerId, d.subId);
         if (existing is Sprinkler landing && d.landed) { landing.Land(d.position, d.normal); return; }
         if (existing is CurlingBomb bounced) { bounced.Resync(d.position, d.velocity, d.fuse); return; }
+        Vector3 velocity = d.velocity != null ? (Vector3)d.velocity : Vector3.zero, normal = d.normal != null ? (Vector3)d.normal : Vector3.up;
+        if (existing is ThrownBomb thrown) { thrown.ApplyUpdate(d.position, velocity, normal, d.landed, d.fuse); return; }
         if (existing != null) return;
+
+        if (BombPrefab((SubType)d.subType) is ThrownBomb bombPrefab && bombPrefab != null)
+        {
+            if (d.fuse < 0f) return; // it already went off (our copy did too, or never came)
+            ThrownBomb b = Instantiate(bombPrefab, d.position, Quaternion.identity);
+            b.Init(d.ownerId, d.subId, d.team, ownedLocally: false);
+            b.ApplyUpdate(d.position, velocity, normal, d.landed, d.fuse);
+            return;
+        }
 
         if ((SubType)d.subType == SubType.CurlingBomb)
         {

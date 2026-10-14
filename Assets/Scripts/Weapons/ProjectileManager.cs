@@ -63,6 +63,7 @@ public class ProjectileManager : MonoBehaviour
     int hitMask, shotsCreated;
 
     public static int LiveCount => instance != null ? instance.live.Count : 0;
+    public static IReadOnlyList<Shot> Live => instance != null ? instance.live : (IReadOnlyList<Shot>)System.Array.Empty<Shot>(); // tests
     public static int ShotsCreated => instance != null ? instance.shotsCreated : 0; // tests: pooling
     public static int VisibleCount
     {

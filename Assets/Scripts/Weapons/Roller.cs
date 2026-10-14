@@ -5,7 +5,9 @@ using UnityEngine;
 // view: on the ground a short, wide horizontal flick (a fan of droplets) that comes down into the
 // rolling position; in the air, with the frame turned on its side (vertical mode), a long, narrow
 // vertical one (a line of droplets). However many droplets of a flick hit an enemy, they take its
-// damage once. A flick is aiming (the body faces the view); rolling isn't (the body, and the roller
+// damage once. flickMode can keep it to one of them wherever it swings: Horizontal Only never folds
+// (the Light Roller), Vertical Only always swings on its side (the Era Roller). A flick is aiming
+// (the body faces the view); rolling isn't (the body, and the roller
 // with it, face the way we move). Holding attack afterwards puts
 // the roller down in front: moving inks a strip as wide as the roller under it (costing ink by the
 // metre), starts at rollStartSpeed of our move speed and builds to rollSpeed (again after any stop), runs over enemies
@@ -14,7 +16,10 @@ using UnityEngine;
 // PlayerController.WeaponDown) and their flicks (replayed shots); paint and damage are the owner's.
 public class Roller : Weapon
 {
+    public enum FlickMode { Both, HorizontalOnly, VerticalOnly }
+
     [Header("Flick")]
+    [SerializeField, Tooltip("Which flicks it has: the wide horizontal one on the ground and the narrow vertical one in the air (Both), or just one of them wherever it swings. Horizontal Only never folds: its frame doesn't turn")] FlickMode flickMode = FlickMode.Both;
     [SerializeField, Tooltip("Seconds between flicks")] float flickRate = 0.6f;
     [SerializeField, Tooltip("Seconds it swings back before the droplets leave")] float windup = 0.2f;
     [SerializeField, Tooltip("Seconds it swings on after they leave")] float followThrough = 0.15f;
@@ -73,7 +78,7 @@ public class Roller : Weapon
 
     ControlLayer input;
     State state;
-    bool flickInAir, wasPressed, dry, local;
+    bool flickVertical, wasPressed, dry, local;
     float flickStart = -10f, released = -20f, rolling, sincePaint; // rolling: seconds on the move with it down
     CharacterController body;
     Vector3 lastPos, homePos;
@@ -93,7 +98,9 @@ public class Roller : Weapon
     public bool Down { get; private set; }  // rolling: on the floor
     public int Flicks { get; private set; }
     public float RollInkSpent { get; private set; } // tests
-    public bool LastFlickInAir { get; private set; }
+    public bool LastFlickInAir { get; private set; } // the last flick was the vertical one
+    public FlickMode Mode { get => flickMode; set => flickMode = value; }
+    bool Folds => flickMode != FlickMode.HorizontalOnly;
     public Vector3[] LastFlick { get; private set; } // launch velocities of the last flick (tests)
     public DamageFalloff GroundDamage => groundDamage;
     public DamageFalloff AirDamage => airDamage;
@@ -136,13 +143,14 @@ public class Roller : Weapon
         {
             rollerHome = roller.localRotation;
             frame = roller.parent != transform ? roller.parent : null; // RollerFrame
+            if (!Folds) frame = null; // (the drum's parent may be the whole body)
             if (frame != null) frameHome = frame.localRotation;
             Vector3 at = transform.InverseTransformPoint(roller.position);
             reach = at.z;
             drop = at.y;
         }
         pitch = idlePitch;
-        turn = verticalTurn;
+        turn = Folds ? verticalTurn : 0f;
         fold = 1f;
         paced = ballistics.Faster(flickPace);
         if (Owner != null) { lastPos = Owner.transform.position; body = Owner.GetComponent<CharacterController>(); }
@@ -200,7 +208,7 @@ public class Roller : Weapon
             player.MarkAiming(); // face the view for the swing
             state = State.Flick;
             flickStart = Time.time;
-            flickInAir = !OnGround(player);
+            flickVertical = flickMode == FlickMode.VerticalOnly || (flickMode == FlickMode.Both && !OnGround(player));
             flickHits = new HashSet<Object>();
             Flicks++;
         }
@@ -249,7 +257,7 @@ public class Roller : Weapon
         Vector3 inherit = body != null ? body.velocity : Vector3.zero;
         inherit.y = 0f; // running carries into the droplets; jumping doesn't
         float facing = player.transform.eulerAngles.y;
-        int n = flickInAir ? airDroplets : groundDroplets;
+        int n = flickVertical ? airDroplets : groundDroplets;
         var launches = new Vector3[n];
         var velocities = new float[n * 3];
         var sizes = new int[n];
@@ -258,7 +266,7 @@ public class Roller : Weapon
         {
             float k = n > 1 ? i / (n - 1f) : 0.5f;
             float yawOff, up, speed;
-            if (flickInAir)
+            if (flickVertical)
             {
                 yawOff = Random.Range(-airFan, airFan) * 0.5f;
                 up = airPitch + Random.Range(-3f, 3f);
@@ -274,12 +282,12 @@ public class Roller : Weapon
             Vector3 launch = Quaternion.Euler(-up, facing + yawOff, 0f) * Vector3.forward * (speed * flickPace);
             launches[i] = launch;
             velocities[i * 3] = launch.x; velocities[i * 3 + 1] = launch.y; velocities[i * 3 + 2] = launch.z;
-            sizes[i] = flickInAir ? airSplat : groundSplat;
+            sizes[i] = flickVertical ? airSplat : groundSplat;
             visible[i] = true;
-            Fire(origin, launch, inherit, sizes[i], player.Team, player.OwnerId, true, flickInAir ? airDamage : groundDamage, flickHits, flickInAir);
+            Fire(origin, launch, inherit, sizes[i], player.Team, player.OwnerId, true, flickVertical ? airDamage : groundDamage, flickHits, flickVertical);
         }
         LastFlick = launches;
-        LastFlickInAir = flickInAir;
+        LastFlickInAir = flickVertical;
         NetGameManager.Instance?.BroadcastShots(player, origin, inherit, velocities, sizes, visible);
     }
 
@@ -306,13 +314,13 @@ public class Roller : Weapon
                 minYaw = Mathf.Min(minYaw, yaw);
                 maxYaw = Mathf.Max(maxYaw, yaw);
             }
-            flickInAir = maxYaw - minYaw < 20f;
+            flickVertical = maxYaw - minYaw < 20f;
             flickStart = Time.time - windup;
             state = State.Flick;
             Flicks++;
         }
         for (int i = 0; i < n; i++)
-            Fire(d.origin, new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]), inherit, d.splashSizes[i], d.team, d.shooterSteamId, false, null, null, flickInAir);
+            Fire(d.origin, new Vector3(d.velocities[i * 3], d.velocities[i * 3 + 1], d.velocities[i * 3 + 2]), inherit, d.splashSizes[i], d.team, d.shooterSteamId, false, null, null, flickVertical);
     }
 
     // A row of splats across the drum, onto whatever's under it.
@@ -366,7 +374,7 @@ public class Roller : Weapon
         // Idle (not attacking or rolling; for remotes, not down): folded and held up at our side.
         // Held in the air (or out of ink): out in front, ready to roll.
         bool idle = !Down && !(local && state == State.Held);
-        float targetPitch = idle ? idlePitch : carryPitch, targetShift = 0f, targetTurn = idle ? verticalTurn : 0f, targetFold = idle ? 1f : 0f;
+        float targetPitch = idle ? idlePitch : carryPitch, targetShift = 0f, targetTurn = idle && Folds ? verticalTurn : 0f, targetFold = idle ? 1f : 0f;
         bool snap = false;
         if (state == State.Flick) // ours, or theirs replayed
         {
@@ -375,10 +383,10 @@ public class Roller : Weapon
             if (posedFlick != flickStart) { posedFlick = flickStart; pitchFrom = pitch; turnFrom = turn; foldFrom = fold; }
             float t = Time.time - flickStart;
             float back = Mathf.SmoothStep(0f, 1f, t / windup), through = Mathf.SmoothStep(0f, 1f, (t - windup) / followThrough);
-            float end = flickInAir ? carryPitch : GroundPitch(player);
+            float end = flickVertical ? carryPitch : GroundPitch(player);
             targetPitch = t < windup ? Mathf.Lerp(pitchFrom, raisedPitch, back) : Mathf.Lerp(raisedPitch, end, through);
-            if (!flickInAir) shift = targetShift = t < windup ? 0f : through;
-            turn = Mathf.Lerp(turnFrom, flickInAir ? verticalTurn : 0f, Mathf.Clamp01(t / (windup * 0.5f))); // set before the top
+            if (!flickVertical) shift = targetShift = t < windup ? 0f : through;
+            turn = Mathf.Lerp(turnFrom, flickVertical ? verticalTurn : 0f, Mathf.Clamp01(t / (windup * 0.5f))); // set before the top
             fold = Mathf.Lerp(foldFrom, 0f, back);
             snap = true;
         }

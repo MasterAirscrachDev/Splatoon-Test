@@ -14,12 +14,14 @@ public static class WeaponRatings
         ("SolarBlaster",   0.85f, 0.45f, 0.30f),
         ("ArtemisBlaster", 0.45f, 0.70f, 0.50f),
         ("Inkroller",      0.75f, 0.35f, 0.50f),
-        ("EraRoller",      0.30f, 0.35f, 0.80f),
+        ("EraRoller",      0.55f, 0.65f, 0.45f),
         ("HeavyRoller",    0.95f, 0.75f, 0.20f),
         ("Inkbrush",       0.25f, 0.20f, 0.95f),
         ("Bucket",         0.80f, 0.55f, 0.40f),
         ("Sniper",         0.95f, 0.95f, 0.20f),
         ("Minigun",        0.55f, 0.75f, 0.40f),
+        ("TriBucket",      0.70f, 0.35f, 0.45f),
+        ("LightRoller",    0.35f, 0.30f, 0.95f),
     };
 
     [MenuItem("Tools/Weapons/Set Loadout Ratings")]

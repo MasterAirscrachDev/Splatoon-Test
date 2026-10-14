@@ -46,19 +46,20 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Roller
   displayName: Era Roller
-  description: A light roller that rolls half as fast again and flicks quicker, for
-    a quarter of the damage.
+  description: 'A roller built round its vertical swing: its air flick reaches half
+    as far again as the Inkroller''s. Weaker ground flicks, and a slower roll.'
   icon: {fileID: 21300000, guid: e81fc2daeb5c4e24897b31f37dd95f47, type: 3}
-  powerRating: 0.3
-  rangeRating: 0.35
-  speedRating: 0.8
+  powerRating: 0.55
+  rangeRating: 0.65
+  speedRating: 0.45
   feetShotInterval: 0.4
   feetShotMinSize: 12
   feetShotMaxSize: 18
   feetShotDropSpeed: 6
-  flickRate: 0.4
-  windup: 0.13
-  followThrough: 0.1
+  flickMode: 0
+  flickRate: 0.5
+  windup: 0.16
+  followThrough: 0.12
   flickInkCost: 90
   ballistics:
     velocityOverTime:
@@ -117,7 +118,7 @@ MonoBehaviour:
   groundPitch: 25
   groundSpeed: {x: 4.5, y: 7}
   groundDamage:
-    damage: 31.25
+    damage: 90
     scaleOverTime:
       serializedVersion: 2
       m_Curve:
@@ -151,12 +152,12 @@ MonoBehaviour:
     upDownSpread: 2
     sideSpread: 2
     speedSpread: 0.05
-  airDroplets: 12
+  airDroplets: 18
   airFan: 7
   airPitch: 20
-  airSpeed: {x: 0, y: 12}
+  airSpeed: {x: 0, y: 15.8}
   airDamage:
-    damage: 20
+    damage: 70
     scaleOverTime:
       serializedVersion: 2
       m_Curve:
@@ -181,7 +182,7 @@ MonoBehaviour:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
-  airSplat: 12
+  airSplat: 13
   airLook:
     size: 1
     stretch: 0.1
@@ -190,10 +191,10 @@ MonoBehaviour:
     upDownSpread: 2
     sideSpread: 2
     speedSpread: 0.05
-  rollDamage: 25
-  rollStartSpeed: 1.2
-  rollSpeed: 1.8
-  rollRampTime: 0.5
+  rollDamage: 60
+  rollStartSpeed: 0.75
+  rollSpeed: 1.1
+  rollRampTime: 0.6
   rollInkPerMetre: 20
   rollPaintSpacing: 0.5
   rollSplatPoints: 3

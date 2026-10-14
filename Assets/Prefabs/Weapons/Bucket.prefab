@@ -115,6 +115,8 @@ MonoBehaviour:
   sloshPitch: 35
   spread: 2
   sway: 2.5
+  streams: 1
+  streamFan: 0
   droplets: 20
   dropletSpeed: {x: 0, y: 7}
   dropletDamage:

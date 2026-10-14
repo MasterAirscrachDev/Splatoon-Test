@@ -126,8 +126,9 @@ public abstract class ChargeWeapon : Weapon
 
     public override float ChargeShown => Charge;
 
-    // Ink dropped at our feet now (every feetShotInterval): while charging, and while firing.
-    protected virtual bool FeetInking => Charging;
+    // Ink dropped at our feet now (every feetShotInterval): only while firing, never while charging (a
+    // single shot drops its own on release).
+    protected virtual bool FeetInking => false;
     // Whether holding attack charges now (a Minigun mid-burst may not).
     protected virtual bool CanCharge(PlayerController player) => true;
     // Let go with `charge` (0..1) built up.

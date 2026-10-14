@@ -167,7 +167,10 @@ MonoBehaviour:
   - {fileID: 6050210403170002349}
   icon: {fileID: 21300000, guid: ae4f3283c176094489225b990f945551, type: 3}
   head: {fileID: 6568963693587734227}
-  gravity: 20
+  throwing:
+    speed: 16
+    angle: 45
+    gravity: 20
   spinStart: 550
   spinEnd: 90
   shotSpeedStart: 9

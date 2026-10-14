@@ -1,0 +1,1 @@
+bomb max throw range

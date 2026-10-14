@@ -15,9 +15,10 @@ using static MatchHUDBuilder;
 public static class LoadoutMenuBuilder
 {
     const string PrefabPath = "Assets/Prefabs/UI/GameUI.prefab";
-    const int WeaponSlots = 12, GridColumns = 4;          // tiles past the loadout's weapons are hidden
+    const int WeaponSlots = 15, GridColumns = 5;          // tiles past the loadout's weapons are hidden
     const float PanelWidth = 1480, PanelHeight = 900;
-    const float WeaponTile = 140, WeaponStep = 156, WeaponRowStep = 182, SmallTile = 112, SmallStep = 124, LabelHeight = 26;
+    const float WeaponTile = 140, WeaponStep = 142, WeaponRowStep = 182, SmallTile = 112, SmallStep = 124, LabelHeight = 26;
+    const float WeaponTileScale = 0.93f;                  // five across still clears the card
     const float LeftX = -370, RightX = 370;               // the columns' centres
     static readonly Color PowerColour = new Color(1f, 0.3f, 0.72f), RangeColour = new Color(0.35f, 0.9f, 0.4f), SpeedColour = new Color(0.25f, 0.85f, 1f);
 
@@ -55,9 +56,8 @@ public static class LoadoutMenuBuilder
         var weapons = new Button[WeaponSlots];
         for (int i = 0; i < WeaponSlots; i++)
         {
-            int col = i % GridColumns, row = i / GridColumns;
-            var pos = new Vector2(LeftX + (col - (GridColumns - 1) * 0.5f) * WeaponStep, -142 - row * WeaponRowStep);
-            weapons[i] = Tile($"Weapon{i}", panel, "Weapon", pos, WeaponTile, bars: true);
+            weapons[i] = Tile($"Weapon{i}", panel, "Weapon", Vector2.zero, WeaponTile, bars: true);
+            PlaceWeaponTile(weapons[i], i);
         }
 
         // The picked weapon's card on the right: name, three bars, what it does.
@@ -72,7 +72,8 @@ public static class LoadoutMenuBuilder
 
         // Subs and specials: rows of smaller tiles under the card.
         float subX = RightX - 170, specialX = RightX + 200;
-        Button[] subs = TileRow(panel, "SUB", subX, new[] { "Beacon", "Ink Sprinkler", "Curling Bomb" }, 340, out TextMeshProUGUI subInfo);
+        Button[] subs = TileRow(panel, "SUB", subX, SubNames, 340, out TextMeshProUGUI subInfo);
+        LayoutSubTiles(subs, subInfo);
         Button[] specials = TileRow(panel, "SPECIAL", specialX, new[] { "Bubble Shield", "InkStrike" }, 300, out TextMeshProUGUI specialInfo);
 
         Button close = MenuButton("Close", panel, "Close", new Vector2(0, -(PanelHeight - 80)), new Vector2(180, 46), out _);
@@ -93,6 +94,115 @@ public static class LoadoutMenuBuilder
         so.FindProperty("speedBar").objectReferenceValue = speed;
         so.FindProperty("closeButton").objectReferenceValue = close;
         so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    // The subs' tiles in SubType order (labels; the icons come from the prefabs).
+    static readonly string[] SubNames = { "Beacon", "Ink Sprinkler", "Curling Bomb", "Suction Bomb", "Impact Bomb", "Ink Bomb" };
+    const int SubColumns = 3;
+    const float SubTileScale = 0.8f, SubTop = -474, SubX = RightX - 170;
+
+    // The subs as a grid SubColumns across (scaled down to fit two rows), their description under it.
+    static void LayoutSubTiles(Button[] subs, TextMeshProUGUI info)
+    {
+        float step = SmallStep * SubTileScale, rowStep = (SmallTile + LabelHeight) * SubTileScale + 10f;
+        for (int i = 0; i < subs.Length; i++)
+        {
+            int col = i % SubColumns, row = i / SubColumns;
+            var rt = (RectTransform)subs[i].transform;
+            rt.anchoredPosition = new Vector2(SubX + (col - (SubColumns - 1) * 0.5f) * step, SubTop - row * rowStep);
+            rt.localScale = Vector3.one * SubTileScale;
+        }
+        int rows = (subs.Length + SubColumns - 1) / SubColumns;
+        if (info != null)
+        {
+            info.rectTransform.anchoredPosition = new Vector2(SubX, SubTop - (rows - 1) * rowStep - (SmallTile + LabelHeight) * SubTileScale - 14f);
+            info.rectTransform.sizeDelta = new Vector2(340, 110);
+        }
+    }
+
+    // Migration: grows the existing panel's sub tiles to one per sub (copies of its last tile, relabelled)
+    // and lays them out as a grid.
+    [MenuItem("Tools/UI/Fit Loadout Menu Sub Slots")]
+    public static void FitSubSlotsMenu() => Debug.Log(FitSubSlots());
+
+    public static string FitSubSlots()
+    {
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            LoadoutMenu menu = root.GetComponentInChildren<LoadoutMenu>(true);
+            var so = new SerializedObject(menu);
+            SerializedProperty array = so.FindProperty("subButtons");
+            var tiles = new System.Collections.Generic.List<Button>();
+            for (int i = 0; i < array.arraySize; i++) tiles.Add((Button)array.GetArrayElementAtIndex(i).objectReferenceValue);
+            int had = tiles.Count;
+            if (had == 0) return "[LoadoutMenu] no sub tiles to copy";
+            Button last = tiles[had - 1];
+            while (tiles.Count < SubNames.Length)
+            {
+                var copy = Object.Instantiate(last.gameObject, last.transform.parent);
+                copy.name = SubNames[tiles.Count];
+                copy.transform.SetSiblingIndex(tiles[tiles.Count - 1].transform.GetSiblingIndex() + 1);
+                TMP_Text label = copy.GetComponentInChildren<TMP_Text>(true);
+                if (label != null) label.text = SubNames[tiles.Count];
+                tiles.Add(copy.GetComponent<Button>());
+            }
+            LayoutSubTiles(tiles.ToArray(), (TextMeshProUGUI)so.FindProperty("subInfo").objectReferenceValue);
+            Assign(array, tiles.ToArray());
+            so.ApplyModifiedPropertiesWithoutUndo();
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+            return $"[LoadoutMenu] sub tiles {had} -> {tiles.Count}, {SubColumns} across";
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+    }
+
+    // Weapon tile i's spot in the grid (scaled to fit GridColumns across).
+    static void PlaceWeaponTile(Button tile, int i)
+    {
+        int col = i % GridColumns, row = i / GridColumns;
+        var rt = (RectTransform)tile.transform;
+        rt.anchoredPosition = new Vector2(LeftX + (col - (GridColumns - 1) * 0.5f) * WeaponStep, -142 - row * WeaponRowStep);
+        rt.localScale = Vector3.one * WeaponTileScale;
+    }
+
+    // Migration: grows the existing panel's weapon grid to WeaponSlots (copies of its last tile, so any
+    // hand changes carry over) and lays it out GridColumns across.
+    [MenuItem("Tools/UI/Fit Loadout Menu Weapon Slots")]
+    public static void FitWeaponSlotsMenu() => Debug.Log(FitWeaponSlots());
+
+    public static string FitWeaponSlots()
+    {
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            LoadoutMenu menu = root.GetComponentInChildren<LoadoutMenu>(true);
+            var so = new SerializedObject(menu);
+            SerializedProperty array = so.FindProperty("weaponButtons");
+            var tiles = new System.Collections.Generic.List<Button>();
+            for (int i = 0; i < array.arraySize; i++) tiles.Add((Button)array.GetArrayElementAtIndex(i).objectReferenceValue);
+            int had = tiles.Count;
+            if (had == 0) return "[LoadoutMenu] no weapon tiles to copy";
+            Button last = tiles[had - 1];
+            while (tiles.Count < WeaponSlots)
+            {
+                var copy = Object.Instantiate(last.gameObject, last.transform.parent);
+                copy.name = $"Weapon{tiles.Count}";
+                copy.transform.SetSiblingIndex(tiles[tiles.Count - 1].transform.GetSiblingIndex() + 1);
+                tiles.Add(copy.GetComponent<Button>());
+            }
+            for (int i = 0; i < tiles.Count; i++) PlaceWeaponTile(tiles[i], i);
+            Assign(array, tiles.ToArray());
+            so.ApplyModifiedPropertiesWithoutUndo();
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+            return $"[LoadoutMenu] weapon tiles {had} -> {tiles.Count}, {GridColumns} across";
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
     }
 
     static void Header(RectTransform panel, string text, float x, float y, float width)

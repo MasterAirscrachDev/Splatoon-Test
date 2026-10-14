@@ -386,6 +386,7 @@ public partial class ClimbTestRunner
         floor.FillRegion(new Rect(0, 0, 1, 1), 0);
         loadout.SetSub(SubType.Sprinkler);
         player.RefillInk();
+        yield return LookAtPitch(35f); // at the floor ahead (the camera's high and back: flatter, it aims past the floor's end)
         yield return Hold(Still, false, 0.3f, "ready");
 
         // Thrown: costs 60%, flies, then sticks to the floor.
@@ -451,6 +452,9 @@ public partial class ClimbTestRunner
 
         Despawn(FoeId);
         loadout.SetSub(SubType.Beacon);
+        player.ScriptedInput.recenter = true;
+        yield return HoldUntil(Still, false, 2f, "level", f => Mathf.Abs(player.CameraPitch) < 0.01f);
+        player.ScriptedInput.recenter = false;
         yield return Hold(Still, false, 0.5f, "settle");
         floor.FillRegion(new Rect(0, 0, 1, 1), 0);
         NetGameManager.SendOverride = null;

@@ -35,10 +35,12 @@ public partial class ClimbTestRunner
         if (!released || beacon == null || off > 0.3f) Fail("letting go didn't place the beacon where its ghost was");
         if (!hidden) Fail("the preview stayed up after placing");
 
-        // Sprinkler: its throw's arc while held; it lands where the arc ends.
+        // Sprinkler: its throw's arc while held; it lands where the arc ends (looking down at the station's
+        // floor: the camera's high and back, so any flatter and it aims past the floor's end).
         loadout.SetSub(SubType.Sprinkler);
         SubDevice.RemoveAll();
         player.RefillInk();
+        yield return LookAtPitch(35f);
         yield return Hold(Still, false, 0.2f, "stand");
         loadout.PressSub();
         yield return Hold(Still, false, 0.3f, "ready sprinkler");
@@ -60,6 +62,9 @@ public partial class ClimbTestRunner
         if (!arc) Fail("holding the sprinkler didn't trace its throw");
         if (thrownEarly) Fail("the sprinkler went on press, not release");
         if (landedOff < 0f || landedOff > 1f) Fail("the sprinkler didn't land where its arc ended");
+        player.ScriptedInput.recenter = true;
+        yield return HoldUntil(Still, false, 2f, "level", f => Mathf.Abs(player.CameraPitch) < 0.01f);
+        player.ScriptedInput.recenter = false;
 
         // Curling bomb: in hand, its slide traced from there; thrown on letting go.
         loadout.SetSub(SubType.CurlingBomb);

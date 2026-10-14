@@ -67,6 +67,7 @@ public class KillFeed : MonoBehaviour
             case "Sprinkler":       return "sprinkled";
             case "Inkstrike":       return "inkstruck";
         }
+        if (cause != null && cause.EndsWith(" Bomb")) return "bombed"; // the thrown bombs, by their names
         PlayerLoadout loadout = killer != null ? killer.GetComponent<PlayerLoadout>() : null;
         if (loadout != null)
             foreach (Weapon w in loadout.Weapons)

@@ -57,6 +57,7 @@ MonoBehaviour:
   feetShotMinSize: 12
   feetShotMaxSize: 18
   feetShotDropSpeed: 6
+  flickMode: 0
   flickRate: 1
   windup: 0.34
   followThrough: 0.24

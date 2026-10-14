@@ -979,6 +979,7 @@ public class NetGameManager : MonoBehaviour
         };
         if (sub is Sprinkler s) { d.landed = s.Landed; d.velocity = s.Velocity; }
         if (sub is CurlingBomb b) { d.landed = false; d.velocity = b.Velocity; d.fuse = b.FuseLeft; }
+        if (sub is ThrownBomb t) { d.landed = t.Settled; d.velocity = t.Velocity; d.normal = t.SurfaceNormal; d.fuse = t.Exploded ? -1f : t.Armed ? Mathf.Max(0.01f, t.FuseLeft) : 0f; }
         Send(NetMsg.SubSpawn, d);
     }
 

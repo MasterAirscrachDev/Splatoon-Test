@@ -83,6 +83,7 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.4f, "tap");
         float tapCharge = sniper.LastCharge, tapDamage = DamageTo(Foe);
         int tapSplat = sniper.LastLineSplat;
+        float tapLook = sniper.LastLineLookSize;
 
         // Charging halfway: the laser, at half charge, and the true ring half filled; ink at our feet.
         sent.Clear();
@@ -92,6 +93,7 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, sniper.ChargeTime * 0.5f, "half charge");
         AimAtFoe();
         float half = sniper.Charge;
+        int feetCharging = sniper.FeetShots - feetBefore;
         float ringFill = reticle != null ? reticle.ChargeFill : -1f;
         bool laser = sniper.LaserShown, glowHalf = sniper.GlowShown;
         float halfWidth = sniper.LaserWidth;
@@ -105,21 +107,24 @@ public partial class ClimbTestRunner
         sniper.ScriptedFire = false;
         yield return Hold(Still, false, 0.5f, "fire");
         float fullDamage = DamageTo(Foe);
+        float fullLook = sniper.LastLineLookSize;
         int fullSplat = sniper.LastLineSplat, feetInk = sniper.FeetShots - feetBefore;
         float ringAfter = reticle != null ? reticle.ChargeFill : -1f;
         int spawnMsgs = sent.Count(m => m.id == NetMsg.ProjectileSpawn);
         bool laserGone = !sniper.LaserShown, glowGone = !sniper.GlowShown;
         Despawn(Foe);
-        Note($"tap: charge {tapCharge:F2}, {tapDamage:0} damage, line blobs {tapSplat}; charging: {half:F2} at half time, ring {ringFill:F2} filled, laser {(laser ? "shown" : "NOT shown")} {halfWidth:F3}m wide, light {(glowHalf ? "ON" : "off")}, speed x{slowed:F2}; full {full:F2}: laser {fullWidth:F3}m wide, light {(glowFull ? "on" : "OFF")}, {fullDamage:0} damage (a full charge does {sniper.DamageAt(1f):0}), line blobs {fullSplat}, laser {(laserGone ? "gone" : "STILL SHOWN")}, light {(glowGone ? "off" : "STILL ON")} and ring {ringAfter:F2} after; {feetInk} feet ink drop(s); {spawnMsgs} broadcast");
+        Note($"tap: charge {tapCharge:F2}, {tapDamage:0} damage, line blobs {tapSplat} drawn x{tapLook:F2}; charging: {half:F2} at half time, ring {ringFill:F2} filled, laser {(laser ? "shown" : "NOT shown")} {halfWidth:F3}m wide, light {(glowHalf ? "ON" : "off")}, speed x{slowed:F2}; full {full:F2}: laser {fullWidth:F3}m wide, light {(glowFull ? "on" : "OFF")}, {fullDamage:0} damage (a full charge does {sniper.DamageAt(1f):0}), line blobs {fullSplat} drawn x{fullLook:F2}, laser {(laserGone ? "gone" : "STILL SHOWN")}, light {(glowGone ? "off" : "STILL ON")} and ring {ringAfter:F2} after; {feetCharging} feet ink drop(s) charging, {feetInk} by the shot; {spawnMsgs} broadcast");
         if (tapCharge > 0.2f || tapDamage <= 0f || tapDamage >= 100f) Fail("a tap didn't fire a weak shot");
         if (Mathf.Abs(half - 0.5f) > 0.15f || full < 1f) Fail($"it doesn't charge fully in {sniper.ChargeTime}s");
         if (!laser || !laserGone) Fail("no laser while charging (or it stayed after firing)");
         if (fullDamage < 100f) Fail("a full charge didn't splat in one direct hit");
         if (spawnMsgs != 1) Fail("the shot wasn't broadcast once");
         if (fullSplat <= tapSplat) Fail("a full charge's line blobs aren't bigger than a tap's");
+        if (fullLook <= tapLook) Fail("a full charge's line blobs aren't drawn bigger than a tap's");
         if (Mathf.Abs(halfWidth - fullWidth) > 1e-4f) Fail("the laser's width changes with the charge");
         if (glowHalf || !glowFull || !glowGone) Fail("the light on its front didn't show only at full charge");
-        if (feetInk < 1) Fail("no ink dropped at our feet charging and firing");
+        if (feetInk < 1) Fail("no ink dropped at our feet firing");
+        if (feetCharging > 0) Fail("ink dropped at our feet while only charging");
         if (reticle != null && (Mathf.Abs(ringFill - half) > 0.05f || ringAfter > 0f)) Fail("the true reticle's ring didn't fill with the charge (and empty after)");
 
         // Level, at full charge into the open: ink falls all along its line.
@@ -159,12 +164,17 @@ public partial class ClimbTestRunner
         if (sniper.SwimHoldTime > 0f && (!kept || after < 1f)) Fail("a charge wasn't held over a short swim");
         if (lost > 0f) Fail("a charge outlasted the swim hold time");
 
-        // Down the cursor's line: the laser (and the true reticle) end on the ring looking level; aimed
-        // more steeply down than it can, they end off it, at its limit.
+        // At the cursor: just starting a charge, the true reticle sits short of the cursor (off the
+        // ring, partway along the shot's line); fully charged it reaches it. Aimed more steeply down
+        // than it can, it ends off the ring, at its limit.
         sniper.ScriptedAim = null;
         player.RefillInk();
+        float OffRing() => reticle != null ? Vector2.Distance(reticle.TrueMark.position, reticle.Aligned.position) : -1f;
         sniper.ScriptedFire = true;
-        yield return Hold(Still, false, sniper.ChargeTime * 0.6f, "charge, level");
+        yield return Hold(Still, false, sniper.ChargeTime * 0.15f, "charge a little, level");
+        float shortOff = OffRing(), shortCharge = sniper.Charge;
+        yield return Hold(Still, false, sniper.ChargeTime * 1.0f, "full charge, level");
+        float fullOff = OffRing();
         bool onRing = reticle != null && !reticle.Blocked;
         sniper.ScriptedAim = forward * 0.2f + Vector3.down; // about 80° down
         yield return Hold(Still, false, 0.1f, "charge, aimed steeply down");
@@ -173,8 +183,9 @@ public partial class ClimbTestRunner
         sniper.ScriptedFire = false;
         sniper.ScriptedAim = null;
         yield return Hold(Still, false, 0.3f, "fire");
-        Note($"aiming down the cursor's line: true reticle {(onRing ? "on the ring" : "OFF the ring")} looking level; aimed about 80° down, {(offRing ? "off it" : "STILL ON IT")}, aiming {limited:F0}° (its limit)");
-        if (reticle != null && (!onRing || !offRing)) Fail("the laser and true reticle don't end on the cursor when it can reach it (and off it past its aim limits)");
+        Note($"looking level: true reticle {shortOff:F0}px off the ring at charge {shortCharge:F2}, {fullOff:F0}px fully charged ({(onRing ? "on it" : "OFF it")}); aimed about 80° down, {(offRing ? "off it" : "STILL ON IT")}, aiming {limited:F0}° (its limit)");
+        if (reticle != null && (!onRing || !offRing)) Fail("the laser and true reticle don't end on the cursor when a full charge reaches it (and off it past its aim limits)");
+        if (reticle != null && shortOff < fullOff + 4f) Fail("the true reticle doesn't sit short of the cursor with little charge");
         if (limited > -45f) Fail("aimed past its limit, it didn't stop at it");
 
         floor.FillRegion(new Rect(0, 0, 1, 1), 0);
@@ -209,7 +220,7 @@ public partial class ClimbTestRunner
         gun.ScriptedFire = false;
         yield return Hold(Still, false, 0.2f, "firing");
         float firingSpeed = player.WeaponSpeedMultiplier;
-        float ringFiring = gun.ChargeShown;
+        float ringFiring = gun.ChargeShown, spinFiring = gun.Spin;
         float firedFor = 0f;
         while (gun.Firing && firedFor < 5f) { firedFor += Time.deltaTime; yield return null; }
         firedFor += 0.2f;
@@ -223,6 +234,8 @@ public partial class ClimbTestRunner
         if (Mathf.Abs(shots - expected / gun.FireRate) > 3f) Fail("the stream didn't fire at its rate");
         if (broadcast != shots) Fail("its shots weren't broadcast");
         if (ringFiring >= charge - 0.02f || ringFiring <= 0f || ringDone > 0.05f) Fail("the ring didn't drain as it fired");
+        Note($"barrels: {(gun.HasBarrels ? $"spinning x{spinFiring:F2} while firing" : "NONE in the model")}");
+        if (!gun.HasBarrels || spinFiring < 0.3f) Fail("the model's barrels didn't spin while firing");
         if (Mathf.Abs(chargingSpeed - gun.ChargeMoveSpeed) > 0.01f || Mathf.Abs(firingSpeed - gun.FireMoveSpeed) > 0.01f || player.WeaponSpeedMultiplier != 1f)
             Fail("it doesn't slow us while charging and firing (and only then)");
 
@@ -264,7 +277,7 @@ public partial class ClimbTestRunner
         Note($"full charge only: early release {(lostEarly ? "lost" : "FIRED")}, full {(firedFull ? "fired" : "DIDN'T fire")}; charge after 0.4s held mid-stream: {whileFiring[0]:F2} (off), {whileFiring[1]:F2} (on)");
         if (!lostEarly || !firedFull) Fail("the full-charge-only variant didn't need a full charge");
         if (whileFiring[0] != 0f) Fail("it charged mid-stream without the charge-while-firing variant");
-        if (whileFiring[1] <= 0.2f) Fail("the charge-while-firing variant didn't charge mid-stream");
+        if (whileFiring[1] < 0.4f / gun.ChargeTime * 0.5f) Fail("the charge-while-firing variant didn't charge mid-stream"); // (0.4s of its charge time, give or take)
 
         loadout.SetMainWeapon(weaponBefore);
         NetGameManager.SendOverride = null;

@@ -6,7 +6,9 @@ using UnityEngine;
 // throw that follows the view all the way up and down. The stream's front is one big blob, the
 // furthest and fastest, that splats wider, is easier to hit with and hits hardest; the droplets
 // behind it ink the line and catch what it misses. An enemy takes one hit per slosh (whichever
-// reaches them first: the blob, out in front). Holding attack keeps sloshing. Remote copies show the
+// reaches them first: the blob, out in front). With several streams (the Triplesplash), each slosh
+// throws them fanned out side by side, each with its own blob, and an enemy can take a hit from each.
+// Holding attack keeps sloshing. Remote copies show the
 // swing and replay the stream (the blob drawn big); paint and damage are the owner's.
 public class Bucket : Weapon
 {
@@ -22,6 +24,8 @@ public class Bucket : Weapon
     [SerializeField, Tooltip("How far above the view the slosh is thrown (degrees; the roller's air flick is 20)")] float sloshPitch = 8f;
     [SerializeField, Tooltip("Random left-right wobble on each droplet (degrees, ±)")] float spread = 2f;
     [SerializeField, Tooltip("How far the whole line bends side to side (degrees): a different gentle curve each slosh, so it's not dead straight")] float sway = 2.5f;
+    [SerializeField, Tooltip("Streams per slosh, fanned out side by side: each a whole stream with its own blob (an enemy can take a hit from each)")] int streams = 1;
+    [SerializeField, Tooltip("How wide the streams fan out, the outer two apart (degrees)")] float streamFan = 0f;
 
     [Header("Stream: the droplets behind the blob")]
     [SerializeField, Tooltip("Droplets in the stream behind the blob")] int droplets = 6;
@@ -57,7 +61,7 @@ public class Bucket : Weapon
 
     public bool ScriptedFire { get; set; } // tests: hold the trigger
     public int Sloshes { get; private set; }
-    public Vector3[] LastSlosh { get; private set; } // launch velocities of the last slosh, the blob last (tests)
+    public Vector3[] LastSlosh { get; private set; } // launch velocities of the last slosh, stream by stream, each one's blob last (tests)
     public DamageFalloff DropletDamage => dropletDamage;
     public DamageFalloff BlobDamage => blobDamage;
     public int Droplets => droplets;
@@ -70,6 +74,8 @@ public class Bucket : Weapon
     public float SloshPitch => sloshPitch;
     public float Spread => spread;
     public float Sway => sway;
+    public int Streams => streams;
+    public float StreamFan => streamFan;
     public bool Sloshing => state == State.Slosh;
     public float PitchNow => pitch;
     public string Source => DisplayName;
@@ -135,8 +141,8 @@ public class Bucket : Weapon
         }
     }
 
-    // The ink leaves from in front of us at the hand's height: the droplets slowest to fastest, then
-    // the blob, all along one line where we look.
+    // The ink leaves from in front of us at the hand's height: per stream, the droplets slowest to
+    // fastest, then the blob, all along one line where we look (fanned apart for several streams).
     void Release(PlayerController player)
     {
         released = sloshStart;
@@ -146,25 +152,31 @@ public class Bucket : Weapon
         Vector3 inherit = body != null ? body.velocity : Vector3.zero;
         inherit.y = 0f; // running carries into the stream; jumping doesn't
         float facing = player.transform.eulerAngles.y;
-        int n = droplets + 1;
-        float phase = Random.Range(0f, Mathf.PI * 2f), bends = Random.Range(1f, 2f); // this slosh's sway
-        var launches = new Vector3[n];
-        var velocities = new float[n * 3];
-        var sizes = new int[n];
-        var visible = new bool[n];
-        for (int i = 0; i < n; i++)
+        int n = droplets + 1, count = Mathf.Max(1, streams);
+        var launches = new Vector3[n * count];
+        var velocities = new float[n * count * 3];
+        var sizes = new int[n * count];
+        var visible = new bool[n * count];
+        for (int s = 0; s < count; s++)
         {
-            bool blob = i == n - 1;
-            float k = droplets > 1 ? Mathf.Min(i, droplets - 1) / (droplets - 1f) : 1f;
-            float speed = blob ? blobSpeed : Mathf.Lerp(dropletSpeed.x, dropletSpeed.y, k);
-            float yawOff = blob ? 0f : Random.Range(-spread, spread) + sway * Mathf.Sin(k * Mathf.PI * bends + phase);
-            float up = Mathf.Clamp(sloshPitch + (blob ? 0f : Random.Range(-1.5f, 1.5f)) + aimUp, sloshPitchLimits.x, sloshPitchLimits.y);
-            Vector3 launch = Quaternion.Euler(-up, facing + yawOff, 0f) * Vector3.forward * (speed * sloshPace);
-            launches[i] = launch;
-            velocities[i * 3] = launch.x; velocities[i * 3 + 1] = launch.y; velocities[i * 3 + 2] = launch.z;
-            sizes[i] = blob ? blobSplat : dropletSplat;
-            visible[i] = true;
-            Fire(origin, launch, inherit, sizes[i], player.Team, player.OwnerId, true, blob, sloshHits);
+            float streamYaw = count > 1 ? Mathf.Lerp(-streamFan, streamFan, s / (count - 1f)) * 0.5f : 0f;
+            HashSet<Object> hits = s == 0 ? sloshHits : new HashSet<Object>(); // one hit per stream
+            float phase = Random.Range(0f, Mathf.PI * 2f), bends = Random.Range(1f, 2f); // this stream's sway
+            for (int i = 0; i < n; i++)
+            {
+                int j = s * n + i;
+                bool blob = i == n - 1;
+                float k = droplets > 1 ? Mathf.Min(i, droplets - 1) / (droplets - 1f) : 1f;
+                float speed = blob ? blobSpeed : Mathf.Lerp(dropletSpeed.x, dropletSpeed.y, k);
+                float yawOff = streamYaw + (blob ? 0f : Random.Range(-spread, spread) + sway * Mathf.Sin(k * Mathf.PI * bends + phase));
+                float up = Mathf.Clamp(sloshPitch + (blob ? 0f : Random.Range(-1.5f, 1.5f)) + aimUp, sloshPitchLimits.x, sloshPitchLimits.y);
+                Vector3 launch = Quaternion.Euler(-up, facing + yawOff, 0f) * Vector3.forward * (speed * sloshPace);
+                launches[j] = launch;
+                velocities[j * 3] = launch.x; velocities[j * 3 + 1] = launch.y; velocities[j * 3 + 2] = launch.z;
+                sizes[j] = blob ? blobSplat : dropletSplat;
+                visible[j] = true;
+                Fire(origin, launch, inherit, sizes[j], player.Team, player.OwnerId, true, blob, hits);
+            }
         }
         LastSlosh = launches;
         NetGameManager.Instance?.BroadcastShots(player, origin, inherit, velocities, sizes, visible);

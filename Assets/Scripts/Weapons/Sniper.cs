@@ -1,13 +1,14 @@
 using UnityEngine;
 
 // Sniper (a charger): hold attack to charge (a laser shows where it'll go; a light on the gun's front
-// comes on once it's full), let go to fire. It aims down the cursor's line, to the point on it as far
-// as it can reach (so the laser ends on the cursor), but can't tip further up or down than
-// aimPitchLimits: past those it ends where it can, and the true reticle shows that. The shot itself
+// comes on once it's full), let go to fire. It aims at what the cursor's on (or the point down the
+// cursor's line a full charge reaches), but can't tip further up or down than aimPitchLimits. It only
+// gets as far as this charge reaches, so short of the cursor the laser (and the true reticle with it)
+// ends partway along that line, closing on the cursor as it charges. The shot itself
 // is unseen: it flies dead straight, near instantly, farther and harder the more it was charged (a
 // full charge is an instakill on a direct hit), and paints where it ends on a surface. What shows is
 // the ink it leaves all along its line: blobs that fall straight down from it (and paint where they
-// land), bigger the more it was charged. Other players see the laser while we charge, and the line
+// land), bigger (and drawn bigger) the more it was charged. Other players see the laser while we charge, and the line
 // replayed.
 public class Sniper : ChargeWeapon
 {
@@ -25,6 +26,7 @@ public class Sniper : ChargeWeapon
     [SerializeField, Tooltip("Each blob's splat size with no charge and with a full charge (also how big it's drawn)")] Vector2 lineSplat = new Vector2(5f, 10f);
     [SerializeField, Tooltip("How fast the blobs start falling (metres per second)")] float lineFallSpeed = 4f;
     [SerializeField, Tooltip("How the falling blobs are drawn")] ShotLook lineLook = new ShotLook { size = 0.8f, companions = 1 };
+    [SerializeField, Tooltip("Their drawn size, x Line Look's, with no charge and with a full charge")] Vector2 lineLookScale = new Vector2(0.6f, 1.4f);
 
     [Header("Laser")]
     [SerializeField, Tooltip("The aiming laser's width (metres)")] float laserWidth = 0.04f;
@@ -64,6 +66,8 @@ public class Sniper : ChargeWeapon
     public float RangeAt(float charge) => Mathf.Lerp(range.x, range.y, charge);
     public float DamageAt(float charge) => Mathf.Lerp(damage.x, damage.y, charge);
     public int LineSplatAt(float charge) => Mathf.RoundToInt(Mathf.Lerp(lineSplat.x, lineSplat.y, charge));
+    public float LineLookSizeAt(float charge) => lineLook.size * Mathf.Lerp(lineLookScale.x, lineLookScale.y, charge);
+    public float LastLineLookSize { get; private set; }
     public Vector3? ScriptedAim { get; set; } // tests: aim this way (world) instead of down the cursor's line
 
     protected override void Start()
@@ -85,8 +89,9 @@ public class Sniper : ChargeWeapon
         LastDamage = DamageAt(charge);
         LastLineSplat = LineSplatAt(charge);
         LastLineLength = length;
+        LastLineLookSize = LineLookSizeAt(charge);
         FeetInkNow(player);
-        Fire(from, dir, reach, length, LastDamage, LastLineSplat, player.Team, player.OwnerId, authoritative: true);
+        Fire(from, dir, reach, length, LastDamage, LastLineSplat, charge, player.Team, player.OwnerId, authoritative: true);
         Vector3 launch = dir * shotSpeed;
         // (Its line's length and reach ride along as extra "sizes", in centimetres, and its blobs' size:
         // the replay drops the same line.)
@@ -95,22 +100,24 @@ public class Sniper : ChargeWeapon
                                                 new[] { false, false, false, false });
     }
 
-    // Where we aim for a shot reaching `reach`: down the cursor's line to the point on it that far
-    // from the muzzle (or what the line hits first), within the pitch limits; `turn`: the weapon turned
-    // to it. Out: the way to fire, and how far until it ends (a surface, or its reach).
+    // Where we aim for a shot reaching `reach`: at what the cursor's on, or the point down its line a
+    // full charge reaches, within the pitch limits; `turn`: the weapon turned to it. Out: the way to
+    // fire, and how far until it ends (a surface, the aim point, or this shot's reach: a shorter charge
+    // stops short of the cursor).
     void AimLine(float reach, bool turn, out Vector3 dir, out float length)
     {
         Vector3 from = muzzle.position;
-        Vector3 target = from + transform.forward * reach;
-        if (ScriptedAim.HasValue) target = from + ScriptedAim.Value.normalized * reach;
+        float full = range.y;
+        Vector3 target = from + transform.forward * full;
+        if (ScriptedAim.HasValue) target = from + ScriptedAim.Value.normalized * full;
         else if (camAim != null)
         {
             Transform eye = camAim.transform;
             Vector3 o = eye.position, d = Quaternion.AngleAxis(-PlayerController.AimRaise, eye.right) * eye.forward;
-            // The point on the cursor's line `reach` from the muzzle: |o + d t - from| = reach.
+            // The point on the cursor's line a full charge reaches from the muzzle: |o + d t - from| = full.
             Vector3 m = o - from;
-            float b = Vector3.Dot(d, m), c = m.sqrMagnitude - reach * reach, disc = b * b - c;
-            float t = disc >= 0f ? -b + Mathf.Sqrt(disc) : reach;
+            float b = Vector3.Dot(d, m), c = m.sqrMagnitude - full * full, disc = b * b - c;
+            float t = disc >= 0f ? -b + Mathf.Sqrt(disc) : full;
             if (Physics.Raycast(o, d, out RaycastHit seen, t, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) t = seen.distance;
             target = o + d * Mathf.Max(t, 0.5f);
         }
@@ -140,14 +147,16 @@ public class Sniper : ChargeWeapon
         return true;
     }
 
-    // The (unseen) shot, and a blob falling from every lineSpacing along its line.
-    void Fire(Vector3 from, Vector3 dir, float reach, float length, float hit, int blobSplat, int team, ulong ownerId, bool authoritative)
+    // The (unseen) shot, and a blob falling from every lineSpacing along its line, drawn bigger the
+    // more it was charged.
+    void Fire(Vector3 from, Vector3 dir, float reach, float length, float hit, int blobSplat, float charge, int team, ulong ownerId, bool authoritative)
     {
         ProjectileManager.Fire(from, dir * shotSpeed, shotSplat, team, false, authoritative, ownerId, hit,
                                ballistics: Straight, source: Source, maxDistance: reach);
+        ShotLook look = lineLook.Scaled(Mathf.Lerp(lineLookScale.x, lineLookScale.y, charge));
         for (float d = lineSpacing * 0.5f; d < length; d += lineSpacing)
             ProjectileManager.Fire(from + dir * d, Vector3.down * lineFallSpeed, blobSplat, team, true, authoritative, ownerId, 0f,
-                                   source: Source, look: lineLook);
+                                   source: Source, look: look);
     }
 
     // How far along its line the shot's ink goes: to the first surface, or its full reach.
@@ -161,7 +170,8 @@ public class Sniper : ChargeWeapon
         Vector3 launch = new Vector3(d.velocities[0], d.velocities[1], d.velocities[2]);
         if (launch.sqrMagnitude < 1e-6f) return;
         int blobs = d.splashSizes.Length > 3 ? d.splashSizes[3] : LineSplatAt(1f);
-        Fire(d.origin, launch.normalized, d.splashSizes[2] / 100f, d.splashSizes[1] / 100f, 0f, blobs, d.team, d.shooterSteamId, authoritative: false);
+        float charge = Mathf.InverseLerp(lineSplat.x, lineSplat.y, blobs); // (its blobs' size says how charged it was)
+        Fire(d.origin, launch.normalized, d.splashSizes[2] / 100f, d.splashSizes[1] / 100f, 0f, blobs, charge, d.team, d.shooterSteamId, authoritative: false);
     }
 
     // The aiming laser: while we charge (or hold a charge in swim form, from where we'd surface), and

@@ -8,7 +8,7 @@ using UnityEngine;
 public class Sprinkler : SubDevice
 {
     [SerializeField, Tooltip("The spinning part: it turns about the surface it's stuck to, with nozzles on its local ±Z")] Transform head;
-    [SerializeField, Tooltip("Gravity while it's thrown, before it sticks (metres per second²)")] float gravity = 20f;
+    [SerializeField, Tooltip("How it's thrown: speed, lob angle above the aim, gravity in flight")] SubThrow throwing = new SubThrow { speed = 16f, angle = 25f, gravity = 20f };
     [SerializeField, Tooltip("Spin speed when it lands and at the end of its life (degrees per second): it winds down between them")] float spinStart = 540f, spinEnd = 90f;
     [SerializeField, Tooltip("Shot speed when it lands and at the end of its life (metres per second)")] float shotSpeedStart = 9f, shotSpeedEnd = 3f;
     [SerializeField, Tooltip("Seconds between shots when it lands and at the end of its life")] float fireIntervalStart = 0.12f, fireIntervalEnd = 0.45f;
@@ -23,6 +23,7 @@ public class Sprinkler : SubDevice
 
     public override SubType Type => SubType.Sprinkler;
     public bool Landed => landed;
+    public SubThrow Throwing => throwing;
     public Vector3 Velocity => velocity;
     public int ShotsFired { get; private set; }
 
@@ -54,7 +55,7 @@ public class Sprinkler : SubDevice
         for (float t = 0f; t < seconds; t += dt)
         {
             Vector3 step = velocity * dt;
-            velocity += Vector3.down * gravity * dt;
+            velocity += Vector3.down * throwing.gravity * dt;
             if (Physics.SphereCast(position, 0.15f, step.normalized, out RaycastHit hit, step.magnitude, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore))
             {
                 path.Add(hit.point);
@@ -95,7 +96,7 @@ public class Sprinkler : SubDevice
     {
         if (velocity == Vector3.zero) return; // remote copy, waiting for the owner's landing
         Vector3 step = velocity * Time.deltaTime;
-        velocity += Vector3.down * gravity * Time.deltaTime;
+        velocity += Vector3.down * throwing.gravity * Time.deltaTime;
         if (Physics.SphereCast(transform.position, 0.15f, step.normalized, out RaycastHit hit, step.magnitude, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore))
         {
             if (authoritative)

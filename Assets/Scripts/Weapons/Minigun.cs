@@ -7,7 +7,8 @@ using UnityEngine;
 //   chargeWhileFiring: holding attack mid-stream starts the next charge (which adds on to what's
 //     left of the stream when let go); otherwise charging waits for the stream to end.
 // Each shot flies like a gun's (its Ballistics) with shorter filler shots inking the floor between
-// us and it (as the shooters' do), broadcast for other players to replay.
+// us and it (as the shooters' do), broadcast for other players to replay. The model's barrels (its
+// "_Barrels" piece) spin up with the charge and spin while it fires.
 public class Minigun : ChargeWeapon
 {
     [Header("Stream")]
@@ -23,6 +24,7 @@ public class Minigun : ChargeWeapon
     [SerializeField, Tooltip("Ink per shot, in thousandths of a full tank")] float inkCostPerShot = 9f;
     [SerializeField, Tooltip("Random aim wobble left and right on each shot (degrees, ±)")] float yawSpread = 4f;
     [SerializeField, Tooltip("Random aim wobble up and down on each shot (degrees, ±)")] float pitchSpread = 2f;
+    [SerializeField, Tooltip("Degrees above where the gun points that the shots leave: lifts them to reach the cursor (the barrels hang below the hand, and the shots drop)")] float shotPitch = 4f;
     [SerializeField, Tooltip("How the shots are drawn")] ShotLook shotLook = new ShotLook();
 
     [Header("Fillers")]
@@ -31,7 +33,13 @@ public class Minigun : ChargeWeapon
     [SerializeField, Range(0f, 1f), Tooltip("Share of the filler shots that are drawn (the rest only paint)")] float fillersSeen = 0.33f;
     [SerializeField, Tooltip("How the (seen) filler shots are drawn")] ShotLook fillerLook = new ShotLook();
 
+    [Header("Barrels")]
+    [SerializeField, Tooltip("How fast the barrels spin while firing (degrees per second); they wind up as it charges and spin down after")] float barrelSpin = 1080f;
+    [SerializeField, Tooltip("How quickly the barrels reach a new spin speed (full speeds per second)")] float spinChange = 2f;
+
     float firingLeft, nextShot; // seconds of stream left; until the next shot
+    Transform barrels;          // the model's spinning piece (turns on its own up axis: the barrels' length)
+    float spin, lastReplay = -1f;
 
     public float BurstTime => burstTime;
     public bool RequireFullCharge { get => requireFullCharge; set => requireFullCharge = value; } // tests try the variants
@@ -41,10 +49,31 @@ public class Minigun : ChargeWeapon
     public bool Firing => firingLeft > 0f;
     public int Shots { get; private set; }
     public int Bursts { get; private set; }
+    public bool HasBarrels => barrels != null;
+    public float Spin => spin; // 0..1 of barrelSpin (tests)
+
+    protected override void Start()
+    {
+        base.Start();
+        foreach (Transform t in GetComponentsInChildren<Transform>(true))
+            if (t.name.EndsWith("_Barrels")) barrels = t;
+    }
+
+    // The barrels: winding up with the charge, full speed firing; others' while they charge (their
+    // WeaponDown) and as their shots come in.
+    void LateUpdate()
+    {
+        PlayerController player = Owner;
+        if (barrels == null || player == null) return;
+        float target = player.IsLocalPlayer ? (Firing ? 1f : Charging ? Charge * 0.6f : 0f)
+                                            : Time.time - lastReplay < 0.2f ? 1f : player.WeaponDown ? 0.5f : 0f;
+        spin = Mathf.MoveTowards(spin, target, spinChange * Time.deltaTime);
+        barrels.Rotate(Vector3.up, spin * barrelSpin * Time.deltaTime, Space.Self);
+    }
 
     protected override bool CanCharge(PlayerController player) => !Firing || chargeWhileFiring;
     protected override float MoveSpeedNow => Firing ? fireMoveSpeed : 1f;
-    protected override bool FeetInking => Charging || Firing;
+    protected override bool FeetInking => Firing;
     // The reticle's ring: filling as we charge, then draining as the stream fires off (a charge
     // started mid-stream shows instead).
     public override float ChargeShown => Charging || !Firing ? Charge : Mathf.Clamp01(firingLeft / burstTime);
@@ -75,7 +104,7 @@ public class Minigun : ChargeWeapon
     void Shoot(PlayerController player)
     {
         Shots++;
-        Quaternion aim = muzzle.rotation * Quaternion.Euler(Random.Range(-pitchSpread, pitchSpread), Random.Range(-yawSpread, yawSpread), 0f);
+        Quaternion aim = muzzle.rotation * Quaternion.Euler(-shotPitch + Random.Range(-pitchSpread, pitchSpread), Random.Range(-yawSpread, yawSpread), 0f);
         Vector3 inherit = Inherit();
         int n = 1 + fillerShots;
         var velocities = new float[n * 3];
@@ -108,6 +137,7 @@ public class Minigun : ChargeWeapon
     public override void Replay(ProjectileSpawnData d)
     {
         if (d.velocities == null || d.splashSizes == null || d.visible == null) return;
+        lastReplay = Time.time;
         Vector3 inherit = d.inherit != null ? (Vector3)d.inherit : Vector3.zero;
         int n = Mathf.Min(d.splashSizes.Length, d.visible.Length, d.velocities.Length / 3);
         for (int i = 0; i < n; i++)
