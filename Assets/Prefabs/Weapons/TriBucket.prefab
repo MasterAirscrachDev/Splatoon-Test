@@ -120,7 +120,7 @@ MonoBehaviour:
   droplets: 12
   dropletSpeed: {x: 0, y: 5.5}
   dropletDamage:
-    damage: 35
+    damage: 63
     scaleOverTime:
       serializedVersion: 2
       m_Curve:
@@ -174,7 +174,7 @@ MonoBehaviour:
     speedSpread: 0.1
   blobHitScale: 1.8
   blobDamage:
-    damage: 70
+    damage: 63
     scaleOverTime:
       serializedVersion: 2
       m_Curve:

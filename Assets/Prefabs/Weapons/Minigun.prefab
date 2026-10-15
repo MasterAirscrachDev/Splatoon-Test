@@ -66,7 +66,7 @@ MonoBehaviour:
   requireFullCharge: 0
   chargeWhileFiring: 0
   fireMoveSpeed: 1
-  fireRate: 0.06
+  fireRate: 0.08
   shotSpeed: 22
   ballistics:
     velocityOverTime:

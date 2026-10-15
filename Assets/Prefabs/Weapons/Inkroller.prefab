@@ -157,7 +157,7 @@ MonoBehaviour:
   airPitch: 20
   airSpeed: {x: 0, y: 12}
   airDamage:
-    damage: 160
+    damage: 150
     scaleOverTime:
       serializedVersion: 2
       m_Curve:
@@ -191,7 +191,7 @@ MonoBehaviour:
     upDownSpread: 2
     sideSpread: 2
     speedSpread: 0.05
-  rollDamage: 100
+  rollDamage: 125
   rollStartSpeed: 0.8
   rollSpeed: 1.2
   rollRampTime: 0.5

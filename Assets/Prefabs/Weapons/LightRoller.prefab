@@ -191,7 +191,7 @@ MonoBehaviour:
     upDownSpread: 2
     sideSpread: 2
     speedSpread: 0.05
-  rollDamage: 50
+  rollDamage: 70
   rollStartSpeed: 1.4
   rollSpeed: 2
   rollRampTime: 0.3

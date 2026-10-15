@@ -71,8 +71,8 @@ MonoBehaviour:
   player: {fileID: 2728856683148836943}
   maxHealth: 100
   healDelay: 1
-  healPerSecond: 16.666666
-  healPerSecondSubmerged: 66.666664
+  healPerSecond: 12.5
+  healPerSecondSubmerged: 100
   standHeight: 1.92
   standRadius: 0.5
   standCenter: {x: 0, y: 0, z: 0}
