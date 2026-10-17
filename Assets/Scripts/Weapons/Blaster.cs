@@ -58,7 +58,7 @@ public class Blaster : Weapon
         PlayerController player = Owner;
         if (player == null) return;
         bool hardware = !player.IsTestPlayer && player.ScriptedInput == null && !InputGate.Blocked && input.Weapon.Attack.ReadValue<float>() != 0;
-        bool firing = !InputGate.MatchLocked && (ScriptedFire || hardware);
+        bool firing = !InputGate.GameLocked && !player.ActionLocked && (ScriptedFire || hardware);
         player.AttackHeld = firing;
         if (firing && !player.IsSquid)
         {

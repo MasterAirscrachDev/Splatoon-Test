@@ -195,6 +195,17 @@
                     "isPartOfComposite": false
                 },
                 {
+                    "name": "",
+                    "id": "3a8e965d-59c2-48c1-a793-ad6398435c5d",
+                    "path": "<Keyboard>/shift",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Squidmode",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
                     "name": "2D Vector",
                     "id": "68aa03cd-82ea-403a-9707-6cebeb0ed68a",
                     "path": "2DVector",

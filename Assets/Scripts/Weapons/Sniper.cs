@@ -51,6 +51,8 @@ public class Sniper : ChargeWeapon
     Light glowLight;
     CameraAim camAim;
     float remoteDownFor; // other players' copies: how long they've been charging (their WeaponDown)
+    Vector3 shownEnd;    // theirs: where their laser's drawn to, easing towards their AimEnd
+    bool hasShownEnd;
 
     public Vector2 Range => range;
     public Vector2 Damage => damage;
@@ -61,6 +63,7 @@ public class Sniper : ChargeWeapon
     public float LastLineLength { get; private set; } // how far along the line ink falls
     public int LastLineSplat { get; private set; }
     public bool LaserShown => laser != null && laser.enabled;
+    public Vector3 LaserEnd => laser != null ? laser.GetPosition(1) : Vector3.zero; // tests
     public float LaserWidth => laser != null ? laser.widthMultiplier : 0f;
     public bool GlowShown => glow != null && glow.enabled;
     public float RangeAt(float charge) => Mathf.Lerp(range.x, range.y, charge);
@@ -187,12 +190,30 @@ public class Sniper : ChargeWeapon
         bool full = show && (local ? Charge >= 1f : remoteDownFor >= ChargeTime);
         laser.enabled = show;
         SetGlow(full, player.TeamColour);
-        if (!show) return;
+        if (local && !show) player.AimEnd = null;
+        if (!show) { hasShownEnd = false; return; }
         float length;
         Vector3 dir;
-        if (local) AimLine(RangeAt(Charge), true, out dir, out length); // (turns the weapon to it)
-        else { dir = muzzle.forward; length = LineLength(muzzle.position, dir, RangeAt(1f)); }
         Vector3 from = muzzle.position;
+        if (local)
+        {
+            AimLine(RangeAt(Charge), true, out dir, out length); // (turns the weapon to it)
+            from = muzzle.position;                              // where the muzzle is now it's turned
+            player.AimEnd = from + dir * length;                 // sent with our state: theirs draw it there
+        }
+        else if (player.AimEnd.HasValue)
+        {
+            // Theirs: to where their laser ends (eased between their updates), the gun turned along it.
+            shownEnd = hasShownEnd ? Vector3.Lerp(shownEnd, player.AimEnd.Value, 1f - Mathf.Exp(-20f * Time.deltaTime)) : player.AimEnd.Value;
+            hasShownEnd = true;
+            Vector3 to = shownEnd - from;
+            if (to.sqrMagnitude > 1e-4f) transform.rotation = Quaternion.LookRotation(to);
+            from = muzzle.position;
+            to = shownEnd - from;
+            length = to.magnitude;
+            dir = length > 1e-4f ? to / length : muzzle.forward;
+        }
+        else { dir = muzzle.forward; length = LineLength(from, dir, RangeAt(1f)); }
         laser.SetPosition(0, from);
         laser.SetPosition(1, from + dir * length);
         laser.widthMultiplier = laserWidth;

@@ -12,7 +12,7 @@ public partial class PlayerController
     // Once started, only dying (or a respawn/teleport) cancels it. Returns false if it can't start.
     public bool StartSuperJump(ISuperJumpTarget target)
     {
-        if (playerMode != PlayerMode.Client || isDead || IsRespawning || IsSuperJumping || team == 0 || InputGate.MatchLocked) return false;
+        if (playerMode != PlayerMode.Client || isDead || IsRespawning || IsSuperJumping || team == 0 || InputGate.GameLocked) return false;
         if (!SuperJumpTargets.Alive(target) || ReferenceEquals(target, this) || !target.IsValidTargetFor(this)) return false;
         superJumpTarget = target;
         superJumpLanding = target.JumpPosition;

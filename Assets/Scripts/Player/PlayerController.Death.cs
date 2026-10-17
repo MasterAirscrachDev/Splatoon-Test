@@ -20,7 +20,7 @@ public partial class PlayerController
     // killerId: who splatted us (0: nobody, e.g. we fell); cause: with what.
     public void OnDeath(ulong killerId = 0, string cause = null)
     {
-        if (isDead || playerMode != PlayerMode.Client) return;
+        if (isDead || playerMode != PlayerMode.Client || InputGate.GameLocked) return; // the gamelock: nobody's splatted
         bool fell = transform.position.y < KillHeight;
         isDead   = true;
         swimMode = true;

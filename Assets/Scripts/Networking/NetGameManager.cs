@@ -178,6 +178,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.Bind((ushort)NetMsg.SubDestroy,    OnSubDestroyMsg);
         SteamGlobal.Bind((ushort)NetMsg.SubDamage,     OnSubDamageMsg);
         SteamGlobal.Bind((ushort)NetMsg.InkStrike,     OnInkStrikeMsg);
+        SteamGlobal.Bind((ushort)NetMsg.Soundblaster,  OnSoundblasterMsg);
         SteamGlobal.Bind((ushort)NetMsg.LoadScene,     OnLoadSceneMsg);
         SteamGlobal.Bind((ushort)NetMsg.Kill,          OnKillMsg);
         SurfaceInkManager.OnSplatApplied += OnLocalSplat;
@@ -202,6 +203,7 @@ public class NetGameManager : MonoBehaviour
         SteamGlobal.UnBind((ushort)NetMsg.SubDestroy,    OnSubDestroyMsg);
         SteamGlobal.UnBind((ushort)NetMsg.SubDamage,     OnSubDamageMsg);
         SteamGlobal.UnBind((ushort)NetMsg.InkStrike,     OnInkStrikeMsg);
+        SteamGlobal.UnBind((ushort)NetMsg.Soundblaster,  OnSoundblasterMsg);
         SteamGlobal.UnBind((ushort)NetMsg.LoadScene,     OnLoadSceneMsg);
         SteamGlobal.UnBind((ushort)NetMsg.Kill,          OnKillMsg);
         SurfaceInkManager.OnSplatApplied -= OnLocalSplat;
@@ -331,7 +333,7 @@ public class NetGameManager : MonoBehaviour
         LocalPlayer = null;
         pendingSplats.Clear();
         if (InMatch) EnterPhase(new MatchEventData { phase = MatchPhase.FreeRoam, colourPair = colourPair });
-        InputGate.MatchLocked = false;
+        InputGate.GameLocked = false;
         ScanSurfaces();
         StartScene();
     }
@@ -475,7 +477,7 @@ public class NetGameManager : MonoBehaviour
         phaseStartTime = Time.time;
         phaseEndTime = Time.time + d.duration;
         finalStretchAnnounced = false;
-        InputGate.MatchLocked = d.phase == MatchPhase.Countdown || d.phase == MatchPhase.TimesUp || d.phase == MatchPhase.Results;
+        InputGate.GameLocked = d.phase == MatchPhase.Countdown || d.phase == MatchPhase.TimesUp || d.phase == MatchPhase.Results;
 
         if (d.phase == MatchPhase.Countdown)
         {
@@ -576,10 +578,11 @@ public class NetGameManager : MonoBehaviour
             });
     }
 
-    // Resetting the map also removes every sub.
+    // Resetting the map also removes every sub and every shot still in the air.
     void ClearAllInk()
     {
         SubDevice.RemoveAll();
+        ProjectileManager.ClearAll();
         if (surfaceManagers == null) return;
         foreach (var m in surfaceManagers) m.ClearInk();
     }
@@ -1042,6 +1045,21 @@ public class NetGameManager : MonoBehaviour
             });
     }
 
+    public void SendSoundblaster(ulong ownerId, int team, Vector3 position, float yaw) =>
+        Send(NetMsg.Soundblaster, new SoundblasterData { ownerId = ownerId, team = team, position = position, yaw = yaw });
+
+    void OnSoundblasterMsg(object data, SteamId from)
+    {
+        if (data is SoundblasterData d)
+            mainThread.Enqueue(() =>
+            {
+                if (d.ownerId == localId && localPlayer != null) return; // our own
+                PlayerController owner = GetPlayer(d.ownerId);
+                PlayerLoadout loadout = owner != null ? owner.GetComponent<PlayerLoadout>() : null;
+                if (loadout != null) loadout.SpawnRemoteSoundblaster(d);
+            });
+    }
+
     // ── Kills ──────────────────────────────────────────────────────────────
     // The victim's client tells everyone (damage is dealt there, so it's the one that knows); each
     // client then bursts the victim's ink where it happened and reports it (the killfeed).
@@ -1109,6 +1127,7 @@ public class NetGameManager : MonoBehaviour
             case NetMsg.SubDestroy:      OnSubDestroyMsg(data, sender); break;
             case NetMsg.SubDamage:       OnSubDamageMsg(data, sender); break;
             case NetMsg.InkStrike:       OnInkStrikeMsg(data, sender); break;
+            case NetMsg.Soundblaster:    OnSoundblasterMsg(data, sender); break;
             case NetMsg.Kill:            OnKillMsg(data, sender); break;
         }
     }

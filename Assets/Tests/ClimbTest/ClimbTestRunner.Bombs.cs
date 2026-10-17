@@ -64,11 +64,20 @@ public partial class ClimbTestRunner
             float thrownAt = Time.time, touched = -1f;
             bool stuckUp = false;
             int bouncesAtTouch = 0;
+            bool foeFollowed = false;
             Vector3 touchAt = start;
             for (float t = 0f; t < 6f && bomb != null; t += Time.deltaTime)
             {
                 if (touched < 0f && (bomb.Settled || bomb.Bounces > 0 || bomb.Exploded)) { touched = Time.time; touchAt = bomb.Exploded ? bomb.ExplodedAt : bomb.transform.position; stuckUp = bomb.Stuck && Vector3.Angle(bomb.SurfaceNormal, Vector3.up) < 5f; bouncesAtTouch = bomb.Bounces; }
                 if (bomb.Exploded) break;
+                // The ink bomb tumbles somewhere random: the enemy's moved beside it just before it goes off.
+                if (type == SubType.InkBomb && bomb.Armed && bomb.FuseLeft < 0.25f && !foeFollowed)
+                {
+                    foeFollowed = true;
+                    Despawn(foeId);
+                    foeId += 50;
+                    SpawnRemote(foeId, enemyTeam, new Vector3(bomb.transform.position.x, station.position.y + 0.05f, bomb.transform.position.z) + Flat(bomb.transform.position - start).normalized * 0.6f, $"{type}Foe");
+                }
                 yield return null;
             }
             bool exploded = bomb == null || bomb.Exploded;

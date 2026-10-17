@@ -75,9 +75,12 @@ public class MapScreen : MonoBehaviour
     System.Action<Vector3> onTargetPicked;
     System.Action onTargetCancelled;
     float targetRadius;
+    bool targetCancellable = true; // false: only a pick (or ForceClose) ends it
+    public bool TargetCancellable => targetCancellable;
     const string MouseHint = "{GameControl/Click} a teammate, beacon or spawn to Super Jump   ·   release {GameControl/Map} to close";
     const string PadHint = "Point and {GameControl/Click}, or {GameControl/QuickJumpUp}{GameControl/QuickJumpLeft}{GameControl/QuickJumpRight} a teammate / {GameControl/QuickJumpBase} base, to Super Jump   ·   {GameControl/Map} to close";
     const string TargetHint = "{GameControl/Click} where to strike   ·   {GameControl/Cancel} to cancel";
+    const string CommittedTargetHint = "{GameControl/Click} where to strike";
     static string NormalHint => InputMode.Scheme == ControlScheme.Gamepad ? PadHint : MouseHint;
 
     void OnInputChanged()
@@ -161,7 +164,7 @@ public class MapScreen : MonoBehaviour
 
     public void SetOpen(bool value)
     {
-        if (!value && IsTargeting) { CancelTargeting(); return; }
+        if (!value && IsTargeting) { CancelTargeting(); return; } // (refused when the targeting can't be cancelled)
         open = value;
         if (!value) toggled = false;
         screen.SetActive(value);
@@ -225,21 +228,36 @@ public class MapScreen : MonoBehaviour
     // ── Targeting (specials) ───────────────────────────────────────────────
 
     // Opens the map to pick a spot on the level: picked gets the world point, cancelled is
-    // called if it closes without one (Esc or right-click). False if the map can't open now.
-    public bool BeginTargeting(float radius, System.Action<Vector3> picked, System.Action cancelled)
+    // called if it closes without one (Esc). cancellable false: Esc (and anything else that would
+    // close the map) does nothing until a spot's picked; only ForceClose ends it (a splat, a scene
+    // load). False if the map can't open now.
+    public bool BeginTargeting(float radius, System.Action<Vector3> picked, System.Action cancelled, bool cancellable = true)
     {
         if (open || InputGate.Blocked || IsTargeting) return false;
         onTargetPicked = picked;
         onTargetCancelled = cancelled;
         targetRadius = radius;
+        targetCancellable = cancellable;
         SetOpen(true);
         targetCatcher.gameObject.SetActive(true);
         reticle.gameObject.SetActive(true);
-        SetHint(TargetHint);
+        SetHint(cancellable ? TargetHint : CommittedTargetHint);
         return true;
     }
 
-    public void CancelTargeting() => EndTargeting(false, Vector3.zero);
+    // Esc: ends the targeting unpicked, unless it can't be cancelled.
+    public void CancelTargeting()
+    {
+        if (IsTargeting && !targetCancellable) return;
+        EndTargeting(false, Vector3.zero);
+    }
+
+    // Closes the map whatever it's doing (targeting ends unpicked, cancellable or not).
+    public void ForceClose()
+    {
+        if (IsTargeting) EndTargeting(false, Vector3.zero);
+        else if (open) SetOpen(false);
+    }
 
     // Tests: as if the map were clicked at this map position (MapPosition's space).
     public bool PickTargetAt(Vector2 mapLocal)
@@ -262,6 +280,7 @@ public class MapScreen : MonoBehaviour
         System.Action onCancelled = onTargetCancelled;
         onTargetPicked = null;
         onTargetCancelled = null;
+        targetCancellable = true;
         targetCatcher.gameObject.SetActive(false);
         reticle.gameObject.SetActive(false);
         SetHint(NormalHint);

@@ -71,6 +71,8 @@ public partial class PlayerController
             weaponDown = WeaponDown,
             modelYaw = modelYaw,
             aiming   = Aiming,
+            aimEnd   = AimEnd.HasValue ? new NVector3(AimEnd.Value) : null,
+            missileOnBack = MissileOnBack,
             superJumping = superJumpPhase == SuperJumpPhase.Flying
         };
     }
@@ -93,6 +95,8 @@ public partial class PlayerController
         WeaponDown   = s.weaponDown;
         netModelYaw  = s.modelYaw;
         netAiming    = s.aiming;
+        AimEnd       = s.aimEnd != null ? (Vector3?)(Vector3)s.aimEnd : null;
+        MissileOnBack = s.missileOnBack;
         remoteSuperJumping = s.superJumping;
         isClimbing = s.climbing;
         effectivelyClimbing = s.climbing;

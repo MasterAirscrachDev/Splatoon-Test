@@ -227,9 +227,15 @@ public partial class ClimbTestRunner
 
         bool clockOffFree = !hud.TimerRect.gameObject.activeSelf;
 
+        // A stray shot still in the air when the game starts: the reset clears it.
+        const ulong Stray = 4998;
+        ProjectileManager.Fire(station.TransformPoint(new Vector3(3f, 9f, 3f)), Vector3.down * 2f, 30, player.Team, true, authoritative: true, ownerId: Stray, damage: 0f);
+        bool strayFlying = ProjectileManager.Live.Any(s => s.ownerId == Stray);
+
         // Start: everyone to their spawn, locked, map and loadout reset, host features off; new colours.
         int pairBefore = gm.ColourPair;
         gm.StartGame();
+        bool strayCleared = !ProjectileManager.Live.Any(s => s.ownerId == Stray);
         frames.Clear(); // the respawn teleport
         Vector3 start = player.transform.position;
         if (gm.Phase != MatchPhase.Countdown || !Broadcast(MatchPhase.Countdown)) Fail("countdown didn't start (or wasn't broadcast)");
@@ -241,10 +247,24 @@ public partial class ClimbTestRunner
         bool quietCountdown = audio != null && audio.CurrentTrack == null;
         bool clockInCountdown = hud.TimerRect.gameObject.activeSelf;
         if (flow.BannerText != "1") Fail("countdown number not shown");
-        if (!InputGate.MatchLocked || Flat(player.transform.position - start) > 0.05f || player.IsSquid) Fail("could move or swim during the countdown");
+        if (!InputGate.GameLocked || Flat(player.transform.position - start) > 0.05f || player.IsSquid) Fail("could move or swim during the countdown");
         if (loadout.SpecialPoints != 0f || player.InkLevel < 0.999f) Fail("special/ink not reset for the match");
         if (floor.getSurfaceTeam(new Vector2(0.5f, 0.5f)) != 0) Fail("map wasn't reset");
         if (hud.PercentagesShown) Fail("percentages shown during a match");
+
+        // The gamelock: nobody's hurt or splatted, and nothing takes ink (a shot landing now leaves none).
+        int enemy = player.Team == 1 ? 2 : 1;
+        bool hurt = player.Hitbox.TakeDamage(500f, enemy, 4242, "test") || player.IsDead || player.Hitbox.Health < 100f;
+        Vector3 spot = station.TransformPoint(new Vector3(-3f, 0f, -3f));
+        ProjectileManager.Fire(spot + Vector3.up * 2f, Vector3.down * 10f, 30, player.Team, true, authoritative: true, ownerId: Stray, damage: 0f);
+        floor.Splat(new Vector2(0.25f, 0.25f), 30, player.Team);
+        yield return Hold(Still, false, 0.4f, "locked");
+        bool inked = floor.getSurfaceTeam(new Vector2(0.25f, 0.25f)) != 0 ||
+                     Physics.Raycast(spot + Vector3.up, Vector3.down, out RaycastHit lockHit, 2f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore) && floor.getSurfaceTeam(floor.UVFromHit(lockHit)) != 0;
+        Note($"gamelock: stray shot {(strayFlying ? (strayCleared ? "cleared at the start" : "STILL FLYING after the start") : "never flew")}; a 500 hit {(hurt ? "HURT us" : "did nothing")}; a splat and a landing shot {(inked ? "INKED the floor" : "left no ink")}");
+        if (!strayFlying || !strayCleared) Fail("a shot in the air at the start wasn't cleared");
+        if (hurt) Fail("could be hurt under the gamelock");
+        if (inked) Fail("a surface took ink under the gamelock");
         menu.SetOpen(true);
         yield return null;
         if (menu.ResetButton.interactable || menu.TeamsButton.interactable || menu.PercentButton.interactable || menu.StartButtonText != "End match")
@@ -254,7 +274,7 @@ public partial class ClimbTestRunner
         // Playing: GO!, free to move.
         yield return HoldUntil(Still, false, 2f, "play", f => gm.Phase == MatchPhase.Playing);
         yield return null; // the HUD may have updated before the phase changed that frame
-        if (flow.BannerText != "GO!" || InputGate.MatchLocked) Fail("no GO! (or still locked) when play starts");
+        if (flow.BannerText != "GO!" || InputGate.GameLocked) Fail("no GO! (or still locked) when play starts");
         Vector3 before = player.transform.position;
         yield return Hold(Fwd, false, 0.4f, "play");
         if (Flat(player.transform.position - before) < 0.3f) Fail("can't move once playing");
@@ -282,7 +302,7 @@ public partial class ClimbTestRunner
         // Time's up: locked again.
         yield return HoldUntil(Still, false, 2f, "timesup", f => gm.Phase == MatchPhase.TimesUp);
         yield return Hold(Fwd, false, 0.2f, "timesup");
-        if (flow.BannerText != "TIME'S UP!" || !InputGate.MatchLocked) Fail("no TIME'S UP (or not locked)");
+        if (flow.BannerText != "TIME'S UP!" || !InputGate.GameLocked) Fail("no TIME'S UP (or not locked)");
 
         // Results: the host's score for everyone, overhead view, suspense fill, then the real split.
         yield return HoldUntil(Still, false, 4f, "results", f => gm.Phase == MatchPhase.Results);
@@ -314,7 +334,7 @@ public partial class ClimbTestRunner
         // Back to free roam: unlocked, player view, bar and the host's percentages back.
         yield return HoldUntil(Still, false, 3f, "free", f => gm.Phase == MatchPhase.FreeRoam);
         yield return Hold(Still, false, 0.8f, "free");
-        if (InputGate.MatchLocked || flow.OverheadActive) Fail("still locked (or overhead) after the results");
+        if (InputGate.GameLocked || flow.OverheadActive) Fail("still locked (or overhead) after the results");
         if (hud.TurfBarAlpha < 0.95f || !hud.PercentagesShown) Fail("coverage bar or percentages didn't come back");
         if (boombox.Volume < 0.7f * GameSettings.MusicGain) Fail("the boombox didn't come back after the match");
         bool clockOffAfter = !hud.TimerRect.gameObject.activeSelf;
@@ -329,7 +349,7 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.2f, "abort");
         gm.EndMatch();
         yield return Hold(Still, false, 0.1f, "abort");
-        if (gm.Phase != MatchPhase.FreeRoam || InputGate.MatchLocked) Fail("End match didn't return to free roam");
+        if (gm.Phase != MatchPhase.FreeRoam || InputGate.GameLocked) Fail("End match didn't return to free roam");
 
         hud.ShowPercentages = false;
         floor.FillRegion(new Rect(0, 0, 1, 1), 0);

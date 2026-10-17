@@ -10540,12 +10540,17 @@ MonoBehaviour:
   holdOffset: {x: 0.6, y: 0.45, z: 0.2}
   subReadyLight: {fileID: 5817789194759826902}
   inkStrikePrefab: {fileID: 2160948365701607404, guid: 08b0142f80215a64796af04ac1ab99a2, type: 3}
+  strikeMissilePrefab: {fileID: 1827498336871176479, guid: 33b313df6a63f23489f1084cce87d9e4, type: 3}
+  strikeWindupSpeed: 0.3
+  soundblasterPrefab: {fileID: 5734786616970464401, guid: 0e9bba0298d971d46b8f7ab130404155, type: 3}
+  soundblasterDistance: 1.2
   specialCost: 1000
   shieldDuration: 5
   shieldVisual: {fileID: 4643227859557890364}
   specialIcons:
   - {fileID: 21300000, guid: 28f772c7b6732c844bbfb0285d4bb41c, type: 3}
   - {fileID: 21300000, guid: 378d24f14486bf24c80eab541775edcb, type: 3}
+  - {fileID: 21300000, guid: 7d0ffc1d033a72344919ffa83d4fd389, type: 3}
   pointsPerSquareMetre: 1
   pointsPerDamage: 1
   deathSpecialKept: 0.5

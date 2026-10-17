@@ -349,9 +349,11 @@ public class SurfaceInkManager : MonoBehaviour
         RegenerateNormalsFull(); // prime to flat
     }
 
-    // Queued: painted at the end of the frame with the others (FlushSplats). Sent on at once.
+    // Queued: painted at the end of the frame with the others (FlushSplats). Sent on at once. Under
+    // the gamelock nothing takes ink (fills and clears still work).
     public void Splat(Vector2 texCoords, int splashSize, int team, bool broadcast = true)
     {
+        if (InputGate.GameLocked) return;
         pendingSplats.Add(new PendingSplat
         {
             x = Mathf.FloorToInt(texCoords.x * size), y = Mathf.FloorToInt(texCoords.y * size), // may be off the texture (bridged)

@@ -55,7 +55,7 @@ public abstract class ChargeWeapon : Weapon
         input?.Disable();
         input?.Dispose();
         if (driver != null) Destroy(driver);
-        if (Owner != null && Owner.IsLocalPlayer) { Owner.WeaponSpeedMultiplier = 1f; Owner.WeaponDown = false; }
+        if (Owner != null && Owner.IsLocalPlayer) { Owner.WeaponSpeedMultiplier = 1f; Owner.WeaponDown = false; Owner.AimEnd = null; }
     }
 
     void Update()
@@ -70,11 +70,11 @@ public abstract class ChargeWeapon : Weapon
         if (player == null || input == null) return;
 
         bool hardware = !player.IsTestPlayer && player.ScriptedInput == null && !InputGate.Blocked && input.Weapon.Attack.ReadValue<float>() != 0;
-        bool held = !InputGate.MatchLocked && !player.IsDead && (ScriptedFire || hardware);
+        bool held = !InputGate.GameLocked && !player.ActionLocked && !player.IsDead && (ScriptedFire || hardware);
         player.AttackHeld = held;
         float dt = Time.deltaTime;
         Charging = false;
-        if (player.IsSquid || player.IsDead || InputGate.MatchLocked)
+        if (player.IsSquid || player.IsDead || InputGate.GameLocked)
         {
             // In swim form: the charge is kept (attack held) for a while if this weapon allows it.
             if (Charge > 0f && held && swimHoldTime > 0f && !player.IsDead)

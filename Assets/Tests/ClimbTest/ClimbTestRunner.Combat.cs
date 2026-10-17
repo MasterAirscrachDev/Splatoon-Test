@@ -236,7 +236,7 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.1f, "hit");
         if (player.Hitbox.Health < fullHealth) Fail("friendly or misaddressed Damage was applied");
 
-        // Healing: none for the heal delay after a hit, then full in 6s (16.7/s), or 1.5s (66.7/s) submerged.
+        // Healing: none for the heal delay after a hit, then at the hitbox's rates (the prefab's tuning), faster submerged.
         float delay = player.Hitbox.HealDelay;
         for (int i = 0; i < 2; i++)
             gm.Receive(NetMsg.Damage, new DamageData { targetSteamId = player.OwnerId, attackerSteamId = RemoteId, amount = amount, fromTeam = enemyTeam }, RemoteId);
@@ -252,13 +252,19 @@ public partial class ClimbTestRunner
 
         yield return Hold(Still, true, 0.3f, "heal"); // into squid form on own ink
         bool submerged = player.IsInInk;
+        // (Only until it's full: a fast submerged rate tops up within the window.)
         h0 = player.Hitbox.Health; t0 = Time.time;
-        yield return Hold(Still, true, 0.25f, "heal");
-        float submergedRate = (player.Hitbox.Health - h0) / (Time.time - t0);
+        float h1 = h0, t1 = t0;
+        for (float t = 0f; t < 0.25f && player.Hitbox.Health < 99.9f; t += Time.deltaTime)
+        {
+            yield return Hold(Still, true, Dt, "heal"); // one frame
+            if (player.Hitbox.Health < 99.9f) { h1 = player.Hitbox.Health; t1 = Time.time; }
+        }
+        float submergedRate = t1 > t0 ? (h1 - h0) / (t1 - t0) : 0f;
         Note($"heal {standRate:F1}/s standing, {submergedRate:F1}/s submerged");
-        if (Mathf.Abs(standRate - 100f / 6f) > 1.5f) Fail($"standing heal rate {standRate:F1}/s, expected ~16.7");
+        if (Mathf.Abs(standRate - player.Hitbox.HealPerSecond) > 1.5f) Fail($"standing heal rate {standRate:F1}/s, expected ~{player.Hitbox.HealPerSecond:F1}");
         if (!submerged) Fail("not submerged in own ink for the submerged heal check");
-        else if (Mathf.Abs(submergedRate - 100f / 1.5f) > 4f) Fail($"submerged heal rate {submergedRate:F1}/s, expected ~66.7");
+        else if (Mathf.Abs(submergedRate - player.Hitbox.HealPerSecondSubmerged) > player.Hitbox.HealPerSecondSubmerged * 0.1f) Fail($"submerged heal rate {submergedRate:F1}/s, expected ~{player.Hitbox.HealPerSecondSubmerged:F1}");
 
         yield return Hold(Still, true, 1.5f, "heal");
         if (Mathf.Abs(player.Hitbox.Health - fullHealth) > 0.01f) Fail($"didn't heal to exactly full ({player.Hitbox.Health:F2}/{fullHealth})");

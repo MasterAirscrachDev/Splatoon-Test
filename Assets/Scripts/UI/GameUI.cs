@@ -38,7 +38,7 @@ public class GameUI : MonoBehaviour
         LobbyMenu lobby = GetComponentInChildren<LobbyMenu>(true);
         if (lobby != null) lobby.Close();
         MapScreen map = GetComponentInChildren<MapScreen>(true);
-        if (map != null && map.IsOpen) map.SetOpen(false);
+        if (map != null && map.IsOpen) map.ForceClose();
         KillFeed feed = GetComponentInChildren<KillFeed>(true);
         if (feed != null) feed.Clear();
     }

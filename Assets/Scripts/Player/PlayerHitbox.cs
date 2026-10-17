@@ -29,6 +29,8 @@ public class PlayerHitbox : MonoBehaviour
 
     public float Health => health;
     public float HealDelay => healDelay;
+    public float HealPerSecond => healPerSecond;                     // tests (tuned on the prefab)
+    public float HealPerSecondSubmerged => healPerSecondSubmerged;
     public float HealthNormalized => maxHealth > 0f ? health / maxHealth : 0f;
     public int Team => player != null ? player.Team : 0;
     public int LastHitTeam { get; private set; } // whose hit we took last (the damage ink's colour)
@@ -68,7 +70,7 @@ public class PlayerHitbox : MonoBehaviour
     // source: what did it (weapon, sub or special), for the death popup.
     public bool TakeDamage(float amount, int fromTeam, ulong attackerId = 0, string source = null)
     {
-        if(amount <= 0f) return false;
+        if(amount <= 0f || InputGate.GameLocked) return false; // the gamelock: nobody's hurt
         if (player != null && (fromTeam == player.Team || player.IsDead || player.Shielded)) return false;
         if (player != null && SpawnPad.Shields(player.BodyCenter, player.Team)) return false; // in their own spawn
         PlayerLoadout.ReportDamageDealt(attackerId, fromTeam, amount);

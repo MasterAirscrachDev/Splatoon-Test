@@ -38,12 +38,18 @@ public class PlayerLoadout : MonoBehaviour
 
     [Header("Special: Inkstrike")]
     [SerializeField] InkStrike inkStrikePrefab;
+    [SerializeField, Tooltip("Its missile: on our back from using it until it launches")] StrikeMissile strikeMissilePrefab;
+    [SerializeField, Tooltip("Move speed while it winds up to launch (no attacking or swimming then), x walking speed")] float strikeWindupSpeed = 0.3f;
+
+    [Header("Special: Soundblaster")]
+    [SerializeField] Soundblaster soundblasterPrefab;
+    [SerializeField, Tooltip("How far in front of us it's set down (metres)")] float soundblasterDistance = 1.2f;
 
     [Header("Special: bubble shield")]
     [SerializeField] float specialCost = 1000f;    // points to charge
     [SerializeField] float shieldDuration = 5f;
     [SerializeField] Transform shieldVisual;
-    [SerializeField] Sprite[] specialIcons = new Sprite[2]; // by SpecialType, rendered in the icon studio
+    [SerializeField] Sprite[] specialIcons = new Sprite[3]; // by SpecialType, rendered in the icon studio
 
     [Header("Special charge")]
     [SerializeField] float pointsPerSquareMetre = 1f;  // turf newly turned to our colour
@@ -70,8 +76,16 @@ public class PlayerLoadout : MonoBehaviour
         SubType.SuctionBomb => "SUCTION", SubType.ImpactBomb => "IMPACT", _ => "INK BOMB"
     };
     public SpecialType Special => special;
-    public string SpecialName => special == SpecialType.BubbleShield ? "BUBBLE" : "INKSTRIKE";
+    public string SpecialName => special == SpecialType.BubbleShield ? "BUBBLE" : special == SpecialType.InkStrike ? "INKSTRIKE" : "SOUNDBLASTER";
     public InkStrike InkStrikePrefab => inkStrikePrefab;
+    public Soundblaster SoundblasterPrefab => soundblasterPrefab;
+    public Soundblaster LastSoundblaster { get; private set; } // tests
+    public StrikeMissile BackMissile => backMissile;          // tests: the one on our back (null: none)
+    public StrikeMissile LastLaunchedMissile { get; private set; } // tests
+    public bool StrikeWindingUp => strikeLaunchAt >= 0f;
+    // A special running: aiming or winding up an Inkstrike, the shield up, our Soundblaster out. No
+    // charge meanwhile, and no using it again.
+    public bool SpecialRunning => ShieldActive || Targeting || StrikeWindingUp || LastSoundblaster != null;
     public Sprite SpecialIcon => SpecialIconOf(special);
     public bool Targeting { get; private set; } // picking an Inkstrike spot on the map
     public float SubInkCost => InkCost(sub);
@@ -94,7 +108,7 @@ public class PlayerLoadout : MonoBehaviour
     public bool CanUseSub => player.InkLevel >= SubInkCost;
     public float SpecialPoints => specialPoints;
     public float SpecialCharge => Mathf.Clamp01(specialPoints / specialCost);
-    public bool SpecialReady => specialPoints >= specialCost && !ShieldActive;
+    public bool SpecialReady => specialPoints >= specialCost && !SpecialRunning;
     public bool ShieldActive => player.Shielded;
     public float ShieldRemaining => Mathf.Max(0f, shieldUntil - Time.time);
     public float ShieldDuration => shieldDuration;
@@ -163,9 +177,11 @@ public class PlayerLoadout : MonoBehaviour
             UpdateQueuedSub();
             UpdateHeldBomb();
             UpdateSubPreview();
+            UpdateInkStrike();
         }
         else if (player.WeaponIndex != equippedIndex) Equip(player.WeaponIndex); // they switched
         UpdateShieldVisual();
+        UpdateBackMissile();
         if (subReadyLight != null && subReadyLight.enabled != player.SubReady) subReadyLight.enabled = player.SubReady;
     }
 
@@ -214,7 +230,7 @@ public class PlayerLoadout : MonoBehaviour
     // stand. Letting go uses it; letting go in swim form calls it off (nothing spent). UseSub does
     // both at once.
 
-    bool CanStartSub => player.IsLocalPlayer && !player.IsDead && !player.IsRespawning && !player.IsSuperJumping && player.Team != 0 && !InputGate.MatchLocked && CanUseSub;
+    bool CanStartSub => player.IsLocalPlayer && !player.IsDead && !player.IsRespawning && !player.IsSuperJumping && player.Team != 0 && !InputGate.GameLocked && !player.ActionLocked && CanUseSub;
 
     // Pressed (or a held curling bomb let go) while coming out of swim form, before the kid form is
     // up to use ink: it goes as soon as it is (the model snaps up for it), within SubQueueTime.
@@ -302,7 +318,7 @@ public class PlayerLoadout : MonoBehaviour
     void UpdateHeldBomb()
     {
         if (held == null) return;
-        if (player.IsDead || player.IsRespawning || player.IsSuperJumping || InputGate.MatchLocked) { Destroy(held.gameObject); held = null; return; }
+        if (player.IsDead || player.IsRespawning || player.IsSuperJumping || InputGate.GameLocked) { Destroy(held.gameObject); held = null; return; }
         bool shown = !player.IsSquid; // tucked away in swim form (letting go then calls it off)
         if (held.gameObject.activeSelf != shown) held.gameObject.SetActive(shown);
         if (shown) player.MarkAiming(0.5f); // facing the view while it's in hand
@@ -386,7 +402,7 @@ public class PlayerLoadout : MonoBehaviour
 
     void UpdateSubPreview()
     {
-        if (readying && (player.IsDead || player.IsRespawning || player.IsSuperJumping || InputGate.MatchLocked)) readying = false;
+        if (readying && (player.IsDead || player.IsRespawning || player.IsSuperJumping || InputGate.GameLocked)) readying = false;
         bool ready = (readying || held != null) && !player.IsSquid && !player.IsDead; // in swim form: off (letting go now calls it off)
         if (!ready) { if (preview != null) preview.Hide(); return; }
         if (preview == null) preview = SubPreview.Create();
@@ -473,8 +489,9 @@ public class PlayerLoadout : MonoBehaviour
 
     public bool UseSpecial()
     {
-        if (!player.IsLocalPlayer || player.IsDead || player.IsRespawning || player.Team == 0 || !SpecialReady || InputGate.MatchLocked) return false;
+        if (!player.IsLocalPlayer || player.IsDead || player.IsRespawning || player.Team == 0 || !SpecialReady || InputGate.GameLocked) return false;
         if (special == SpecialType.InkStrike) return BeginInkStrike();
+        if (special == SpecialType.Soundblaster) return DeploySoundblaster();
         specialPoints = 0f;
         player.RefillInk();
         shieldUntil = Time.time + shieldDuration;
@@ -482,45 +499,170 @@ public class PlayerLoadout : MonoBehaviour
         return true;
     }
 
-    // Opens the map to pick the spot; the charge is only spent once one is picked.
+    // ── Inkstrike: used, it's committed (the charge spent, the missile on our back) and the map opens
+    // to pick the spot, with no way out but picking one (a splat or a scene change still ends it,
+    // lost). Picked: the strike's marked for everyone at once; we wind up for its launchDelay (slow,
+    // no attacking or swimming), then the missile launches off our back and is gone, and the strike
+    // plays out on its own (InkStrike).
+    float strikeLaunchAt = -1f;   // ours: when the missile launches (-1: not winding up)
+    float remoteLaunchAt = -1f;   // theirs: when their missile launches (from their strike message)
+
     bool BeginInkStrike()
     {
         MapScreen map = FindFirstObjectByType<MapScreen>();
-        if (map == null || inkStrikePrefab == null || Targeting) return false;
-        Targeting = map.BeginTargeting(inkStrikePrefab.Radius, LaunchInkStrike, () => Targeting = false);
-        return Targeting;
+        if (map == null || inkStrikePrefab == null || Targeting || StrikeWindingUp) return false;
+        if (!map.BeginTargeting(inkStrikePrefab.Radius, LaunchInkStrike, EndStrikeUnlaunched, cancellable: false)) return false;
+        Targeting = true;
+        specialPoints = 0f; // committed
+        player.RefillInk();
+        player.MissileOnBack = true;
+        return true;
     }
 
-    // The spot picked on the map (tests may call this directly).
-    public void LaunchInkStrike(Vector3 target)
+    // The targeting ended without a spot (forced: we were splatted, or the scene changed): it's lost.
+    void EndStrikeUnlaunched()
     {
         Targeting = false;
-        if (!SpecialReady || player.IsDead || InputGate.MatchLocked) return; // splatted, or the match moved on, while picking
-        specialPoints = 0f;
-        player.RefillInk();
-        Instantiate(inkStrikePrefab).Begin(player.OwnerId, player.Team, target, ownedLocally: true);
-        NetGameManager.Instance?.SendInkStrike(player.OwnerId, player.Team, target);
+        player.MissileOnBack = false;
     }
 
-    // Other players' strikes, from their InkStrike message: marker and blast only.
+    // The spot picked on the map (tests may call this directly, with a full charge).
+    public void LaunchInkStrike(Vector3 target)
+    {
+        bool committed = Targeting;
+        Targeting = false;
+        if (player.IsDead || InputGate.GameLocked) { EndStrikeUnlaunched(); return; } // splatted, or the match moved on, while picking
+        if (!committed)
+        {
+            if (!SpecialReady) return;
+            specialPoints = 0f;
+            player.RefillInk();
+        }
+        InkStrike strike = Instantiate(inkStrikePrefab);
+        strike.Begin(player.OwnerId, player.Team, target, ownedLocally: true);
+        NetGameManager.Instance?.SendInkStrike(player.OwnerId, player.Team, target);
+        // Winding up: the missile still on our back, slow, no attacking or swimming.
+        player.MissileOnBack = true;
+        strikeLaunchAt = Time.time + strike.LaunchDelay;
+        player.ActionLocked = true;
+        player.SpecialSpeedMultiplier = strikeWindupSpeed;
+    }
+
+    // Ours: splatted (or the match locked) while aiming: the map closes and it's lost. Wound up: it launches.
+    void UpdateInkStrike()
+    {
+        if (Targeting && (player.IsDead || InputGate.GameLocked))
+        {
+            MapScreen map = FindFirstObjectByType<MapScreen>();
+            if (map != null && map.IsTargeting) map.ForceClose(); else EndStrikeUnlaunched();
+        }
+        if (strikeLaunchAt >= 0f && (Time.time >= strikeLaunchAt || player.IsDead))
+        {
+            strikeLaunchAt = -1f;
+            player.ActionLocked = false;
+            player.SpecialSpeedMultiplier = 1f;
+            LaunchMissile();
+            player.MissileOnBack = false;
+        }
+    }
+
+    // Other players' strikes, from their InkStrike message: the marker and the strike; their missile
+    // launches off their back after the strike's launchDelay.
     public void SpawnRemoteInkStrike(InkStrikeData d)
     {
-        if (inkStrikePrefab != null) Instantiate(inkStrikePrefab).Begin(d.ownerId, d.team, d.position, ownedLocally: false);
+        if (inkStrikePrefab == null) return;
+        InkStrike strike = Instantiate(inkStrikePrefab);
+        strike.Begin(d.ownerId, d.team, d.position, ownedLocally: false);
+        remoteLaunchAt = Time.time + strike.LaunchDelay;
+    }
+
+    // The missile on our (or their) back while it's readied; launched off it when the time comes.
+    StrikeMissile backMissile;
+    float hideBackMissileUntil = -1f; // theirs: launched, until their state says it's gone
+    Transform inkTank;
+
+    void UpdateBackMissile()
+    {
+        if (remoteLaunchAt >= 0f && Time.time >= remoteLaunchAt)
+        {
+            remoteLaunchAt = -1f;
+            LaunchMissile();
+            hideBackMissileUntil = Time.time + 1f;
+        }
+        bool want = player.MissileOnBack && !player.IsDead && Time.time >= hideBackMissileUntil && strikeMissilePrefab != null;
+        if (want && backMissile == null)
+        {
+            if (inkTank == null) inkTank = FindChild(player.transform, "InkTank");
+            if (inkTank == null) return;
+            backMissile = Instantiate(strikeMissilePrefab);
+            backMissile.Mount(inkTank, player.TeamColour);
+        }
+        else if (!want && backMissile != null) { Destroy(backMissile.gameObject); backMissile = null; }
+    }
+
+    void LaunchMissile()
+    {
+        UpdateBackMissile(); // (mounted if it should be)
+        if (backMissile == null) return;
+        LastLaunchedMissile = backMissile.Launch(player.TeamColour);
+        Destroy(backMissile.gameObject);
+        backMissile = null;
+    }
+
+    static Transform FindChild(Transform root, string name)
+    {
+        foreach (Transform t in root.GetComponentsInChildren<Transform>(true)) if (t.name == name) return t;
+        return null;
+    }
+
+    // ── Soundblaster: set down in front of us, facing where we look (on the flat).
+    bool DeploySoundblaster()
+    {
+        if (soundblasterPrefab == null) return false;
+        Vector3 forward = Vector3.ProjectOnPlane(player.AimForward, Vector3.up);
+        if (forward.sqrMagnitude < 1e-4f) forward = Vector3.ProjectOnPlane(player.transform.forward, Vector3.up);
+        forward.Normalize();
+        Vector3 at = player.transform.position + forward * soundblasterDistance;
+        // On the ground there (or where we stand, if a wall's in the way or there's no ground ahead).
+        if (Physics.Raycast(player.BodyCenter, forward, out RaycastHit wall, soundblasterDistance + 0.5f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore))
+            at = player.transform.position + forward * Mathf.Max(0f, wall.distance - 0.6f);
+        if (Physics.Raycast(at + Vector3.up * 1f, Vector3.down, out RaycastHit ground, 3f, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) at = ground.point;
+        else at.y = player.transform.position.y;
+        float yaw = Quaternion.LookRotation(forward).eulerAngles.y;
+        specialPoints = 0f;
+        player.RefillInk();
+        player.MarkAiming(0.5f);
+        LastSoundblaster = Instantiate(soundblasterPrefab);
+        LastSoundblaster.Begin(player.OwnerId, player.Team, at, yaw, ownedLocally: true);
+        NetGameManager.Instance?.SendSoundblaster(player.OwnerId, player.Team, at, yaw);
+        return true;
+    }
+
+    // Other players' Soundblasters, from their message: the speaker and its beam (no damage here).
+    public void SpawnRemoteSoundblaster(SoundblasterData d)
+    {
+        if (soundblasterPrefab != null) Instantiate(soundblasterPrefab).Begin(d.ownerId, d.team, d.position, d.yaw, ownedLocally: false);
     }
 
     // No charge while the special is running.
     public void AddSpecialPoints(float points)
     {
-        if (ShieldActive || points <= 0f) return;
+        if (SpecialRunning || points <= 0f) return;
         specialPoints = Mathf.Min(specialCost, specialPoints + points);
     }
 
-    // Match start: no charge, no shield, full tank.
+    // Match start: no charge, no shield, no special running, full tank.
     public void ResetForMatch()
     {
         specialPoints = 0f;
         shieldUntil = -1f;
         player.Shielded = false;
+        if (Targeting) { MapScreen map = FindFirstObjectByType<MapScreen>(); if (map != null && map.IsTargeting) map.ForceClose(); else EndStrikeUnlaunched(); }
+        strikeLaunchAt = -1f;
+        player.ActionLocked = false;
+        player.SpecialSpeedMultiplier = 1f;
+        player.MissileOnBack = false;
+        if (LastSoundblaster != null) Destroy(LastSoundblaster.gameObject);
         player.RefillInk();
     }
 

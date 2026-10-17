@@ -49,7 +49,8 @@ public enum NetMsg : ushort
     SubDamage,       // a hit on someone's sub, sent to its owner
     InkStrike,       // a player called in an Inkstrike (special)
     LoadScene,       // the host moving everyone to another scene (SceneLoadData)
-    Kill             // a player was splatted (or fell), from their own client: the killfeed and the burst (KillData)
+    Kill,            // a player was splatted (or fell), from their own client: the killfeed and the burst (KillData)
+    Soundblaster     // a player deployed a Soundblaster (special): SoundblasterData. Append only: these are wire ids
 }
 
 // Where a player sits in the roster. Alpha/Beta match the team numbers used everywhere else.
@@ -77,6 +78,8 @@ public class PlayerStateData
     public bool weaponDown;   // its down pose (a roller rolling)
     public float modelYaw;    // which way the kid model faces (it turns to the way they move unless aiming)
     public bool aiming;       // firing or using a sub: their weapon follows camPitch
+    public NVector3 aimEnd;   // where a charging Sniper's laser ends (null: none), so remotes draw the same line
+    public bool missileOnBack; // an Inkstrike readied: its missile on their back
     public bool superJumping; // in a Super Jump's flight: their trail shows
 }
 
@@ -183,7 +186,7 @@ public class SubDamageData
 }
 
 // ── Specials ──────────────────────────────────────────────────────────────
-public enum SpecialType { BubbleShield, InkStrike }
+public enum SpecialType { BubbleShield, InkStrike, Soundblaster } // append only: saved and synced
 
 [System.Serializable]
 public class InkStrikeData
@@ -191,6 +194,15 @@ public class InkStrikeData
     public ulong ownerId;
     public int team;
     public NVector3 position; // the target, on the ground
+}
+
+[System.Serializable]
+public class SoundblasterData
+{
+    public ulong ownerId;
+    public int team;
+    public NVector3 position; // where it stands, on the ground
+    public float yaw;         // which way it faces (degrees): its beam's heading
 }
 
 // ── A player splatted (or fell out of bounds), told by their own client ──

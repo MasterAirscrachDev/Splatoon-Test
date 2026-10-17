@@ -180,9 +180,33 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.1f, "charge, aimed steeply down");
         bool offRing = reticle != null && reticle.Blocked;
         float limited = sniper.AimEnd(out Vector3 end) ? Mathf.Asin((end - sniper.ShotOrigin.position).normalized.y) * Mathf.Rad2Deg : 0f;
+        // Our laser's end goes out with our state (others draw it there), and clears once we fire.
+        PlayerStateData state = player.GetNetState(player.OwnerId, 0);
+        float sentOff = state.aimEnd != null ? Vector3.Distance(state.aimEnd, sniper.LaserEnd) : -1f;
         sniper.ScriptedFire = false;
         sniper.ScriptedAim = null;
         yield return Hold(Still, false, 0.3f, "fire");
+        bool sentCleared = player.GetNetState(player.OwnerId, 0).aimEnd == null;
+
+        // Theirs: their laser drawn to the end they send, the gun turned along it; gone when they stop.
+        const ulong Them = 3602;
+        Vector3 theirAt = new Vector3(start.x, station.position.y + 0.05f, start.z) - forward * 4f + Vector3.Cross(Vector3.up, forward) * 3f;
+        SpawnRemote(Them, enemyTeam, theirAt, "SniperRemote");
+        Vector3 theirEnd = theirAt + forward * 10f + Vector3.up * 0.5f;
+        NetGameManager.Instance.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = Them, position = theirAt, moveDir = Vector2.zero, team = enemyTeam, weapon = index, weaponDown = true, aimEnd = theirEnd, bodyYaw = Quaternion.LookRotation(forward).eulerAngles.y }, Them);
+        yield return Hold(Still, false, 0.6f, "their charge");
+        PlayerController them = NetGameManager.Instance.GetPlayer(Them);
+        var theirSniper = them != null ? them.GetComponent<PlayerLoadout>().CurrentWeapon as Sniper : null;
+        bool theirShown = theirSniper != null && theirSniper.LaserShown;
+        float theirOff = theirSniper != null ? Vector3.Distance(theirSniper.LaserEnd, theirEnd) : -1f;
+        float theirAlign = theirSniper != null ? Vector3.Angle(theirSniper.transform.forward, theirEnd - theirSniper.ShotOrigin.position) : 180f;
+        NetGameManager.Instance.Receive(NetMsg.PlayerState, new PlayerStateData { steamId = Them, position = theirAt, moveDir = Vector2.zero, team = enemyTeam, weapon = index, weaponDown = false }, Them);
+        yield return Hold(Still, false, 0.2f, "their release");
+        bool theirGone = theirSniper == null || !theirSniper.LaserShown;
+        Despawn(Them);
+        Note($"our laser's end sent {(sentOff >= 0f ? $"{sentOff:F2}m from where it's drawn" : "NOT AT ALL")}, {(sentCleared ? "cleared" : "STILL SENT")} after firing; theirs {(theirShown ? "shown" : "NOT shown")}, ending {theirOff:F2}m from where they said, gun {theirAlign:F1}° off it, {(theirGone ? "gone" : "STILL SHOWN")} when they stopped");
+        if (sentOff < 0f || sentOff > 0.01f || !sentCleared) Fail("our laser's end isn't sent with our state (or isn't cleared after firing)");
+        if (!theirShown || theirOff > 0.1f || theirAlign > 2f || !theirGone) Fail("their laser isn't drawn to the end they send (or doesn't go when they stop)");
         Note($"looking level: true reticle {shortOff:F0}px off the ring at charge {shortCharge:F2}, {fullOff:F0}px fully charged ({(onRing ? "on it" : "OFF it")}); aimed about 80° down, {(offRing ? "off it" : "STILL ON IT")}, aiming {limited:F0}° (its limit)");
         if (reticle != null && (!onRing || !offRing)) Fail("the laser and true reticle don't end on the cursor when a full charge reaches it (and off it past its aim limits)");
         if (reticle != null && shortOff < fullOff + 4f) Fail("the true reticle doesn't sit short of the cursor with little charge");

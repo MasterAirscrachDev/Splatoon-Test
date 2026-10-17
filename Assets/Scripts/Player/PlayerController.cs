@@ -310,7 +310,11 @@ public partial class PlayerController : MonoBehaviour, ISuperJumpTarget
     public bool SubReady { get; set; }       // enough ink for the sub (the tank's light)
     public int WeaponIndex { get; set; }     // equipped main weapon (PlayerLoadout)
     public bool WeaponDown { get; set; }     // weapon in its down pose (a roller rolling), synced so remotes show it
+    public Vector3? AimEnd { get; set; }     // where a charging Sniper's laser ends (null: none), synced so remotes draw it there
     public float WeaponSpeedMultiplier { get; set; } = 1f; // x walking speed, set by the weapon (rolling)
+    public float SpecialSpeedMultiplier { get; set; } = 1f; // x walking speed, set by a special (an Inkstrike winding up)
+    public bool ActionLocked { get; set; }   // a special's windup: no attacking, subs or swimming (moving still works)
+    public bool MissileOnBack { get; set; }  // an Inkstrike readied: its missile on our back (synced)
     public bool AttackHeld { get; set; }     // the attack button is down (set by the weapon): out of swim form, it acts at once
     public bool ActionQueued { get; set; }   // a sub waiting for the kid form (set by PlayerLoadout): likewise
 

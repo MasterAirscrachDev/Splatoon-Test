@@ -76,19 +76,25 @@ public abstract class Weapon : MonoBehaviour
     }
 
     // The ink-coloured parts (material slots named Ink...) in the owner's team colour.
-    MaterialPropertyBlock tintBlock;
     void Tint()
     {
-        if (Owner == null) return;
+        if (Owner != null) TintInkParts(gameObject, Owner.TeamColour);
+    }
+
+    // Any model's ink-coloured parts (material slots named Ink...) in a colour: weapons, the
+    // Inkstrike's missile, the Soundblaster.
+    static MaterialPropertyBlock tintBlock;
+    public static void TintInkParts(GameObject root, Color colour)
+    {
         tintBlock ??= new MaterialPropertyBlock();
-        foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
+        foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
         {
             Material[] mats = r.sharedMaterials;
             for (int i = 0; i < mats.Length; i++)
             {
                 if (mats[i] == null || !mats[i].name.StartsWith("Ink")) continue;
                 r.GetPropertyBlock(tintBlock, i);
-                tintBlock.SetColor("_Color", Owner.TeamColour);
+                tintBlock.SetColor("_Color", colour);
                 r.SetPropertyBlock(tintBlock, i);
             }
         }

@@ -156,7 +156,12 @@ public class LoadoutMenu : MonoBehaviour
         if (loadout.Special == SpecialType.InkStrike && loadout.InkStrikePrefab != null)
         {
             InkStrike s = loadout.InkStrikePrefab;
-            return $"Pick a spot on the map: {s.Delay:0.#}s later a column of ink {s.Radius * 2f:0}m wide covers it and splats everyone inside. Refills ink.";
+            return $"Pick a spot on the map (no going back once used): {s.Delay:0.#}s later a column of ink {s.Radius * 2f:0}m wide covers it and splats everyone inside. You're slowed while it launches. Refills ink.";
+        }
+        if (loadout.Special == SpecialType.Soundblaster && loadout.SoundblasterPrefab != null)
+        {
+            Soundblaster b = loadout.SoundblasterPrefab;
+            return $"Set down a speaker facing where you look: {b.Windup:0.#}s later its beam ({b.Radius * 2f:0}m wide, through walls, across the map) blasts for {b.BlastTime:0.#}s, {b.TickDamage:0} damage every {b.TickInterval:0.##}s. Refills ink.";
         }
         return $"{loadout.ShieldDuration:0}s immune to damage. Refills ink.";
     }

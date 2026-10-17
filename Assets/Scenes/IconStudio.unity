@@ -371,6 +371,16 @@ MonoBehaviour:
     special: 0
     specialType: 0
     fileName: 
+  - prefab: {fileID: 1386211608723531109, guid: 0e9bba0298d971d46b8f7ab130404155, type: 3}
+    angle: {x: 15, y: 140, z: 0}
+    zoom: 1
+    offset: {x: 0, y: 0}
+    show: []
+    hide: []
+    inkParts: []
+    special: 1
+    specialType: 2
+    fileName: Soundblaster
 --- !u!4 &83564150
 Transform:
   m_ObjectHideFlags: 0

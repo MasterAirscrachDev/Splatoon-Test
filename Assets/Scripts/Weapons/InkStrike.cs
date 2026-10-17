@@ -2,8 +2,10 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // Special: a column of ink called in from the map. The column runs from the lowest ground under the
-// area (even when aimed at something tall) to well above the target. It's marked for everyone, then
-// after a moment an ink column (a spinning mesh, with ink spiralling around it) grows out of
+// area (even when aimed at something tall) to well above the target. It's marked for everyone (the
+// target ball: a see-through dome with rings sweeping down it, a band of spinning warning chevrons
+// round it) the moment the spot's picked; the thrower's missile launches off their back after
+// launchDelay (PlayerLoadout), and after `delay` more an ink column (a spinning mesh, with ink spiralling around it) grows out of
 // nothing into a thin column up its middle, then widens to nearly the whole area for the explosion
 // (the ink and the damage spreading with it), holds, and shrinks back to nothing. The owner's client
 // paints every surface in the column
@@ -16,7 +18,8 @@ public class InkStrike : MonoBehaviour
     [SerializeField] float radius = 6f;
     [SerializeField] float height = 18f;          // the column reaches this far above the target
     [SerializeField] float groundSearch = 200f;   // how far below the target to look for the column's bottom
-    [SerializeField] float delay = 1f;            // marked for this long before it strikes
+    [SerializeField] float launchDelay = 1f;      // from the spot being picked to the missile launching (the thrower winds up)
+    [SerializeField] float delay = 1f;            // then this long before it strikes
     [SerializeField] float spreadTime = 1f;       // then the tornado widens, ink and damage spreading with it, from the middle to the edge
 
     [Header("Damage")]
@@ -32,7 +35,9 @@ public class InkStrike : MonoBehaviour
     [SerializeField] float wallRayAngleStep = 15f;
 
     [Header("Look")]
-    [SerializeField] Transform marker;            // primitive cylinder, scaled to the column
+    [SerializeField] Transform marker;            // the target ball (its ring and dome), scaled to the area
+    [SerializeField] float markerModelRadius = 3f; // the ball model's radius at scale 1
+    [SerializeField] float markerFadeTime = 0.1f;  // the target ball's gone this soon after it strikes
     [SerializeField] Transform column;            // the central column mesh (sized from its bounds), in the team colour
     [SerializeField] float columnSpin = 240f;     // degrees per second
     [SerializeField] ParticleSystem tornado;      // ink spiralling up around the column
@@ -49,8 +54,7 @@ public class InkStrike : MonoBehaviour
     [SerializeField] float fluidSize = 0.5f;      // its particles are drawn as fluid ink (InkFluid): radius x their size...
     [SerializeField] float fluidStretch = 0.08f;  // ...stretched along their motion
 
-    static readonly int CoreAlpha = Shader.PropertyToID("_CoreAlpha");
-    static readonly int RimAlpha = Shader.PropertyToID("_RimAlpha");
+    static readonly int FadeId = Shader.PropertyToID("_Fade");
     static readonly int ColourId = Shader.PropertyToID("_Color");
     static readonly int SeedId = Shader.PropertyToID("_Seed");
 
@@ -76,7 +80,10 @@ public class InkStrike : MonoBehaviour
 
     public float Radius => radius;
     public float Height => height;
-    public float Delay => delay;
+    public float Delay => launchDelay + delay; // from the spot being picked to the strike
+    public float LaunchDelay => launchDelay;
+    public float StartTime => startTime;      // when it was marked
+    public bool MarkerShown => marker != null && marker.gameObject.activeSelf;
     public bool Struck => struck;
     public Vector3 Target => target;
     public float Bottom => bottom;
@@ -101,11 +108,11 @@ public class InkStrike : MonoBehaviour
         bottom = FindBottom();
         top = target.y + height;
 
-        // Unity's cylinder is 1 wide and 2 tall: span the column, from just below its bottom.
-        float length = top - (bottom - 1f);
-        marker.localScale = new Vector3(radius * 2f, length / 2f, radius * 2f);
-        marker.localPosition = new Vector3(0f, (top + bottom - 1f) / 2f - target.y, 0f);
-        Tint(0.15f, 0.8f);
+        // The target ball, as wide as the area, sitting on the target.
+        marker.localScale = Vector3.one * (radius / Mathf.Max(0.01f, markerModelRadius));
+        marker.localPosition = Vector3.zero;
+        marker.gameObject.SetActive(true);
+        Tint(1f);
 
         // Fit the effects to the column, in the team colour (drawn as ink, not by their renderers).
         foreach (ParticleSystem ps in new[] { tornado, burst })
@@ -186,14 +193,13 @@ public class InkStrike : MonoBehaviour
         float t = Time.time - startTime;
         if (!struck)
         {
-            Tint(0.1f + 0.1f * Mathf.Sin(t * 18f), 0.8f); // flickers while it's coming
-            if (t >= delay) Strike();
+            if (t >= Delay) Strike(); // (the ball's shaders animate it while it's coming)
             return;
         }
 
         // Grows out of nothing into a thin column, widens to nearly the whole area (the ink and
         // damage spreading with it), holds, and shrinks back to nothing.
-        float s = t - delay;
+        float s = t - Delay;
         float form = 1f - Mathf.Pow(1f - Mathf.Clamp01(s / riseTime), 3f); // eases out: soon a thin column
         float spread = Mathf.SmoothStep(0f, 1f, (s - riseTime) / spreadTime);
         float close = Mathf.SmoothStep(0f, 1f, (s - AttackTime - holdTime) / shrinkTime);
@@ -206,8 +212,7 @@ public class InkStrike : MonoBehaviour
         if (authoritative) Advance();
         Splash(spread);
 
-        float k = Mathf.Clamp01(s / AttackTime);
-        Tint(0.15f * (1f - k), 0.8f * (1f - k));
+        Tint(1f - Mathf.Clamp01(s / Mathf.Max(markerFadeTime, 0.001f))); // the ball's gone almost at once as it strikes
         bool done = s >= AttackTime + holdTime + shrinkTime;
         if (done && tornado.isEmitting) tornado.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear); // gone with the column
         if (done && !tornado.IsAlive(true) && !burst.IsAlive(true)) Destroy(gameObject);
@@ -273,15 +278,20 @@ public class InkStrike : MonoBehaviour
         burst.Emit(n);
     }
 
-    void Tint(float core, float rim)
+    // The target ball (both its materials) in the team colour, faded by `fade` (0: gone).
+    void Tint(float fade)
     {
-        Renderer r = marker.GetComponent<Renderer>();
-        if (r == null) return;
-        r.GetPropertyBlock(block);
-        block.SetColor(ColourId, colour);
-        block.SetFloat(CoreAlpha, core);
-        block.SetFloat(RimAlpha, rim);
-        r.SetPropertyBlock(block);
+        bool shown = fade > 0.001f;
+        if (marker.gameObject.activeSelf != shown) marker.gameObject.SetActive(shown);
+        if (!shown) return;
+        foreach (Renderer r in marker.GetComponentsInChildren<Renderer>(true))
+            for (int i = 0; i < r.sharedMaterials.Length; i++)
+            {
+                r.GetPropertyBlock(block, i);
+                block.SetColor(ColourId, colour);
+                block.SetFloat(FadeId, fade);
+                r.SetPropertyBlock(block, i);
+            }
     }
 
     void Strike()

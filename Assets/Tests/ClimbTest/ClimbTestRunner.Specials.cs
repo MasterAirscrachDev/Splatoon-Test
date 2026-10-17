@@ -184,30 +184,55 @@ public partial class ClimbTestRunner
         yield return Hold(Still, false, 0.3f, "ready");
         player.ConsumeInk(0.5f);
 
-        // Using it opens the map to aim; cancelling keeps the charge.
+        // Using it commits it: the charge spent, the missile on our back, the map open to aim, and
+        // Esc (or closing the map) does nothing.
         if (!loadout.UseSpecial() || !map.IsOpen || !map.IsTargeting) Fail("using it didn't open the map to aim");
+        yield return null;
+        bool spentOnUse = loadout.SpecialPoints == 0f, onBack = loadout.BackMissile != null && player.MissileOnBack;
         map.CancelTargeting();
+        map.SetOpen(false);
         yield return null;
-        if (map.IsOpen || loadout.Targeting || loadout.SpecialPoints < 1000f) Fail("cancelling didn't close the map (or spent the charge)");
+        bool stillAiming = map.IsOpen && map.IsTargeting && loadout.Targeting;
+        Note($"used: charge {(spentOnUse ? "spent" : "NOT SPENT")}, missile {(onBack ? "on our back" : "NOT on our back")}; Esc and closing the map: {(stillAiming ? "still aiming" : "CANCELLED")}");
+        if (!spentOnUse || !onBack) Fail("using it didn't spend the charge and put the missile on our back");
+        if (!stillAiming) Fail("the strike could be cancelled once used");
 
-        // Pick the spot on the map: it's marked, then strikes after the delay.
-        loadout.UseSpecial();
-        yield return null;
+        // Pick the spot on the map: it's marked at once (the target ball); we wind up (slow, no
+        // swimming), the missile launches off our back and flies away, then it strikes.
         if (!map.PickTargetAt(map.MapPosition(target, false))) Fail("couldn't pick the spot on the map");
         yield return null;
         InkStrike strike = FindFirstObjectByType<InkStrike>();
+        bool locked = player.ActionLocked && Mathf.Abs(player.SpecialSpeedMultiplier - 0.3f) < 0.01f && loadout.BackMissile != null;
+        bool markedNow = strike != null && strike.MarkerShown;
+        yield return Hold(Still, true, 0.5f, "windup: try to swim");
+        bool swamInWindup = player.IsSquid;
+        yield return HoldUntil(Still, false, 2f, "windup", f => !player.ActionLocked);
+        yield return Hold(Still, false, 0.15f, "launch");
+        StrikeMissile flying = loadout.LastLaunchedMissile;
+        float flyingY = flying != null ? flying.transform.position.y - player.transform.position.y : -1f;
+        bool backClear = loadout.BackMissile == null && !player.MissileOnBack;
+        Note($"picked: marked {(markedNow ? "at once" : "NOT at once")}; winding up {(locked ? "locked, x0.3 speed, missile still on our back" : "NOT LOCKED")}, {(swamInWindup ? "SWAM" : "couldn't swim")}; launched: missile {(flying != null ? $"flying, {flyingY:F1}m up" : "NOT LAUNCHED")}, back {(backClear ? "clear" : "STILL CARRYING IT")}, speed x{player.SpecialSpeedMultiplier:F1}");
+        if (!markedNow) Fail("the target ball didn't show the moment the spot was picked");
+        if (!locked || swamInWindup) Fail("winding up didn't lock attacking and swimming at 0.3x speed");
+        if (flying == null || !flying.Flying || flyingY < 1.5f || !backClear || player.ActionLocked || player.SpecialSpeedMultiplier != 1f) Fail("the missile didn't launch up off our back (and free us) after the windup");
+
         if (strike == null) { Fail("no strike after picking"); loadout.SetSpecial(SpecialType.BubbleShield); NetGameManager.SendOverride = null; yield break; }
         float aimError = new Vector2(strike.Target.x - target.x, strike.Target.z - target.z).magnitude;
         Note($"strike {aimError:F2}m from the spot picked on the map");
         if (aimError > 0.5f) Fail("the strike isn't where the map was clicked");
         if (loadout.SpecialPoints != 0f || player.InkLevel < 0.99f) Fail("didn't spend the charge and refill ink");
         if (!sent.Any(m => m.id == NetMsg.InkStrike && m.data is InkStrikeData d && Vector3.Distance(d.position, strike.Target) < 0.01f)) Fail("strike wasn't broadcast");
-        if (strike.Struck) Fail("struck without the warning delay");
+        float markedAt = strike.StartTime;
         sent.Clear();
-        float markedAt = Time.time;
         yield return HoldUntil(Still, false, 3f, "strike", f => strike == null || strike.Struck);
-        Note($"struck {Time.time - markedAt:F2}s after being marked");
+        Note($"struck {Time.time - markedAt:F2}s after being marked (launch {strike.LaunchDelay:F1}s + {strike.Delay - strike.LaunchDelay:F1}s)");
         if (Mathf.Abs(Time.time - markedAt - loadout.InkStrikePrefab.Delay) > 0.1f) Fail("didn't strike after its delay");
+        bool ballAtStrike = strike != null && strike.MarkerShown;
+        yield return Hold(Still, false, 0.2f, "ball fades");
+        bool ballGone = strike == null || !strike.MarkerShown;
+        Note($"target ball {(ballAtStrike ? "shown" : "already gone")} as it struck, {(ballGone ? "gone" : "STILL SHOWN")} 0.2s later");
+        if (!ballGone) Fail("the target ball didn't fade almost at once when it struck");
+
         float strikeWidth = strike.Width;
 
         // It spreads out from the middle: halfway, the core is hit but the edge isn't yet.
@@ -224,6 +249,8 @@ public partial class ClimbTestRunner
         if (halfwayWidth <= strike.TightRadius || halfwayWidth >= strike.FullWidth) Fail("the column wasn't widening from thin to full");
         if (Mathf.Abs(fullWidth - strike.FullWidth) > 0.05f) Fail("the column didn't reach its full size");
         yield return Hold(Still, false, 0.3f, "after");
+
+        if (flying != null) Fail("the launched missile didn't despawn");
 
         // Inside is our ink; enemies inside got lethal damage, nobody else did.
         int inked = 0, probes = 0;

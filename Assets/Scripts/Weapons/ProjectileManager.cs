@@ -75,6 +75,13 @@ public class ProjectileManager : MonoBehaviour
         }
     }
 
+    // Every shot in the air gone at once (a map reset: none lands after it).
+    public static void ClearAll()
+    {
+        if (instance == null) return;
+        for (int i = instance.live.Count - 1; i >= 0; i--) instance.Retire(i);
+    }
+
     void Awake()
     {
         hitMask = PhysicsLayers.Environment | LayerMask.GetMask("Hitbox");
@@ -212,8 +219,9 @@ public class ProjectileManager : MonoBehaviour
             PlayerHitbox hitbox = c.GetComponentInParent<PlayerHitbox>();
             if (hitbox != null)
             {
-                if (hitbox.Team == s.team || s.damage <= 0f) continue; // teammates and the shooter; drips fall through
+                if (hitbox.Team == s.team || s.damage <= 0f) continue; // teammates and the shooter; no-damage shots (fillers, drips) carry on to ink under them
                 if (s.authoritative && FirstHit(s, hitbox)) hitbox.TakeDamage(s.DamageNow, s.team, s.ownerId, s.source);
+                InkUnder(s, point); // the hit inks the surface under them too (a swimmer's own spot included: it knocks them out)
                 Detonate(s, from + dir * Mathf.Max(0f, h.distance), hitbox); // they took the direct hit
                 End(s, point, EndReason.Target);
                 return true;
@@ -246,6 +254,18 @@ public class ProjectileManager : MonoBehaviour
     }
 
     static bool FirstHit(Shot s, Object target) => s.hitGroup == null || s.hitGroup.Add(target);
+
+    const float UnderReach = 2.5f; // how far below a hit on a player to look for the surface they're on
+
+    // A shot that hits a player still inks the surface they're on, under where it hit (the owner's
+    // splat; everyone else gets it as a Splat message).
+    void InkUnder(Shot s, Vector3 at)
+    {
+        if (!s.authoritative || s.blast != null) return; // a blast inks around itself
+        if (!Physics.Raycast(at + Vector3.up * 0.1f, Vector3.down, out RaycastHit hit, UnderReach, PhysicsLayers.Environment, QueryTriggerInteraction.Ignore)) return;
+        SurfaceInkManager ink = hit.collider.GetComponent<SurfaceInkManager>();
+        if (ink != null) ink.SplatAt(hit, s.splashSize, s.team);
+    }
 
     // Splats the surface (re-cast onto it for the exact point and, for mesh colliders, its UV), and
     // splatters there if it's seen (on any surface).

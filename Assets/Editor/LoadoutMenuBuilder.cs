@@ -74,7 +74,8 @@ public static class LoadoutMenuBuilder
         float subX = RightX - 170, specialX = RightX + 200;
         Button[] subs = TileRow(panel, "SUB", subX, SubNames, 340, out TextMeshProUGUI subInfo);
         LayoutSubTiles(subs, subInfo);
-        Button[] specials = TileRow(panel, "SPECIAL", specialX, new[] { "Bubble Shield", "InkStrike" }, 300, out TextMeshProUGUI specialInfo);
+        Button[] specials = TileRow(panel, "SPECIAL", specialX, SpecialNames, 300, out TextMeshProUGUI specialInfo);
+        LayoutSpecialTiles(specials);
 
         Button close = MenuButton("Close", panel, "Close", new Vector2(0, -(PanelHeight - 80)), new Vector2(180, 46), out _);
         TextMeshProUGUI hint = Text("Hint", panel, "L / Esc to close", 16, new Color(1f, 1f, 1f, 0.5f), TextAlignmentOptions.Center, false, useOutline: false);
@@ -152,6 +153,60 @@ public static class LoadoutMenuBuilder
             so.ApplyModifiedPropertiesWithoutUndo();
             PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
             return $"[LoadoutMenu] sub tiles {had} -> {tiles.Count}, {SubColumns} across";
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(root);
+        }
+    }
+
+    // The specials' tiles in SpecialType order, a row scaled like the subs' to fit beside them.
+    static readonly string[] SpecialNames = { "Bubble Shield", "InkStrike", "Soundblaster" };
+    const float SpecialX = RightX + 200;
+
+    static void LayoutSpecialTiles(Button[] specials)
+    {
+        float step = SmallStep * SubTileScale;
+        for (int i = 0; i < specials.Length; i++)
+        {
+            var rt = (RectTransform)specials[i].transform;
+            rt.anchoredPosition = new Vector2(SpecialX + (i - (specials.Length - 1) * 0.5f) * step, SubTop);
+            rt.localScale = Vector3.one * SubTileScale;
+        }
+    }
+
+    // Migration: grows the existing panel's special tiles to one per special (copies of its last,
+    // relabelled) and lays them out.
+    [MenuItem("Tools/UI/Fit Loadout Menu Special Slots")]
+    public static void FitSpecialSlotsMenu() => Debug.Log(FitSpecialSlots());
+
+    public static string FitSpecialSlots()
+    {
+        GameObject root = PrefabUtility.LoadPrefabContents(PrefabPath);
+        try
+        {
+            LoadoutMenu menu = root.GetComponentInChildren<LoadoutMenu>(true);
+            var so = new SerializedObject(menu);
+            SerializedProperty array = so.FindProperty("specialButtons");
+            var tiles = new System.Collections.Generic.List<Button>();
+            for (int i = 0; i < array.arraySize; i++) tiles.Add((Button)array.GetArrayElementAtIndex(i).objectReferenceValue);
+            int had = tiles.Count;
+            if (had == 0) return "[LoadoutMenu] no special tiles to copy";
+            Button last = tiles[had - 1];
+            while (tiles.Count < SpecialNames.Length)
+            {
+                var copy = Object.Instantiate(last.gameObject, last.transform.parent);
+                copy.name = SpecialNames[tiles.Count];
+                copy.transform.SetSiblingIndex(tiles[tiles.Count - 1].transform.GetSiblingIndex() + 1);
+                TMP_Text label = copy.GetComponentInChildren<TMP_Text>(true);
+                if (label != null) label.text = SpecialNames[tiles.Count];
+                tiles.Add(copy.GetComponent<Button>());
+            }
+            LayoutSpecialTiles(tiles.ToArray());
+            Assign(array, tiles.ToArray());
+            so.ApplyModifiedPropertiesWithoutUndo();
+            PrefabUtility.SaveAsPrefabAsset(root, PrefabPath);
+            return $"[LoadoutMenu] special tiles {had} -> {tiles.Count}";
         }
         finally
         {

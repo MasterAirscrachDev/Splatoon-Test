@@ -15,7 +15,7 @@ public partial class PlayerController
         float prevHeight = controller.height;
         float prevRadius = controller.radius;
         bool wasClimbingWall = wasClimbing;
-        bool swimHeld = held || !InputGate.MatchLocked && (ScriptedInput != null ? ScriptedInput.swim
+        bool swimHeld = held || !InputGate.GameLocked && !ActionLocked && (ScriptedInput != null ? ScriptedInput.swim
                       : !InputGate.Blocked && input.Movement.Squidmode.ReadValue<float>() != 0);
         if (swimHeld)
         {
@@ -60,8 +60,8 @@ public partial class PlayerController
         {
             realSpeed = swimMode ? swimSpeed / 4 : moveSpeed;
         }
-        if (!swimMode) realSpeed *= WeaponSpeedMultiplier;
-        targetDir = held || InputGate.MatchLocked ? Vector2.zero
+        if (!swimMode) realSpeed *= WeaponSpeedMultiplier * SpecialSpeedMultiplier;
+        targetDir = held || InputGate.GameLocked ? Vector2.zero
                   : ScriptedInput != null ? ScriptedInput.move
                   : InputGate.Blocked ? Vector2.zero : input.Movement.Move.ReadValue<Vector2>();
         targetDir.Normalize();
@@ -204,7 +204,7 @@ public partial class PlayerController
 
     void Jump()
     {
-        if (IsSuperJumping || isDead || IsRespawning || InputGate.MatchLocked) return;
+        if (IsSuperJumping || isDead || IsRespawning || InputGate.GameLocked) return;
         if (effectivelyClimbing)
         {
             float wallClimbSpeed = currentDir.y * realSpeed + velocityY;

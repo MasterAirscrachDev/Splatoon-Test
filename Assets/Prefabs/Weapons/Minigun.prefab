@@ -174,7 +174,7 @@ MonoBehaviour:
     upDownSpread: 2
     sideSpread: 2
     speedSpread: 0.05
-  fillerShots: 2
+  fillerShots: 7
   fillerSpread: 8
   fillersSeen: 0.33
   fillerLook:

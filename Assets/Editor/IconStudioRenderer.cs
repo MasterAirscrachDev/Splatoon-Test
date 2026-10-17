@@ -92,6 +92,12 @@ public static class IconStudioRenderer
                                                       show = new[] { "BubbleShield" }, inkParts = new[] { "BubbleShield" }, fileName = "BubbleShield" });
             added++;
         }
+        GameObject blaster = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Soundblaster.prefab");
+        if (blaster != null && !studio.entries.Any(x => x.special && x.specialType == SpecialType.Soundblaster))
+        {
+            studio.entries.Add(new IconStudio.Entry { prefab = blaster, angle = new Vector3(15f, 140f, 0f), special = true, specialType = SpecialType.Soundblaster, fileName = "Soundblaster" });
+            added++;
+        }
         if (strike != null && !studio.entries.Any(x => x.special && x.specialType == SpecialType.InkStrike))
         {
             studio.entries.Add(new IconStudio.Entry { prefab = strike, angle = new Vector3(-15f, 30f, 0f), special = true, specialType = SpecialType.InkStrike,

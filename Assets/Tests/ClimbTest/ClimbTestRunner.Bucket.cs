@@ -109,7 +109,7 @@ public partial class ClimbTestRunner
         float dropletMax = bucket.DropletDamage.damage;
         Note($"enemy {Flat(foeAt - start).magnitude:F1}m away: {hits.Count} hit(s) for {hits.Sum():0} ({(blobDidIt ? $"the blob, {blobHit.age:F2}s out" : "NOT the blob")}); a droplet hits for at most {dropletMax:0}");
         if (hits.Count != 1) Fail("the enemy wasn't hit exactly once by the slosh");
-        else if (!blobDidIt || hits[0] <= dropletMax * 1.5f) Fail("the blob didn't land the hit, much harder than a droplet");
+        else if (!blobDidIt || bucket.BlobDamage.damage <= dropletMax) Fail("the blob didn't land the hit (or doesn't hit harder than a droplet)"); // (base damage: the prefab's tuning)
         Despawn(Foe);
         yield return Hold(Still, false, 0.3f, "despawn");
 

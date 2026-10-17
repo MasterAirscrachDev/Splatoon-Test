@@ -117,11 +117,11 @@ public class Bucket : Weapon
     void Think(PlayerController player)
     {
         bool hardware = !player.IsTestPlayer && player.ScriptedInput == null && !InputGate.Blocked && input.Weapon.Attack.ReadValue<float>() != 0;
-        bool held = !InputGate.MatchLocked && !player.IsDead && (ScriptedFire || hardware);
+        bool held = !InputGate.GameLocked && !player.ActionLocked && !player.IsDead && (ScriptedFire || hardware);
         player.AttackHeld = held;
         bool pressed = held && !player.IsSquid;
         wantSlosh = pressed; // holding keeps sloshing
-        if (player.IsSquid || player.IsDead || InputGate.MatchLocked) state = State.Idle;
+        if (player.IsSquid || player.IsDead || InputGate.GameLocked) state = State.Idle;
 
         // Goes as soon as it can: retried each frame while held (the kid form may still be coming up).
         if (wantSlosh && state != State.Slosh && Time.time - sloshStart >= sloshRate && player.ConsumeInk(sloshInkCost * 0.001f))
